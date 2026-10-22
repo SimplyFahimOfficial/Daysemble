@@ -88,10 +88,23 @@ class CalendarSyncer(
     suspend fun pushOutbox(): Triple<Int, Int, Int> {
         var pushed = 0; var conflicts = 0; var failed = 0
         for (op in db.sync().outbox(OwnerType.EVENT)) {
+            if (op.op == OutboxOp.DELETE && op.snapshotRemoteId != null && op.snapshotContainerId != null) {
+                // Remote copy left behind by a calendar move: delete it there, keep the local row.
+                if (op.permanentFailures >= MAX_ATTEMPTS) continue
+                try {
+                    db.sync().markAttempt(op.id, now())
+                    try { api.delete(op.snapshotContainerId, op.snapshotRemoteId) } catch (_: ApiError.NotFound) { } catch (_: ApiError.Gone) { }
+                    db.sync().remove(op.id); pushed++
+                } catch (err: ApiError) {
+                    if (err.isRetryable || err is ApiError.Auth) { db.sync().markFailed(op.id, err.message ?: "error", now()); throw err }
+                    db.sync().markRejected(op.id, err.message ?: "error", now()); failed++
+                }
+                continue
+            }
             val e = events.get(op.entityId)
             val cal = e?.let { cals.get(it.calendarId) }
             if (e == null || cal == null || cal.kind != SourceKind.GOOGLE || cal.remoteId == null) { db.sync().remove(op.id); continue }
-            if (!cal.isSyncEnabled || op.attempts >= MAX_ATTEMPTS) continue
+            if (!cal.isSyncEnabled || op.permanentFailures >= MAX_ATTEMPTS) continue
             if (!isWritableRole(cal.accessRole)) { db.sync().markFailed(op.id, "read_only", now()); failed++; continue }
             try {
                 db.sync().markAttempt(op.id, now())
@@ -120,7 +133,9 @@ class CalendarSyncer(
                         }
                     }
                     OutboxOp.DELETE -> {
-                        e.remoteId?.let { rid ->
+                        // A create whose response was lost has no remoteId yet, but used our deterministic client id.
+                        val rid = e.remoteId ?: if (e.etag != RECREATE) CalendarMapper.remoteIdFor(e.id) else null
+                        if (rid != null) {
                             try { api.delete(cal.remoteId, rid) } catch (_: ApiError.NotFound) { } catch (_: ApiError.Gone) { }
                         }
                         db.withTransaction { events.hardDelete(e.id); db.reminders().deleteForOwner(OwnerType.EVENT, e.id) }
@@ -129,9 +144,12 @@ class CalendarSyncer(
                 db.sync().remove(op.id)
                 pushed++
             } catch (err: ApiError) {
-                if (!err.isRetryable && err !is ApiError.Auth) failed++
-                db.sync().markFailed(op.id, err.message ?: "error", now())
-                if (err.isRetryable || err is ApiError.Auth) throw err // stop this run; WorkManager retries with backoff
+                if (err.isRetryable || err is ApiError.Auth) {
+                    db.sync().markFailed(op.id, err.message ?: "error", now())
+                    throw err // stop this run; WorkManager retries with backoff
+                }
+                db.sync().markRejected(op.id, err.message ?: "error", now())
+                failed++ // stop this run; WorkManager retries with backoff
             }
         }
         return Triple(pushed, conflicts, failed)
@@ -209,10 +227,23 @@ class CalendarSyncer(
             }
             cals.setSyncToken(cal.id, nextToken)
         }
-        // Series whose rule we can't expand: materialise Google's own instances as rows.
-        val readOnlyMasters = items.filter { it.recurringEventId == null && it.status != "cancelled" && it.id != null }
-            .mapNotNull { dto -> events.byRemoteId(cal.id, dto.id!!)?.takeIf { it.isReadOnlyRecurrence } }
-        for (m in readOnlyMasters) refreshInstances(cal, m)
+        // Series whose rule we can't expand: materialise Google's own instances as rows. Tracked per
+        // series (instancesUntil) rather than via the sync token, so a failed request is retried on the
+        // next run and the window keeps moving forward for unchanged series.
+        val changed = items.mapNotNull { it.id }.toSet()
+        val horizon = clock.now().plusSeconds(300L * 86400).toEpochMilli()
+        val due = events.allIn(cal.id).filter {
+            it.isReadOnlyRecurrence && it.recurringParentId == null && !it.isDeleted &&
+                (it.remoteId in changed || (it.instancesUntil ?: 0) < horizon)
+        }
+        for (m in due) {
+            try {
+                refreshInstances(cal, m)
+            } catch (e: ApiError) {
+                if (e.isRetryable || e is ApiError.Auth) throw e
+                // Permanent error for this series (e.g. deleted meanwhile): skip, others continue.
+            }
+        }
         return items.size to conflicts
     }
 
@@ -241,6 +272,7 @@ class CalendarSyncer(
                 if (existing != null && existing.syncState != SyncState.SYNCED) continue
                 CalendarMapper.toEntity(dto.copy(recurringEventId = masterRemote), fresh, existing, parent, now())?.let { events.upsert(it) }
             }
+            events.upsert(parent.copy(instancesUntil = now.plusSeconds(365L * 86400).toEpochMilli()))
             // Instances that no longer exist in the window (rule changed) are removed.
             events.overridesFor(listOf(parent.id)).filter { it.remoteId != null && it.remoteId !in keep && !it.isCancelled && it.syncState == SyncState.SYNCED }
                 .forEach { events.hardDelete(it.id) }

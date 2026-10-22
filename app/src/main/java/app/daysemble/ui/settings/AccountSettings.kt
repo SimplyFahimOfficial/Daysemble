@@ -128,14 +128,15 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
                 NotConnected(ui, connect)
             } else {
                 Connected(s, ui, connect, c.syncScheduler::requestSoonNow, onOpenConflicts, onToggleCalendar = { v -> scope.launch { c.sync.setCalendarEnabled(v); c.syncScheduler.requestSoon(0) } },
-                    onToggleTasks = { v -> scope.launch { c.sync.setTasksEnabled(v); c.syncScheduler.requestSoon(0) } })
+                    onToggleTasks = { v -> scope.launch { c.sync.setTasksEnabled(v); c.syncScheduler.requestSoon(0) } },
+                    onRetryParked = { scope.launch { c.sync.retryParked(); c.syncScheduler.requestSoonNow() } })
 
                 if (s.calendar.enabled) {
                     SectionHeader(stringResource(R.string.sync_calendars), Modifier.padding(top = Space.l))
                     calendars.filter { it.kind == SourceKind.GOOGLE }.forEach { cal ->
                         app.daysemble.ui.components.DsCheckRow(
                             cal.name, cal.isSyncEnabled,
-                            { v -> scope.launch { c.database.calendars().setSyncEnabled(cal.id, v); if (v) c.syncScheduler.requestSoon(0) } },
+                            { v -> scope.launch { c.database.calendars().setSyncEnabled(cal.id, v); c.reminders.rescheduleAll(); if (v) c.syncScheduler.requestSoon(0) } },
                             subtitle = stringResource(roleLabel(cal.accessRole)),
                             leading = { EventMarker(eventColor(cal.colorArgb), false) },
                         )
@@ -147,7 +148,7 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
                     lists.filter { it.kind == SourceKind.GOOGLE }.forEach { l ->
                         app.daysemble.ui.components.DsCheckRow(
                             l.title, l.isSyncEnabled,
-                            { v -> scope.launch { c.database.taskLists().setSyncEnabled(l.id, v); if (v) c.syncScheduler.requestSoon(0) } },
+                            { v -> scope.launch { c.database.taskLists().setSyncEnabled(l.id, v); c.reminders.rescheduleAll(); if (v) c.syncScheduler.requestSoon(0) } },
                         )
                     }
                     if (lists.none { it.kind == SourceKind.GOOGLE }) Hint(stringResource(R.string.sync_lists_pending))
@@ -206,6 +207,7 @@ private fun Connected(
     onOpenConflicts: () -> Unit,
     onToggleCalendar: (Boolean) -> Unit,
     onToggleTasks: (Boolean) -> Unit,
+    onRetryParked: () -> Unit = {},
 ) {
     val p = LocalTimePrefs.current
     DsRow(s.account.email!!, subtitle = stringResource(R.string.google_account), icon = Icons.Rounded.AccountCircle) {
@@ -222,6 +224,12 @@ private fun Connected(
         subtitle = if (s.pendingChanges > 0) pluralStringResource(R.plurals.pending_changes, s.pendingChanges, s.pendingChanges) else stringResource(R.string.sync_up_to_date),
         icon = Icons.Rounded.Sync, onClick = syncNow, enabled = !s.running,
     )
+    if (s.parkedChanges > 0) {
+        DsRow(
+            stringResource(R.string.retry_parked), subtitle = pluralStringResource(R.plurals.parked_changes, s.parkedChanges, s.parkedChanges),
+            icon = Icons.Rounded.ErrorOutline, iconTint = DsTheme.colors.error, onClick = onRetryParked,
+        )
+    }
     DsRow(stringResource(R.string.conflicts_title), subtitle = stringResource(R.string.conflicts_sub), icon = Icons.AutoMirrored.Rounded.CompareArrows, onClick = onOpenConflicts)
 }
 
@@ -259,6 +267,7 @@ private fun errorText(code: String) = stringResource(
         "auth" -> R.string.err_auth
         "rate_limited" -> R.string.err_rate
         "server" -> R.string.err_server
+        "rejected_changes" -> R.string.err_rejected
         else -> R.string.err_other
     },
 )

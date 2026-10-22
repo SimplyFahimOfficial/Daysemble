@@ -23,7 +23,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 SyncOutcome.RETRY_LATER -> return if (runAttemptCount < 8) Result.retry() else Result.failure()
                 SyncOutcome.NEEDS_REAUTH, SyncOutcome.FAILED -> return Result.failure()
                 SyncOutcome.NOT_CONNECTED -> return Result.success()
-                SyncOutcome.OK -> if (c.database.sync().outbox().none { it.attempts < app.daysemble.data.google.calendar.CalendarSyncer.MAX_ATTEMPTS }) return Result.success()
+                SyncOutcome.OK -> if (c.database.sync().outbox().none { it.permanentFailures < app.daysemble.data.google.calendar.CalendarSyncer.MAX_ATTEMPTS }) return Result.success()
             }
         }
         return Result.success()

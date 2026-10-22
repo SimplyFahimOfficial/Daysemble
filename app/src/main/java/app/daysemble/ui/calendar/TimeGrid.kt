@@ -44,7 +44,6 @@ import app.daysemble.ui.theme.Space
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.temporal.ChronoUnit
 
 private val HourHeight = 56.dp
 private val GutterWidth = 52.dp
@@ -126,15 +125,15 @@ private fun DayColumn(
     val density = LocalDensity.current
     val dayStart = day.atStartOfDay(p.zone).toInstant()
     val dayEnd = day.plusDays(1).atStartOfDay(p.zone).toInstant()
-    // Minutes are measured in real elapsed time from local midnight, clamped to the 24 h grid;
-    // on DST days the grid stays 24 rows and the extra/missing hour is absorbed at the edges.
+    // Positions use local wall-clock minutes, the same basis as the hour labels and slot taps, so a
+    // 09:00 event sits on the 09:00 row on DST days too (the skipped/repeated hour is simply absent/shared).
     val untitled = androidx.compose.ui.res.stringResource(app.daysemble.R.string.untitled_event)
     val placed = remember(events, day, p.zone) {
         DayLayout.layout(
             events.map { e ->
-                val s = ChronoUnit.MINUTES.between(dayStart, maxOf(e.start, dayStart)).toInt().coerceIn(0, 24 * 60)
-                val en = ChronoUnit.MINUTES.between(dayStart, minOf(e.end, dayEnd)).toInt().coerceIn(0, 24 * 60)
-                DayLayout.Item(e, s, en)
+                val s = wallMinutes(maxOf(e.start, dayStart), day, p.zone, isEnd = false)
+                val en = wallMinutes(minOf(e.end, dayEnd), day, p.zone, isEnd = true)
+                DayLayout.Item(e, s, maxOf(en, s))
             },
         )
     }
@@ -178,7 +177,7 @@ private fun DayColumn(
             }
         }
         if (isToday && now >= dayStart && now < dayEnd) {
-            val minute = ChronoUnit.MINUTES.between(dayStart, now)
+            val minute = wallMinutes(now, day, p.zone, isEnd = false)
             Box(
                 Modifier
                     .offset(y = HourHeight * (minute / 60f) - 1.dp)
@@ -195,6 +194,15 @@ private fun DayColumn(
             )
         }
     }
+}
+
+/** Minute of the local day for [t] on [day]; an end at/after the next midnight maps to 24:00. */
+internal fun wallMinutes(t: Instant, day: LocalDate, zone: java.time.ZoneId, isEnd: Boolean): Int {
+    val z = t.atZone(zone)
+    if (z.toLocalDate().isAfter(day)) return 24 * 60
+    if (z.toLocalDate().isBefore(day)) return 0
+    val m = z.hour * 60 + z.minute
+    return if (isEnd && m == 0 && t > day.atStartOfDay(zone).toInstant()) 24 * 60 else m
 }
 
 @Composable

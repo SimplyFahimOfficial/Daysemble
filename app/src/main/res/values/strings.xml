@@ -439,6 +439,8 @@
     <string name="err_rate">Google asked us to slow down; retrying</string>
     <string name="err_server">Google had a problem; retrying</string>
     <string name="err_other">unexpected error</string>
+    <string name="err_rejected">Google refused some changes</string>
+    <string name="retry_parked">Retry changes Google refused</string>
     <string name="role_owner">Yours</string>
     <string name="role_writer">You can edit</string>
     <string name="role_reader">Read-only</string>
@@ -453,6 +455,10 @@
     <string name="conflict_kept_local">Kept your version</string>
     <string name="conflict_kept_remote">Kept the Google version</string>
 
+    <plurals name="parked_changes">
+        <item quantity="one">%d change was refused several times and is paused</item>
+        <item quantity="other">%d changes were refused several times and are paused</item>
+    </plurals>
     <plurals name="pending_changes">
         <item quantity="one">%d change waiting to sync</item>
         <item quantity="other">%d changes waiting to sync</item>

@@ -111,7 +111,7 @@ fun QuickAddSheet(
             when (kind) {
                 AddKind.TASK -> container.tasks.create(
                     TaskDraft(title = title, dueDate = date?.let(LocalDate::ofEpochDay), priority = if (high) Priority.HIGH else Priority.NONE),
-                    container.settings.current().defaultTaskListId ?: defaults.taskListId,
+                    container.newTaskListId(),
                 )
                 AddKind.EVENT -> {
                     val s = container.settings.current()

@@ -75,13 +75,14 @@ class TasksSyncer(
         for (op in ops) {
             if (op.op == OutboxOp.DELETE && op.snapshotRemoteId != null && op.snapshotContainerId != null) {
                 // Remote copy left behind by a move: delete it there, keep the local row.
+                if (op.permanentFailures >= app.daysemble.data.google.calendar.CalendarSyncer.MAX_ATTEMPTS) continue
                 try {
                     db.sync().markAttempt(op.id, now())
                     try { api.delete(op.snapshotContainerId, op.snapshotRemoteId) } catch (_: ApiError.NotFound) { } catch (_: ApiError.Gone) { }
                     db.sync().remove(op.id); pushed++
                 } catch (err: ApiError) {
-                    db.sync().markFailed(op.id, err.message ?: "error", now())
-                    if (err.isRetryable || err is ApiError.Auth) throw err
+                    if (err.isRetryable || err is ApiError.Auth) { db.sync().markFailed(op.id, err.message ?: "error", now()); throw err }
+                    db.sync().markRejected(op.id, err.message ?: "error", now())
                     failed++
                 }
                 continue
@@ -89,7 +90,7 @@ class TasksSyncer(
             val t = tasks.get(op.entityId)
             val list = t?.let { lists.get(it.listId) }
             if (t == null || list == null || list.kind != SourceKind.GOOGLE || list.remoteId == null) { db.sync().remove(op.id); continue }
-            if (!list.isSyncEnabled || op.attempts >= app.daysemble.data.google.calendar.CalendarSyncer.MAX_ATTEMPTS) continue
+            if (!list.isSyncEnabled || op.permanentFailures >= app.daysemble.data.google.calendar.CalendarSyncer.MAX_ATTEMPTS) continue
             try {
                 when (op.op) {
                     OutboxOp.CREATE -> {
@@ -118,16 +119,21 @@ class TasksSyncer(
                     }
                     OutboxOp.DELETE -> {
                         db.sync().markAttempt(op.id, now())
-                        t.remoteId?.let { rid -> try { api.delete(list.remoteId, rid) } catch (_: ApiError.NotFound) { } catch (_: ApiError.Gone) { } }
+                        // A create whose response was lost has no remoteId: find the copy it may have made.
+                        val rid = t.remoteId ?: findPreviousCreate(list.remoteId, t, op.lastAttemptAt ?: t.updatedAt)?.id
+                        rid?.let { try { api.delete(list.remoteId, it) } catch (_: ApiError.NotFound) { } catch (_: ApiError.Gone) { } }
                         db.withTransaction { tasks.hardDelete(t.id); db.reminders().deleteForOwner(OwnerType.TASK, t.id) }
                     }
                 }
                 db.sync().remove(op.id)
                 pushed++
             } catch (err: ApiError) {
-                if (!err.isRetryable && err !is ApiError.Auth) failed++
-                db.sync().markFailed(op.id, err.message ?: "error", now())
-                if (err.isRetryable || err is ApiError.Auth) throw err
+                if (err.isRetryable || err is ApiError.Auth) {
+                    db.sync().markFailed(op.id, err.message ?: "error", now())
+                    throw err // stop this run; WorkManager retries with backoff
+                }
+                db.sync().markRejected(op.id, err.message ?: "error", now())
+                failed++
             }
         }
         return Triple(pushed, conflicts, failed)
@@ -139,11 +145,17 @@ class TasksSyncer(
      * created around the earlier attempt and adopt it instead of duplicating.
      */
     private suspend fun findPreviousCreate(listRemoteId: String, t: TaskEntity, lastAttempt: Long?): TaskDto? {
-        val since = Instant.ofEpochMilli((lastAttempt ?: t.createdAt) - 2 * 60_000).toString()
-        val page = runCatching { api.tasks(listRemoteId, since, null) }.getOrNull() ?: return null
+        val since = Instant.ofEpochMilli(minOf(lastAttempt ?: t.createdAt, t.createdAt) - 2 * 60_000).toString()
+        val items = ArrayList<TaskDto>()
+        var token: String? = null
+        do {
+            val page = api.tasks(listRemoteId, since, token) // errors propagate: don't guess "not found" offline
+            items += page.items
+            token = page.nextPageToken
+        } while (token != null)
         val mapped = tasks.allIn(t.listId).mapNotNull { it.remoteId }.toSet()
         val due = t.dueDate?.let { LocalDate.ofEpochDay(it).toString() }
-        return page.items.firstOrNull {
+        return items.firstOrNull {
             !it.deleted && it.id !in mapped && it.title.orEmpty() == t.title && it.notes.orEmpty() == t.notes && it.due?.take(10) == due
         }
     }

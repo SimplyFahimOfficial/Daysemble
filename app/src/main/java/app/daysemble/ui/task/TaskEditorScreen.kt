@@ -72,7 +72,7 @@ import java.time.LocalTime
 @Composable
 fun TaskEditorRoute(taskId: String?, parentId: String?, initialDue: LocalDate?, onClose: () -> Unit) {
     val vm = daysembleViewModel(key = "task:$taskId:$parentId") { c, h ->
-        TaskEditorViewModel(c.tasks, { c.defaults().taskListId }, taskId, parentId, initialDue, h)
+        TaskEditorViewModel(c.tasks, { c.newTaskListId() }, taskId, parentId, initialDue, h)
     }
     val state by vm.state.collectAsStateWithLifecycle()
     val event by vm.events.collectAsStateWithLifecycle()

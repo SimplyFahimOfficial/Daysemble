@@ -101,5 +101,16 @@ class AppContainer(context: Context) {
         defaults()
     }
 
+    /**
+     * Where new tasks go: the "New tasks go to" setting if that list still exists and is synced (or
+     * local), otherwise the on-device default list.
+     */
+    suspend fun newTaskListId(): String {
+        val fallback = defaults().taskListId
+        val chosen = settings.current().defaultTaskListId ?: return fallback
+        val list = database.taskLists().get(chosen) ?: return fallback
+        return if (list.kind == app.daysemble.data.db.SourceKind.LOCAL || list.isSyncEnabled) chosen else fallback
+    }
+
     data class Defaults(val calendarId: String, val taskListId: String)
 }

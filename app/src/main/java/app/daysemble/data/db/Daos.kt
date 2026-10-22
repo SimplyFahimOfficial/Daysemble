@@ -55,7 +55,7 @@ interface EventDao {
     @Query(
         """
         SELECT e.* FROM event e JOIN calendar_source c ON c.id = e.calendarId
-        WHERE e.isDeleted = 0 AND c.isVisible = 1
+        WHERE e.isDeleted = 0 AND c.isVisible = 1 AND (c.kind = 'LOCAL' OR c.isSyncEnabled = 1)
           AND e.rangeStartUtc < :end AND e.rangeEndUtc > :start
         """,
     )
@@ -66,6 +66,9 @@ interface EventDao {
 
     @Query("SELECT * FROM event WHERE id = :id")
     suspend fun get(id: String): EventEntity?
+
+    @Query("SELECT * FROM event WHERE id IN (:ids)")
+    suspend fun getAll(ids: List<String>): List<EventEntity>
 
     @Query("SELECT * FROM event WHERE id = :id")
     fun observe(id: String): Flow<EventEntity?>
@@ -79,7 +82,7 @@ interface EventDao {
     @Query(
         """
         SELECT e.* FROM event e JOIN calendar_source c ON c.id = e.calendarId
-        WHERE e.isDeleted = 0 AND c.isVisible = 1 AND e.isCancelled = 0
+        WHERE e.isDeleted = 0 AND c.isVisible = 1 AND (c.kind = 'LOCAL' OR c.isSyncEnabled = 1) AND e.isCancelled = 0
           AND (e.title LIKE '%' || :q || '%' ESCAPE '\' OR e.description LIKE '%' || :q || '%' ESCAPE '\'
                OR e.location LIKE '%' || :q || '%' ESCAPE '\')
         LIMIT 200
@@ -256,9 +259,20 @@ interface SyncDao {
     @Query("DELETE FROM outbox WHERE id = :id")
     suspend fun remove(id: Long)
 
-    /** Records the error of an attempt already counted by [markAttempt]. */
+    /** Records a transient error (retried later; doesn't count toward parking). */
     @Query("UPDATE outbox SET lastError = :error, lastAttemptAt = :at WHERE id = :id")
     suspend fun markFailed(id: Long, error: String, at: Long)
+
+    /** Records a permanent rejection (e.g. 400/403 permission); parked after MAX_ATTEMPTS. */
+    @Query("UPDATE outbox SET lastError = :error, lastAttemptAt = :at, permanentFailures = permanentFailures + 1 WHERE id = :id")
+    suspend fun markRejected(id: Long, error: String, at: Long)
+
+    @Query("SELECT COUNT(*) FROM outbox WHERE permanentFailures >= :max")
+    fun observeParkedCount(max: Int): Flow<Int>
+
+    /** "Retry parked changes": gives every rejected change a fresh set of attempts. */
+    @Query("UPDATE outbox SET permanentFailures = 0, lastError = NULL")
+    suspend fun resetFailures()
 
     @Query("UPDATE outbox SET attempts = attempts + 1, lastAttemptAt = :at WHERE id = :id")
     suspend fun markAttempt(id: Long, at: Long)

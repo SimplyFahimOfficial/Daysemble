@@ -103,9 +103,14 @@ class EventRepository(
         val qe = windowEnd.plus(Duration.ofHours(15)).toEpochMilli()
         return combine(events.observeInRange(qs, qe), calendars.observeAll()) { rows, cals -> rows to cals.associateBy { it.id } }
             .mapLatest { (rows, cals) ->
-                val masters = rows.filter { it.rrule != null && it.recurringParentId == null }
+                // An occurrence moved into this window may belong to a series whose own range ends earlier:
+                // load those parents too, so the moved occurrence is rendered.
+                val present = rows.map { it.id }.toSet()
+                val missingParents = rows.mapNotNull { it.recurringParentId }.filter { it !in present }.distinct()
+                val all = if (missingParents.isEmpty()) rows else rows + events.getAll(missingParents).filter { !it.isDeleted }
+                val masters = all.filter { it.rrule != null && it.recurringParentId == null }
                 val overrides = if (masters.isEmpty()) emptyList() else events.overridesFor(masters.map { it.id })
-                expand(rows, overrides, cals, from, toInclusive, windowStart, windowEnd, zone)
+                expand(all, overrides, cals, from, toInclusive, windowStart, windowEnd, zone)
             }
     }
 
@@ -200,6 +205,11 @@ class EventRepository(
     /** Updates the event (whole series for recurring events). */
     suspend fun update(id: String, draft: EventDraft) {
         require(draft.validationError == null) { "Invalid event: ${draft.validationError}" }
+        val target = draft.calendarId?.takeIf { it != get(id)?.calendarId }
+        if (target != null) {
+            moveToCalendar(id, target)
+            return update(id, draft.copy(calendarId = target))
+        }
         val google = db.withTransaction {
             val row = get(id) ?: return@withTransaction null
             val cal = calendars.get(row.calendarId) ?: return@withTransaction null
@@ -213,6 +223,46 @@ class EventRepository(
             events.upsert(updated)
             saveReminders(id, draft.reminderMinutesBefore)
             g
+        } ?: return
+        notify(id, google)
+    }
+
+    /** True when an event can change calendar (series with individually changed occurrences can't). */
+    suspend fun canMove(id: String): Boolean {
+        val e = get(id) ?: return false
+        return e.rrule == null || events.overridesFor(listOf(id)).isEmpty()
+    }
+
+    /**
+     * Moves an event to another calendar. Google: the copy in the old calendar is deleted (by snapshot)
+     * and the event is created in the new one with a server-assigned id, so there's no leftover remote
+     * copy to resurrect on the next pull.
+     */
+    suspend fun moveToCalendar(id: String, newCalendarId: String) {
+        val google = db.withTransaction {
+            val row = get(id) ?: return@withTransaction null
+            if (row.calendarId == newCalendarId) return@withTransaction null
+            require(canMove(id)) { "Series with changed occurrences can't change calendar" }
+            val from = calendars.get(row.calendarId) ?: return@withTransaction null
+            val to = calendars.get(newCalendarId) ?: return@withTransaction null
+            require(isWritableRole(to.accessRole)) { "Calendar is read-only" }
+            val fromG = from.kind == SourceKind.GOOGLE
+            val toG = to.kind == SourceKind.GOOGLE
+            if (fromG || toG) {
+                // Remote id of a create with a lost response is our deterministic client id.
+                val oldRemote = if (fromG) row.remoteId ?: (if (row.syncState == SyncState.PENDING_CREATE) app.daysemble.data.google.calendar.CalendarMapper.remoteIdFor(row.id) else null) else null
+                outbox.recordMove(OwnerType.EVENT, id, oldRemote, if (fromG) from.remoteId else null, toG)
+            }
+            events.upsert(
+                row.copy(
+                    calendarId = newCalendarId, remoteId = null,
+                    // New Google copy gets a server id (our client id may still be held by the deleted copy).
+                    etag = if (toG) app.daysemble.data.google.calendar.CalendarSyncer.RECREATE else null,
+                    remoteUpdatedAt = null, updatedAt = clock.now().toEpochMilli(),
+                    syncState = if (toG) SyncState.PENDING_CREATE else SyncState.LOCAL,
+                ),
+            )
+            fromG || toG
         } ?: return
         notify(id, google)
     }
@@ -367,7 +417,7 @@ class EventRepository(
                 val evZone = runCatching { ZoneId.of(row.timeZone) }.getOrDefault(zone)
                 val exdates = row.exdates.split(',').filter { it.isNotBlank() }.toSet()
                 val ovByKey = overridesByParent[row.id].orEmpty().associateBy { it.originalStartKey }
-                val instances: List<Triple<String, Instant, Instant>> = if (!rule.isSupported) {
+                val instances: List<Triple<String, Instant, Instant>> = if (!rule.isSupported || row.isReadOnlyRecurrence) {
                     // Can't expand locally. For Google series, sync stores Google's instances as override
                     // rows (picked up below); otherwise show the first occurrence only.
                     if (overridesByParent[row.id].orEmpty().any { !it.isCancelled }) emptyList()

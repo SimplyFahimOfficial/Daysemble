@@ -126,6 +126,7 @@ def import_wordmark(src: pathlib.Path, width: int):
     box = (max(0, box[0] - pad), max(0, box[1] - pad), min(im.width, box[2] + pad), min(im.height, box[3] + pad))
     im = im.crop(box)
     h = round(im.height * width / im.width)
+    (RES / "drawable-nodpi").mkdir(parents=True, exist_ok=True)
     im.resize((width, h), Image.LANCZOS).save(RES / "drawable-nodpi" / "wordmark.png", optimize=True)
     (RES / "drawable" / "wordmark.xml").unlink(missing_ok=True)
     set_flag("wordmark_supplied")

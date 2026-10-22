@@ -124,9 +124,13 @@ class TaskEditorViewModel(
         if (form.value.title.isNotBlank()) titleError.value = false
     }
 
+    private var saving = false
+
     fun save() = viewModelScope.launch {
+        if (saving) return@launch // repeated taps must not create duplicates
         val f = form.value
         if (f.title.isBlank()) { titleError.value = true; return@launch }
+        saving = true
         if (taskId == null) repo.create(f.toDraft(parentId), f.listId ?: defaultListId())
         else {
             repo.update(taskId, f.toDraft(null))
@@ -136,6 +140,7 @@ class TaskEditorViewModel(
         original.value = form.value
         persist()
         events.value = EditorEvent.Saved
+        // `saving` stays true: the screen closes after a successful save.
     }
 
     fun toggleCompleted() = viewModelScope.launch {

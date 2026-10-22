@@ -87,7 +87,7 @@ fun EventEditorRoute(
     val state by vm.state.collectAsStateWithLifecycle()
     val done by vm.done.collectAsStateWithLifecycle()
     LaunchedEffect(done) { if (done) onClose() }
-    EventEditorScreen(state, vm::update, vm::save, onClose)
+    EventEditorScreen(state, vm::update, { vm.save() }, onClose)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -107,7 +107,7 @@ private fun EventEditorScreen(
 
     Column(Modifier.fillMaxSize().background(c.background).imePadding()) {
         DsTopBar(stringResource(if (state.isNew) R.string.new_event else R.string.edit_event), attemptClose) {
-            DsButton(stringResource(R.string.action_save), save, modifier = Modifier.padding(end = Space.s), enabled = state.form != null)
+            DsButton(stringResource(R.string.action_save), save, modifier = Modifier.padding(end = Space.s), enabled = state.form != null && !state.saving)
         }
         val f = state.form
         if (f == null) {
@@ -170,7 +170,7 @@ private fun EventEditorScreen(
                 placeholder = stringResource(R.string.location_hint), modifier = Modifier.padding(horizontal = Space.gutter),
             )
 
-            if (state.calendars.size > 1) {
+            if (state.calendars.size > 1 && state.canChangeCalendar) {
                 SectionHeader(stringResource(R.string.field_calendar), Modifier.padding(top = Space.l))
                 FlowRow(Modifier.padding(horizontal = Space.gutter - Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                     state.calendars.forEach { cal ->

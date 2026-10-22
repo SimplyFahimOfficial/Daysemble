@@ -55,21 +55,28 @@ object RecurrenceExpander {
         return out
     }
 
+    /**
+     * Bound on recurrence *periods* examined (days/weeks/months/years), applied before filtering, so a
+     * rule whose periods never yield a valid date (e.g. BYMONTHDAY=31 every 12 months from February)
+     * can't loop forever inside flatMap.
+     */
+    const val MAX_PERIODS = 100_000
+
     /** Lazily generates candidate dates in ascending order. */
     private fun candidates(rule: RRule, start: LocalDate): Sequence<LocalDate> = when (rule.freq) {
-        Freq.DAILY -> generateSequence(start) { it.plusDays(rule.interval.toLong()) }
+        Freq.DAILY -> generateSequence(start) { it.plusDays(rule.interval.toLong()) }.take(MAX_PERIODS)
 
         Freq.WEEKLY -> {
             val days = (rule.byDay.map { it.day }.ifEmpty { listOf(start.dayOfWeek) }).distinct()
             val weekStart = start.with(TemporalAdjusters.previousOrSame(rule.weekStart))
-            generateSequence(weekStart) { it.plusWeeks(rule.interval.toLong()) }.flatMap { ws ->
+            generateSequence(weekStart) { it.plusWeeks(rule.interval.toLong()) }.take(MAX_PERIODS).flatMap { ws ->
                 days.map { d -> ws.plusDays(offsetFrom(rule.weekStart, d).toLong()) }.sorted().asSequence()
             }
         }
 
         Freq.MONTHLY -> {
             val first = YearMonth.from(start)
-            generateSequence(first) { it.plusMonths(rule.interval.toLong()) }.flatMap { ym ->
+            generateSequence(first) { it.plusMonths(rule.interval.toLong()) }.take(MAX_PERIODS).flatMap { ym ->
                 monthDays(rule, ym, start).asSequence()
             }
         }
@@ -77,7 +84,7 @@ object RecurrenceExpander {
         Freq.YEARLY -> {
             val month = rule.byMonth ?: start.monthValue
             val day = rule.byMonthDay.firstOrNull() ?: start.dayOfMonth
-            generateSequence(start.year) { it + rule.interval }.mapNotNull { y ->
+            generateSequence(start.year) { it + rule.interval }.take(MAX_PERIODS).mapNotNull { y ->
                 val ym = YearMonth.of(y, month)
                 resolveMonthDay(ym, day)
             }

@@ -94,6 +94,8 @@ data class EventEntity(
     val isDeleted: Boolean = false,
     /** Google recurrence rules we can't expand locally; the series is shown read-only. */
     val isReadOnlyRecurrence: Boolean = false,
+    /** For read-only series: Google instances are stored up to this instant; refreshed before it runs out. */
+    val instancesUntil: Long? = null,
 )
 
 @Entity(
@@ -204,6 +206,8 @@ data class OutboxEntity(
     val attempts: Int = 0,
     val lastError: String? = null,
     val lastAttemptAt: Long? = null,
+    /** Non-retryable rejections only (network/rate-limit/auth errors don't count). Parked at MAX_ATTEMPTS. */
+    val permanentFailures: Int = 0,
     /**
      * For a DELETE of a record that has since moved elsewhere (e.g. a task moved to another
      * list): the remote id and remote container (list/calendar) to delete from. The local row is kept.

@@ -53,7 +53,7 @@ object ReminderPlanner {
         val evZone = runCatching { ZoneId.of(event.timeZone) }.getOrDefault(deviceZone)
 
         // (occurrenceKey, start instant used for reminders)
-        val unsupportedSeries = event.rrule != null && RRule.parse(event.rrule)?.isSupported != true
+        val unsupportedSeries = event.rrule != null && (event.isReadOnlyRecurrence || RRule.parse(event.rrule)?.isSupported != true)
         val starts: List<Pair<String, Instant>> = if (unsupportedSeries && overrides.any { !it.isCancelled }) {
             // Google-expanded instances stored by sync; their own start times apply below.
             overrides.mapNotNull { o -> o.originalStartKey?.let { it to Instant.ofEpochMilli(o.startUtc) } }
@@ -74,7 +74,15 @@ object ReminderPlanner {
             } else listOf(occurrenceKey(LocalDateTime.ofInstant(s, evZone)) to s)
         }
 
-        return starts.flatMap { (key, start) ->
+        // Overrides moved from outside the expanded window into the reminder horizon still remind.
+        val keys = starts.map { it.first }.toSet()
+        val movedIn = overrides.filter { o ->
+            !o.isCancelled && !o.isDeleted && o.originalStartKey != null && o.originalStartKey !in keys && o.originalStartKey !in exdates
+        }.mapNotNull { o ->
+            val s = if (o.isAllDay) atMinute(LocalDate.ofEpochDay(o.startDate), defaultMinuteOfDay, deviceZone) else Instant.ofEpochMilli(o.startUtc)
+            if (s < windowEnd && s > windowStart.minus(maxLead)) o.originalStartKey!! to s else null
+        }
+        return (starts + movedIn).flatMap { (key, start) ->
             if (key in exdates) return@flatMap emptyList()
             val ov = ovByKey[key]
             if (ov != null && (ov.isCancelled || ov.isDeleted)) return@flatMap emptyList()

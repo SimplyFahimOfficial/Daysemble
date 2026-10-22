@@ -27,6 +27,8 @@ data class SyncStatus(
     val calendar: ServiceStatus,
     val tasks: ServiceStatus,
     val pendingChanges: Int,
+    /** Changes Google refused repeatedly; waiting for "Retry". */
+    val parkedChanges: Int = 0,
 ) {
     val needsReauth get() = calendar.needsReauth || tasks.needsReauth
     val lastSuccessAt get() = listOfNotNull(calendar.lastSuccessAt.takeIf { calendar.enabled }, tasks.lastSuccessAt.takeIf { tasks.enabled }).minOrNull()
@@ -49,11 +51,14 @@ class SyncManager(
     private val mutex = Mutex()
     private val running = MutableStateFlow(false)
 
-    val status: Flow<SyncStatus> = combine(accounts.state, db.sync().observeStates(), running, db.sync().observeOutboxCount()) { acc, states, run, pending ->
+    val status: Flow<SyncStatus> = combine(
+        accounts.state, db.sync().observeStates(), running, db.sync().observeOutboxCount(),
+        db.sync().observeParkedCount(app.daysemble.data.google.calendar.CalendarSyncer.MAX_ATTEMPTS),
+    ) { acc, states, run, pending, parked ->
         fun s(svc: SyncService, enabled: Boolean) = states.firstOrNull { it.service == svc }.let {
             ServiceStatus(enabled, it?.lastSuccessAt, it?.lastError, it?.needsReauth == true)
         }
-        SyncStatus(acc, run, s(SyncService.CALENDAR, acc.calendarEnabled), s(SyncService.TASKS, acc.tasksEnabled), pending)
+        SyncStatus(acc, run, s(SyncService.CALENDAR, acc.calendarEnabled), s(SyncService.TASKS, acc.tasksEnabled), pending, parked)
     }
 
     suspend fun syncNow(): SyncOutcome = mutex.withLock {
@@ -63,8 +68,8 @@ class SyncManager(
         running.value = true
         try {
             var outcome = SyncOutcome.OK
-            if (acc.calendarEnabled) outcome = worst(outcome, runService(SyncService.CALENDAR) { calendar.sync(email) })
-            if (acc.tasksEnabled) outcome = worst(outcome, runService(SyncService.TASKS) { tasks.sync(email) })
+            if (acc.calendarEnabled) outcome = worst(outcome, runService(SyncService.CALENDAR) { calendar.sync(email).failedOps })
+            if (acc.tasksEnabled) outcome = worst(outcome, runService(SyncService.TASKS) { tasks.sync(email).failedOps })
             onLocalDataChanged()
             return outcome
         } finally {
@@ -72,13 +77,20 @@ class SyncManager(
         }
     }
 
-    private suspend fun runService(svc: SyncService, block: suspend () -> Unit): SyncOutcome {
+    /** [block] returns the number of local changes Google rejected this run. */
+    private suspend fun runService(svc: SyncService, block: suspend () -> Int): SyncOutcome {
         val prev = db.sync().state(svc) ?: SyncStateEntity(svc)
         db.sync().upsertState(prev.copy(lastAttemptAt = now()))
         return try {
-            block()
-            db.sync().upsertState(prev.copy(lastAttemptAt = now(), lastSuccessAt = now(), lastError = null, needsReauth = false))
-            SyncOutcome.OK
+            val rejected = block()
+            if (rejected > 0) {
+                // Pull succeeded but some local changes were refused: not "synced".
+                db.sync().upsertState(prev.copy(lastAttemptAt = now(), lastSuccessAt = now(), lastError = "rejected_changes", needsReauth = false))
+                SyncOutcome.FAILED
+            } else {
+                db.sync().upsertState(prev.copy(lastAttemptAt = now(), lastSuccessAt = now(), lastError = null, needsReauth = false))
+                SyncOutcome.OK
+            }
         } catch (e: ApiError) {
             val reauth = e is ApiError.Auth
             db.sync().upsertState(prev.copy(lastAttemptAt = now(), lastError = errorCode(e), needsReauth = reauth))
@@ -108,6 +120,9 @@ class SyncManager(
         auth.accountEmail = email
         db.sync().clearStates()
     }
+
+    /** Re-arms changes Google rejected repeatedly, so the next sync tries them again. */
+    suspend fun retryParked() = db.sync().resetFailures()
 
     suspend fun setCalendarEnabled(v: Boolean) = accounts.setCalendarEnabled(v)
     suspend fun setTasksEnabled(v: Boolean) = accounts.setTasksEnabled(v)

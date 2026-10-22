@@ -78,32 +78,82 @@ class ReminderScheduler(
     }
 
     suspend fun rescheduleFor(type: OwnerType, ownerId: String) = mutex.withLock {
-        cancelOwner(ownerId)
         val s = settings.current()
-        if (!s.remindersEnabled) return@withLock
-        schedule(plan(type, ownerId, s.defaultTaskReminderMinuteOfDay))
+        val plan = if (s.remindersEnabled) plan(type, ownerId, s.defaultTaskReminderMinuteOfDay) else emptyList()
+        // Snoozes survive edits while the item is still active; completing/deleting/hiding cancels them.
+        val keepSnoozes = s.remindersEnabled && isActive(type, ownerId)
+        reconcile(plan, dao.forOwner(ownerId), keepSnoozes)
     }
 
+    /**
+     * Rebuilds all reminders without a cancel-everything gap: alarms that are already due are left
+     * for AlarmReceiver (the process may have just been started to deliver one), pending snoozes for
+     * still-active items are kept, and only stale future alarms are cancelled.
+     */
     suspend fun rescheduleAll() = mutex.withLock {
-        dao.all().forEach { alarms.cancel(it.requestCode); dao.delete(it.requestCode) }
         val s = settings.current()
-        dao.pruneDelivered(clock.now().minusSeconds(14L * 24 * 3600).toEpochMilli())
-        if (!s.remindersEnabled) return@withLock
         val now = clock.now()
+        dao.pruneDelivered(now.minusSeconds(14L * 24 * 3600).toEpochMilli())
+        val existing = dao.all()
+        if (!s.remindersEnabled) { reconcile(emptyList(), existing, keepSnoozes = false); return@withLock }
         val zone = clock.zone()
         val reminders = db.reminders().all().groupBy { it.ownerType to it.ownerId }
+        val inactiveCals = db.calendars().all().filter { !sourceActive(it.kind, it.isVisible, it.isSyncEnabled) }.map { it.id }.toSet()
+        val inactiveLists = db.taskLists().all().filter { !sourceActive(it.kind, true, it.isSyncEnabled) }.map { it.id }.toSet()
         val planned = ArrayList<PlannedAlarm>()
-        val hidden = db.calendars().all().filter { !it.isVisible }.map { it.id }.toSet()
-        db.events().activeAfter(now.toEpochMilli()).filter { it.recurringParentId == null && it.calendarId !in hidden }.forEach { e ->
+        db.events().activeAfter(now.toEpochMilli()).filter { it.recurringParentId == null && it.calendarId !in inactiveCals }.forEach { e ->
             val r = reminders[OwnerType.EVENT to e.id] ?: return@forEach
             val ov = if (e.rrule != null) db.events().overridesFor(listOf(e.id)) else emptyList()
             planned += ReminderPlanner.forEvent(e, r, ov, now, zone, s.defaultTaskReminderMinuteOfDay)
         }
-        db.tasks().openTasks().forEach { t ->
+        db.tasks().openTasks().filter { it.listId !in inactiveLists }.forEach { t ->
             val r = reminders[OwnerType.TASK to t.id] ?: return@forEach
             planned += ReminderPlanner.forTask(t, r, now, zone, s.defaultTaskReminderMinuteOfDay)
         }
-        schedule(planned.sortedBy { it.triggerAt }.take(ReminderPlanner.MAX_ALARMS))
+        val activeOwners = existing.filter { isSnooze(it) }.map { it.ownerType to it.ownerId }.distinct()
+            .filter { (t, id) -> isActive(t, id) }.toSet()
+        reconcile(planned.sortedBy { it.triggerAt }.take(ReminderPlanner.MAX_ALARMS), existing, keepSnoozes = true, activeOwners)
+    }
+
+    private fun isSnooze(a: ScheduledAlarmEntity) = '#' in a.occurrenceKey
+
+    /** Google sources the user unchecked behave like hidden ones; local sources only depend on visibility. */
+    private fun sourceActive(kind: app.daysemble.data.db.SourceKind, visible: Boolean, syncEnabled: Boolean) =
+        visible && (kind == app.daysemble.data.db.SourceKind.LOCAL || syncEnabled)
+
+    /** Whether reminders may still fire for this item (exists, not completed/deleted, its source shown). */
+    private suspend fun isActive(type: OwnerType, ownerId: String): Boolean = when (type) {
+        OwnerType.TASK -> db.tasks().get(ownerId)?.let { t ->
+            !t.isDeleted && !t.isCompleted && db.taskLists().get(t.listId)?.let { sourceActive(it.kind, true, it.isSyncEnabled) } == true
+        } == true
+        OwnerType.EVENT -> db.events().get(ownerId)?.let { e ->
+            !e.isDeleted && !e.isCancelled && db.calendars().get(e.calendarId)?.let { sourceActive(it.kind, it.isVisible, it.isSyncEnabled) } == true
+        } == true
+    }
+
+    /**
+     * Makes [existing] match [plan]: keeps rows that are due now (delivery in progress), keeps
+     * snoozes when allowed, cancels everything else not in the plan, then schedules the plan.
+     */
+    private suspend fun reconcile(
+        plan: List<PlannedAlarm>,
+        existing: List<ScheduledAlarmEntity>,
+        keepSnoozes: Boolean,
+        snoozeOwners: Set<Pair<OwnerType, String>>? = null,
+    ) {
+        val now = clock.now().toEpochMilli()
+        val wanted = plan.map { it.reminderId to it.occurrenceKey }.toSet()
+        for (a in existing) {
+            val due = a.triggerAt <= now
+            val snoozeKept = isSnooze(a) && keepSnoozes && (snoozeOwners == null || (a.ownerType to a.ownerId) in snoozeOwners)
+            when {
+                due && a.triggerAt > now - STALE_MS -> Unit // leave for AlarmReceiver
+                snoozeKept && !due -> Unit
+                (a.reminderId to a.occurrenceKey) in wanted && !due -> Unit // re-registered below with the same code
+                else -> { alarms.cancel(a.requestCode); dao.delete(a.requestCode) }
+            }
+        }
+        schedule(plan)
     }
 
     /** Schedules a one-off snooze for an alarm that just fired. */
@@ -112,7 +162,9 @@ class ReminderScheduler(
         schedule(listOf(PlannedAlarm(reminderId, type, ownerId, "$occurrenceKey#snooze${at.epochSecond}", at)))
     }
 
-    suspend fun cancelOwnerAlarms(ownerId: String) = mutex.withLock { cancelOwner(ownerId) }
+    suspend fun cancelOwnerAlarms(ownerId: String) = mutex.withLock {
+        dao.forOwner(ownerId).forEach { alarms.cancel(it.requestCode); dao.delete(it.requestCode) }
+    }
 
     /** Scheduled alarms for an owner, for "next reminder at …" UI. */
     suspend fun scheduledFor(ownerId: String): List<ScheduledAlarmEntity> = dao.forOwner(ownerId)
@@ -125,12 +177,13 @@ class ReminderScheduler(
         return when (type) {
             OwnerType.EVENT -> {
                 val e = db.events().get(ownerId) ?: return emptyList()
-                if (db.calendars().get(e.calendarId)?.isVisible == false) return emptyList()
+                if (!isActive(OwnerType.EVENT, ownerId)) return emptyList()
                 val ov = if (e.rrule != null) db.events().overridesFor(listOf(e.id)) else emptyList()
                 ReminderPlanner.forEvent(e, reminders, ov, now, zone, defaultMinute)
             }
             OwnerType.TASK -> {
                 val t = db.tasks().get(ownerId) ?: return emptyList()
+                if (!isActive(OwnerType.TASK, ownerId)) return emptyList()
                 ReminderPlanner.forTask(t, reminders, now, zone, defaultMinute)
             }
         }
@@ -149,9 +202,6 @@ class ReminderScheduler(
         }
     }
 
-    private suspend fun cancelOwner(ownerId: String) {
-        dao.forOwner(ownerId).forEach { alarms.cancel(it.requestCode); dao.delete(it.requestCode) }
-    }
 
     private suspend fun schedule(plan: List<PlannedAlarm>) {
         if (plan.isEmpty()) return
@@ -175,6 +225,9 @@ class ReminderScheduler(
 
     companion object {
         fun deliveredKey(reminderId: String, occurrenceKey: String) = "$reminderId|$occurrenceKey"
+
+        /** Due alarms older than this were missed (e.g. force-stop) and are cleaned up. */
+        const val STALE_MS = 60 * 60_000L
 
         fun notificationsAllowed(context: Context): Boolean {
             val nm = NotificationManagerCompat.from(context)
