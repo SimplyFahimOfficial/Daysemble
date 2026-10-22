@@ -102,7 +102,7 @@ class ReminderSchedulerTest {
         val id = task()
         scheduler.rescheduleFor(OwnerType.TASK, id)
         val row = db.alarms().forOwner(id).single()
-        db.alarms().markDelivered(DeliveredReminderEntity(ReminderScheduler.deliveredKey(row.reminderId, row.occurrenceKey), clock.now().toEpochMilli()))
+        db.alarms().markDelivered(DeliveredReminderEntity(ReminderScheduler.deliveredKey(row.reminderId, row.occurrenceKey, row.triggerAt), clock.now().toEpochMilli()))
         scheduler.rescheduleAll()
         assertThat(alarms.active).isEmpty()
     }

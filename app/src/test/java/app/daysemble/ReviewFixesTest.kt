@@ -110,6 +110,29 @@ class ReviewFixesTest : SyncTestBase() {
         assertThat(db.alarms().forOwner(id)).hasSize(1)
     }
 
+    @Test fun `after a reminder fired, moving the task later the same day schedules the new reminder`() = runTest {
+        val list = tasks.ensureDefaultList("My tasks")
+        val ten = LocalDate.parse("2026-10-22").atTime(12, 0) // clock is 08:00Z = 10:00 Berlin
+        val id = tasks.create(TaskDraft(title = "Call", dueDate = ten.toLocalDate(), dueTime = ten.toLocalTime(), reminderMinutesBefore = listOf(30)), list)
+        val alarms = Alarms(); val s = scheduler(alarms)
+        s.rescheduleFor(OwnerType.TASK, id)
+        val fired = db.alarms().forOwner(id).single()
+        // The 11:30 reminder is delivered.
+        db.alarms().markDelivered(app.daysemble.data.db.DeliveredReminderEntity(
+            ReminderScheduler.deliveredKey(fired.reminderId, fired.occurrenceKey, fired.triggerAt), clock.now().toEpochMilli()))
+        db.alarms().delete(fired.requestCode)
+        // Unchanged re-plan: no duplicate.
+        s.rescheduleFor(OwnerType.TASK, id)
+        assertThat(db.alarms().forOwner(id)).isEmpty()
+        // Same day, same offset, later time: same reminder id and occurrence key, but a new trigger.
+        tasks.update(id, TaskDraft(title = "Call", dueDate = ten.toLocalDate(), dueTime = LocalTime.of(15, 0), reminderMinutesBefore = listOf(30)))
+        assertThat(db.reminders().forOwner(OwnerType.TASK, id).single().id).isEqualTo(fired.reminderId)
+        s.rescheduleFor(OwnerType.TASK, id)
+        val next = db.alarms().forOwner(id).single()
+        assertThat(next.occurrenceKey).isEqualTo(fired.occurrenceKey) // same key; previously suppressed
+        assertThat(Instant.ofEpochMilli(next.triggerAt)).isEqualTo(LocalDate.parse("2026-10-22").atTime(14, 30).atZone(zone).toInstant())
+    }
+
     @Test fun `a due alarm whose task moved later is replaced, not kept`() = runTest {
         val list = tasks.ensureDefaultList("My tasks")
         val due = LocalDateTime.ofInstant(clock.now(), zone).plusMinutes(40)

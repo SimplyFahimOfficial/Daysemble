@@ -170,7 +170,7 @@ class ReminderScheduler(
     ) {
         val now = clock.now().toEpochMilli()
         // Already-delivered occurrences are never wanted again (prevents duplicate notifications).
-        val plan = plan.filter { dao.wasDelivered(deliveredKey(it.reminderId, it.occurrenceKey)) == 0 }
+        val plan = plan.filter { dao.wasDelivered(deliveredKey(it.reminderId, it.occurrenceKey, it.triggerAt.toEpochMilli())) == 0 }
         val wanted = plan.map { it.reminderId to it.occurrenceKey }.toSet()
         for (a in existing) {
             val due = a.triggerAt <= now
@@ -238,7 +238,7 @@ class ReminderScheduler(
         if (plan.isEmpty()) return
         val exact = alarms.canScheduleExact()
         for (p in plan) {
-            val key = deliveredKey(p.reminderId, p.occurrenceKey)
+            val key = deliveredKey(p.reminderId, p.occurrenceKey, p.triggerAt.toEpochMilli())
             if (dao.wasDelivered(key) > 0) continue
             val code = requestCodeFor(p.reminderId, p.occurrenceKey)
             dao.insert(
@@ -255,7 +255,13 @@ class ReminderScheduler(
     }
 
     companion object {
-        fun deliveredKey(reminderId: String, occurrenceKey: String) = "$reminderId|$occurrenceKey"
+        /**
+         * Identity of one delivered notification. The trigger time is part of it: re-planning an
+         * unchanged reminder yields the same key (no duplicate), while moving the item (e.g. a task from
+         * 10:00 to 15:00 on the same day, or a moved occurrence that keeps its original key) yields a
+         * new key, so the new reminder is not suppressed.
+         */
+        fun deliveredKey(reminderId: String, occurrenceKey: String, triggerAt: Long) = "$reminderId|$occurrenceKey|$triggerAt"
 
         /** Due alarms older than this were missed (e.g. force-stop) and are cleaned up. */
         const val STALE_MS = 60 * 60_000L

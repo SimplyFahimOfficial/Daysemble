@@ -51,7 +51,7 @@ class AlarmReceiver : BroadcastReceiver() {
             dao.delete(code)
             // An inexact alarm can arrive after the item was edited; post only what the data still asks for.
             if (!c.reminders.isStillPlanned(alarm)) { c.reminders.rescheduleFor(alarm.ownerType, alarm.ownerId); return@async }
-            val key = ReminderScheduler.deliveredKey(alarm.reminderId, alarm.occurrenceKey)
+            val key = ReminderScheduler.deliveredKey(alarm.reminderId, alarm.occurrenceKey, alarm.triggerAt)
             if (dao.markDelivered(DeliveredReminderEntity(key, c.clock.now().toEpochMilli())) == -1L) return@async
             val s = c.settings.current()
             if (!s.remindersEnabled) return@async
