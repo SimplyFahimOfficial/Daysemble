@@ -114,6 +114,7 @@ class EventRepository(
             }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun observeOccurrence(eventId: String, key: String?, zone: ZoneId): Flow<EventOccurrence?> =
         combine(events.observe(eventId), calendars.observeAll()) { row, cals -> row to cals.associateBy { it.id } }
             .mapLatest { (row, cals) ->

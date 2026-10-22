@@ -142,6 +142,8 @@ class ReminderScheduler(
         snoozeOwners: Set<Pair<OwnerType, String>>? = null,
     ) {
         val now = clock.now().toEpochMilli()
+        // Already-delivered occurrences are never wanted again (prevents duplicate notifications).
+        val plan = plan.filter { dao.wasDelivered(deliveredKey(it.reminderId, it.occurrenceKey)) == 0 }
         val wanted = plan.map { it.reminderId to it.occurrenceKey }.toSet()
         for (a in existing) {
             val due = a.triggerAt <= now
