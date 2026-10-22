@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API <= 30. Only user preferences are backed up. Because an <include> is present, everything
+     else (database with events/tasks/sync state, account data) is excluded. -->
+<full-backup-content>
+    <include domain="file" path="datastore/settings.preferences_pb" />
+</full-backup-content>

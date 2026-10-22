@@ -1,0 +1,223 @@
+package app.daysemble.ui.components
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import app.daysemble.ui.theme.DsTheme
+import app.daysemble.ui.theme.Radii
+import app.daysemble.ui.theme.Sizes
+import app.daysemble.ui.theme.Space
+
+/** Flat card: surface + hairline border. Elevation is tonal, never a drop shadow. */
+@Composable
+fun DsCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val c = DsTheme.colors
+    Column(
+        modifier
+            .clip(Radii.card)
+            .background(c.surface)
+            .border(Sizes.hairline, c.outline, Radii.card)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier),
+        content = content,
+    )
+}
+
+@Composable
+fun SectionHeader(
+    text: String,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 40.dp)
+            .padding(horizontal = Space.gutter),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text.uppercase(),
+            style = DsTheme.type.caps,
+            color = DsTheme.colors.textSecondary,
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
+        )
+        trailing?.invoke(this)
+    }
+}
+
+/** Dashed hairline separator used between timeline rows (editorial look from the references). */
+@Composable
+fun DashedDivider(modifier: Modifier = Modifier, color: Color = DsTheme.colors.outline) {
+    Canvas(
+        modifier
+            .fillMaxWidth()
+            .height(Sizes.hairline),
+    ) {
+        drawLine(
+            color = color,
+            start = Offset(0f, size.height / 2),
+            end = Offset(size.width, size.height / 2),
+            strokeWidth = size.height,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx())),
+        )
+    }
+}
+
+@Composable
+fun HairlineDivider(modifier: Modifier = Modifier, inset: Boolean = false) {
+    Box(
+        modifier
+            .padding(start = if (inset) Space.gutter else 0.dp)
+            .fillMaxWidth()
+            .height(Sizes.hairline)
+            .background(DsTheme.colors.outline),
+    )
+}
+
+/** Standard list row: optional leading icon, title, optional subtitle, optional trailing slot. */
+@Composable
+fun DsRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    iconTint: Color = DsTheme.colors.textSecondary,
+    onClick: (() -> Unit)? = null,
+    role: Role = Role.Button,
+    enabled: Boolean = true,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
+) {
+    val c = DsTheme.colors
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = Sizes.rowMin)
+            .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = role, onClick = onClick) else Modifier)
+            .padding(horizontal = Space.gutter, vertical = Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.l),
+    ) {
+        if (icon != null) Icon(icon, null, tint = if (enabled) iconTint else c.textTertiary, modifier = Modifier.size(Sizes.icon))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = DsTheme.type.bodyStrong, color = if (enabled) c.textPrimary else c.textTertiary)
+            if (subtitle != null) {
+                Spacer(Modifier.height(Space.xxs))
+                Text(
+                    subtitle, style = DsTheme.type.bodySmall, color = c.textSecondary,
+                    maxLines = 3, overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        trailing?.invoke(this)
+    }
+}
+
+/** Single-choice row; place inside a Column with Modifier.selectableGroup(). */
+@Composable
+fun DsRadioRow(
+    title: String,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+) {
+    DsRow(
+        title = title, subtitle = subtitle,
+        modifier = modifier.selectable(selected = selected, role = Role.RadioButton, onClick = onSelect),
+    ) {
+        if (selected) Icon(androidx.compose.material.icons.Icons.Rounded.Check, null, tint = DsTheme.colors.accent)
+    }
+}
+
+/** Multi-choice row with a real checkbox state for screen readers. */
+@Composable
+fun DsCheckRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    leading: (@Composable () -> Unit)? = null,
+) {
+    val c = DsTheme.colors
+    DsRow(
+        title = title, subtitle = subtitle,
+        modifier = modifier.toggleable(value = checked, role = Role.Checkbox, onValueChange = onCheckedChange),
+    ) {
+        leading?.invoke()
+        androidx.compose.material3.Checkbox(
+            checked, null,
+            colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = c.inverse, checkmarkColor = c.onInverse, uncheckedColor = c.outlineStrong),
+        )
+    }
+}
+
+@Composable
+fun DsSwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+) {
+    DsRow(
+        title = title, subtitle = subtitle, icon = icon, enabled = enabled,
+        modifier = modifier.toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
+    ) {
+        Spacer(Modifier.width(Space.xs))
+        Switch(
+            checked = checked,
+            onCheckedChange = null, // whole row is the toggle target
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = DsTheme.colors.onInverse,
+                checkedTrackColor = DsTheme.colors.inverse,
+                uncheckedThumbColor = DsTheme.colors.outlineStrong,
+                uncheckedTrackColor = DsTheme.colors.surfaceVariant,
+                uncheckedBorderColor = DsTheme.colors.outlineStrong,
+            ),
+        )
+    }
+}

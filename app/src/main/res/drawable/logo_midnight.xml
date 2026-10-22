@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PLACEHOLDER. Not brand artwork. Replaced by the supplied PNG via scripts/import_logos.py -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="128dp" android:height="128dp"
+    android:viewportWidth="128" android:viewportHeight="128">
+    <path android:fillColor="#FF2A2A2E"
+        android:pathData="M28,4h72a24,24 0,0 1,24 24v72a24,24 0,0 1,-24 24h-72a24,24 0,0 1,-24 -24v-72a24,24 0,0 1,24 -24z" />
+    <path android:strokeColor="#FF77736C" android:strokeWidth="3" android:fillColor="#00000000"
+        android:pathData="M44,44h40v40h-40z" />
+    <path android:strokeColor="#FF77736C" android:strokeWidth="3"
+        android:pathData="M44,44L84,84M84,44L44,84" />
+</vector>
