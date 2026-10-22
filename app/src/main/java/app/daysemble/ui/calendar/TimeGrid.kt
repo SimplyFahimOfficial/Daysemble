@@ -131,8 +131,8 @@ private fun DayColumn(
     val placed = remember(events, day, p.zone) {
         DayLayout.layout(
             events.map { e ->
-                val s = wallMinutes(maxOf(e.start, dayStart), day, p.zone, isEnd = false)
-                val en = wallMinutes(minOf(e.end, dayEnd), day, p.zone, isEnd = true)
+                val s = wallMinutes(maxOf(e.start, dayStart), day, p.zone)
+                val en = wallMinutes(minOf(e.end, dayEnd), day, p.zone)
                 DayLayout.Item(e, s, maxOf(en, s))
             },
         )
@@ -177,7 +177,7 @@ private fun DayColumn(
             }
         }
         if (isToday && now >= dayStart && now < dayEnd) {
-            val minute = wallMinutes(now, day, p.zone, isEnd = false)
+            val minute = wallMinutes(now, day, p.zone)
             Box(
                 Modifier
                     .offset(y = HourHeight * (minute / 60f) - 1.dp)
@@ -196,13 +196,12 @@ private fun DayColumn(
     }
 }
 
-/** Minute of the local day for [t] on [day]; an end at/after the next midnight maps to 24:00. */
-internal fun wallMinutes(t: Instant, day: LocalDate, zone: java.time.ZoneId, isEnd: Boolean): Int {
+/** Minute of the local day for [t] on [day]; times on later days (incl. the next midnight) map to 24:00. */
+internal fun wallMinutes(t: Instant, day: LocalDate, zone: java.time.ZoneId): Int {
     val z = t.atZone(zone)
     if (z.toLocalDate().isAfter(day)) return 24 * 60
     if (z.toLocalDate().isBefore(day)) return 0
-    val m = z.hour * 60 + z.minute
-    return if (isEnd && m == 0 && t > day.atStartOfDay(zone).toInstant()) 24 * 60 else m
+    return z.hour * 60 + z.minute
 }
 
 @Composable

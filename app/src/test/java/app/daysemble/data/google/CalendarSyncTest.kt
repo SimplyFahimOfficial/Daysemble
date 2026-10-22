@@ -159,16 +159,20 @@ class CalendarSyncTest : SyncTestBase() {
         events.update(localId, events.draftFor(localId, zone)!!.copy(title = "Keep me"))
 
         router.on("PATCH", "/calendar/v3/calendars/primary@x/events/ev1") { json(404, "{}") }
+        var sentId: String? = null
         router.on("POST", "/calendar/v3/calendars/primary@x/events") { r ->
-            assertThat(r.body!!.utf8()).doesNotContain("\"id\"") // server-assigned id on re-create
-            json(body = """{"id":"newid","etag":"\"n\"","summary":"Keep me","updated":"2026-10-22T08:00:02.000Z"}""")
+            sentId = Regex("\"id\":\"([a-f0-9]+)\"").find(r.body!!.utf8())!!.groupValues[1]
+            // A fresh client id: not the one the deleted copy still holds.
+            assertThat(sentId).isNotEqualTo(CalendarMapper.remoteIdFor(localId))
+            json(body = """{"id":"$sentId","etag":"\"n\"","summary":"Keep me","updated":"2026-10-22T08:00:02.000Z"}""")
         }
         router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[],"nextSyncToken":"tok2"}""") }
         syncer().sync(acct) // PATCH 404 -> marks for re-create
         syncer().sync(acct) // re-create
         val row = db.events().get(localId)!!
         assertThat(row.title).isEqualTo("Keep me")
-        assertThat(row.remoteId).isEqualTo("newid")
+        assertThat(row.remoteId).isEqualTo(sentId)
+        assertThat(row.pendingClientId).isNull()
     }
 
     @Test fun `a server error keeps the op queued and stops, non-retryable errors are recorded`() = runTest {

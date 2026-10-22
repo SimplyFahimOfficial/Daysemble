@@ -251,14 +251,15 @@ class EventRepository(
             val toG = to.kind == SourceKind.GOOGLE
             if (fromG || toG) {
                 // Remote id of a create with a lost response is our deterministic client id.
-                val oldRemote = if (fromG) row.remoteId ?: (if (row.syncState == SyncState.PENDING_CREATE) app.daysemble.data.google.calendar.CalendarMapper.remoteIdFor(row.id) else null) else null
+                val oldRemote = if (fromG) row.remoteId ?: (if (row.syncState == SyncState.PENDING_CREATE) app.daysemble.data.google.calendar.CalendarMapper.clientIdOf(row) else null) else null
                 outbox.recordMove(OwnerType.EVENT, id, oldRemote, if (fromG) from.remoteId else null, toG)
             }
             events.upsert(
                 row.copy(
-                    calendarId = newCalendarId, remoteId = null,
-                    // New Google copy gets a server id (our client id may still be held by the deleted copy).
-                    etag = if (toG) app.daysemble.data.google.calendar.CalendarSyncer.RECREATE else null,
+                    calendarId = newCalendarId, remoteId = null, etag = null,
+                    // New stable client id per move: the previous one may still be held by the deleted copy,
+                    // and reusing it on retries means a lost create response can't produce a duplicate.
+                    pendingClientId = if (toG) app.daysemble.data.google.calendar.CalendarMapper.newClientId() else null,
                     remoteUpdatedAt = null, updatedAt = clock.now().toEpochMilli(),
                     syncState = if (toG) SyncState.PENDING_CREATE else SyncState.LOCAL,
                 ),

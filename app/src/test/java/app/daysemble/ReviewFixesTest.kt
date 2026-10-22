@@ -72,6 +72,38 @@ class ReviewFixesTest : SyncTestBase() {
         assertThat(db.alarms().forOwner(id)).hasSize(1)
     }
 
+    @Test fun `a due alarm invalidated by an edit is cancelled and not delivered`() = runTest {
+        val list = tasks.ensureDefaultList("My tasks")
+        val due = LocalDateTime.ofInstant(clock.now(), zone).plusMinutes(40)
+        val id = tasks.create(TaskDraft(title = "Call", dueDate = due.toLocalDate(), dueTime = due.toLocalTime(), reminderMinutesBefore = listOf(30)), list)
+        val alarms = Alarms(); val s = scheduler(alarms)
+        s.rescheduleFor(OwnerType.TASK, id)
+        clock.instant = clock.instant.plusSeconds(11 * 60) // reminder is due but (inexact) not yet delivered
+        val row = db.alarms().forOwner(id).single()
+        assertThat(s.isStillPlanned(row)).isTrue()
+        // The user removes the reminder: the due alarm must go too.
+        tasks.update(id, TaskDraft(title = "Call", dueDate = due.toLocalDate(), dueTime = due.toLocalTime(), reminderMinutesBefore = emptyList()))
+        assertThat(s.isStillPlanned(row)).isFalse()
+        s.rescheduleFor(OwnerType.TASK, id)
+        assertThat(db.alarms().forOwner(id)).isEmpty()
+        assertThat(alarms.set).isEmpty()
+    }
+
+    @Test fun `a due alarm whose task moved later is replaced, not kept`() = runTest {
+        val list = tasks.ensureDefaultList("My tasks")
+        val due = LocalDateTime.ofInstant(clock.now(), zone).plusMinutes(40)
+        val id = tasks.create(TaskDraft(title = "Call", dueDate = due.toLocalDate(), dueTime = due.toLocalTime(), reminderMinutesBefore = listOf(30)), list)
+        val alarms = Alarms(); val s = scheduler(alarms)
+        s.rescheduleFor(OwnerType.TASK, id)
+        clock.instant = clock.instant.plusSeconds(11 * 60)
+        val later = due.plusHours(3)
+        tasks.update(id, TaskDraft(title = "Call", dueDate = later.toLocalDate(), dueTime = later.toLocalTime(), reminderMinutesBefore = listOf(30)))
+        s.rescheduleFor(OwnerType.TASK, id)
+        val rows = db.alarms().forOwner(id)
+        assertThat(rows).hasSize(1)
+        assertThat(Instant.ofEpochMilli(rows.single().triggerAt)).isEqualTo(later.minusMinutes(30).atZone(zone).toInstant())
+    }
+
     @Test fun `snooze survives refresh while pending, and is cancelled when the task is completed`() = runTest {
         val list = tasks.ensureDefaultList("My tasks")
         val id = tasks.create(TaskDraft(title = "Call", dueDate = LocalDate.parse("2026-10-22")), list)
@@ -132,14 +164,23 @@ class ReviewFixesTest : SyncTestBase() {
         syncer().sync(acct)
         assertThat(router.count("DELETE", "/calendar/v3/calendars/cal/events/e1")).isEqualTo(1)
         assertThat(db.events().get(id)!!.title).isEqualTo("Lunch") // local copy kept
-        // And back to Google: created with a server-assigned id.
+        // And back to Google with a new stable client id. The first create's response is lost (503);
+        // the retry sends the SAME id, Google answers 409 and the existing copy is adopted, not duplicated.
         events.update(id, events.draftFor(id, zone)!!.copy(calendarId = google.id))
+        val sent = mutableListOf<String>()
         router.on("POST", "/calendar/v3/calendars/cal/events") { r ->
-            assertThat(r.body!!.utf8()).doesNotContain("\"id\"")
-            json(body = """{"id":"e9","summary":"Lunch","updated":"2026-10-22T08:00:05Z"}""")
+            sent += Regex("\"id\":\"([a-f0-9]+)\"").find(r.body!!.utf8())!!.groupValues[1]
+            if (sent.size == 1) json(503, "{}") else json(409, """{"error":{"errors":[{"reason":"duplicate"}],"code":409}}""")
+        }
+        runCatching { syncer().pushOutbox() }
+        val cid = sent.single()
+        assertThat(cid).isNotEqualTo(CalendarMapper.remoteIdFor(id))
+        router.on("GET", "/calendar/v3/calendars/cal/events/$cid") {
+            json(body = """{"id":"$cid","summary":"Lunch","start":{"dateTime":"2026-10-23T12:00:00+02:00"},"end":{"dateTime":"2026-10-23T13:00:00+02:00"},"updated":"2026-10-22T08:00:05Z"}""")
         }
         syncer().pushOutbox()
-        assertThat(db.events().get(id)!!.remoteId).isEqualTo("e9")
+        assertThat(sent).containsExactly(cid, cid).inOrder()
+        assertThat(db.events().get(id)!!.remoteId).isEqualTo(cid)
     }
 
     @Test fun `an occurrence moved beyond a bounded series still shows`() = runTest {
@@ -178,10 +219,13 @@ class ReviewFixesTest : SyncTestBase() {
         val berlin = ZoneId.of("Europe/Berlin")
         val springDay = LocalDate.parse("2026-03-29")
         val nine = springDay.atTime(9, 0).atZone(berlin).toInstant()
-        assertThat(wallMinutes(nine, springDay, berlin, isEnd = false)).isEqualTo(9 * 60)
+        assertThat(wallMinutes(nine, springDay, berlin)).isEqualTo(9 * 60)
         val autumn = LocalDate.parse("2026-10-25")
-        assertThat(wallMinutes(autumn.atTime(9, 0).atZone(berlin).toInstant(), autumn, berlin, false)).isEqualTo(9 * 60)
-        assertThat(wallMinutes(autumn.plusDays(1).atStartOfDay(berlin).toInstant(), autumn, berlin, true)).isEqualTo(24 * 60)
+        assertThat(wallMinutes(autumn.atTime(9, 0).atZone(berlin).toInstant(), autumn, berlin)).isEqualTo(9 * 60)
+        assertThat(wallMinutes(autumn.plusDays(1).atStartOfDay(berlin).toInstant(), autumn, berlin)).isEqualTo(24 * 60)
+        // An event crossing midnight that ends 30 s into the displayed day occupies minute 0, not the whole day.
+        val next = autumn.plusDays(1)
+        assertThat(wallMinutes(next.atTime(0, 0, 30).atZone(berlin).toInstant(), next, berlin)).isEqualTo(0)
     }
 
     @Test fun `recurrence with only empty periods terminates`() {

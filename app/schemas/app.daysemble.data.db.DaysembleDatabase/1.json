@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "e873b9b8b7d6a56b6046661129fc7ada",
+    "identityHash": "62ca7e930c7df47a577238e63738a0ec",
     "entities": [
       {
         "tableName": "calendar_source",
@@ -105,7 +105,7 @@
       },
       {
         "tableName": "event",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `calendarId` TEXT NOT NULL, `remoteId` TEXT, `etag` TEXT, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `location` TEXT NOT NULL, `isAllDay` INTEGER NOT NULL, `startUtc` INTEGER NOT NULL, `endUtc` INTEGER NOT NULL, `startDate` INTEGER NOT NULL, `endDateExclusive` INTEGER NOT NULL, `timeZone` TEXT NOT NULL, `rrule` TEXT, `exdates` TEXT NOT NULL, `recurringParentId` TEXT, `originalStartKey` TEXT, `isCancelled` INTEGER NOT NULL, `colorArgb` INTEGER, `rangeStartUtc` INTEGER NOT NULL, `rangeEndUtc` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `remoteUpdatedAt` INTEGER, `syncState` TEXT NOT NULL, `isDeleted` INTEGER NOT NULL, `isReadOnlyRecurrence` INTEGER NOT NULL, `instancesUntil` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`calendarId`) REFERENCES `calendar_source`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `calendarId` TEXT NOT NULL, `remoteId` TEXT, `etag` TEXT, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `location` TEXT NOT NULL, `isAllDay` INTEGER NOT NULL, `startUtc` INTEGER NOT NULL, `endUtc` INTEGER NOT NULL, `startDate` INTEGER NOT NULL, `endDateExclusive` INTEGER NOT NULL, `timeZone` TEXT NOT NULL, `rrule` TEXT, `exdates` TEXT NOT NULL, `recurringParentId` TEXT, `originalStartKey` TEXT, `isCancelled` INTEGER NOT NULL, `colorArgb` INTEGER, `rangeStartUtc` INTEGER NOT NULL, `rangeEndUtc` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `remoteUpdatedAt` INTEGER, `syncState` TEXT NOT NULL, `isDeleted` INTEGER NOT NULL, `isReadOnlyRecurrence` INTEGER NOT NULL, `pendingClientId` TEXT, `instancesUntil` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`calendarId`) REFERENCES `calendar_source`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -261,6 +261,11 @@
             "columnName": "isReadOnlyRecurrence",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "pendingClientId",
+            "columnName": "pendingClientId",
+            "affinity": "TEXT"
           },
           {
             "fieldPath": "instancesUntil",
@@ -933,7 +938,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e873b9b8b7d6a56b6046661129fc7ada')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '62ca7e930c7df47a577238e63738a0ec')"
     ]
   }
 }

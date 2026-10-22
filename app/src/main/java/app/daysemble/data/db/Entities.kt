@@ -94,6 +94,12 @@ data class EventEntity(
     val isDeleted: Boolean = false,
     /** Google recurrence rules we can't expand locally; the series is shown read-only. */
     val isReadOnlyRecurrence: Boolean = false,
+    /**
+     * Client-supplied Google id to use for the next create when the default (derived from [id]) can't be
+     * used because an earlier remote copy with that id was deleted (moves, re-creates). Stable across
+     * retries, so a create whose response was lost is adopted on retry instead of duplicated.
+     */
+    val pendingClientId: String? = null,
     /** For read-only series: Google instances are stored up to this instant; refreshed before it runs out. */
     val instancesUntil: Long? = null,
 )

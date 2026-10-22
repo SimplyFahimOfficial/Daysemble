@@ -111,7 +111,6 @@ class CalendarSyncer(
                 when (op.op) {
                     OutboxOp.CREATE -> {
                         val dto = CalendarMapper.toDto(e, reminders(e.id), forInsert = true)
-                            .let { if (e.etag == RECREATE) it.copy(id = null) else it }
                         val created = try { api.insert(cal.remoteId, dto) } catch (_: ApiError.Conflict) {
                             // Same client id already exists: an earlier attempt succeeded. Adopt it.
                             api.get(cal.remoteId, dto.id!!)
@@ -134,10 +133,8 @@ class CalendarSyncer(
                     }
                     OutboxOp.DELETE -> {
                         // A create whose response was lost has no remoteId yet, but used our deterministic client id.
-                        val rid = e.remoteId ?: if (e.etag != RECREATE) CalendarMapper.remoteIdFor(e.id) else null
-                        if (rid != null) {
-                            try { api.delete(cal.remoteId, rid) } catch (_: ApiError.NotFound) { } catch (_: ApiError.Gone) { }
-                        }
+                        val rid = e.remoteId ?: CalendarMapper.clientIdOf(e)
+                        try { api.delete(cal.remoteId, rid) } catch (_: ApiError.NotFound) { } catch (_: ApiError.Gone) { }
                         db.withTransaction { events.hardDelete(e.id); db.reminders().deleteForOwner(OwnerType.EVENT, e.id) }
                     }
                 }
@@ -162,7 +159,7 @@ class CalendarSyncer(
             val editedMeanwhile = cur.updatedAt > local.updatedAt
             events.upsert(
                 cur.copy(
-                    remoteId = remote.id ?: cur.remoteId, etag = remote.etag,
+                    remoteId = remote.id ?: cur.remoteId, etag = remote.etag, pendingClientId = null,
                     remoteUpdatedAt = remote.updated?.let { CalendarMapper.parseInstant(it).toEpochMilli() },
                     syncState = if (editedMeanwhile) SyncState.PENDING_UPDATE else SyncState.SYNCED,
                 ),
@@ -175,7 +172,8 @@ class CalendarSyncer(
         // Keep the user's edits: re-create remotely with a server-assigned id.
         db.withTransaction {
             log(e, "Deleted on Google while edited here. Kept your version and re-created it.", "LOCAL")
-            events.upsert(e.copy(remoteId = null, etag = RECREATE, syncState = SyncState.PENDING_CREATE))
+            // New stable client id: the old one may still be held by the deleted copy.
+            events.upsert(e.copy(remoteId = null, etag = null, pendingClientId = CalendarMapper.newClientId(), syncState = SyncState.PENDING_CREATE))
             db.sync().clearFor(OwnerType.EVENT, e.id)
             db.sync().enqueue(app.daysemble.data.db.OutboxEntity(entityType = OwnerType.EVENT, entityId = e.id, op = OutboxOp.CREATE, createdAt = now()))
         }
@@ -365,8 +363,6 @@ class CalendarSyncer(
     private fun now() = clock.now().toEpochMilli()
 
     companion object {
-        /** Marks a row to be re-created with a server-assigned id (its old id was deleted remotely). */
-        const val RECREATE = "daysemble:recreate"
         /** After this many failed pushes an op is parked and shown in Troubleshooting. */
         const val MAX_ATTEMPTS = 5
         private const val DEFAULT_COLOR = 0xFF2F4FA8.toInt()

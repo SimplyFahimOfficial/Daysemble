@@ -27,6 +27,12 @@ object CalendarMapper {
     /** Client-supplied event id (base32hex alphabet ⊇ lowercase hex), making creates idempotent. */
     fun remoteIdFor(localId: String): String = localId.replace("-", "").lowercase()
 
+    /** A fresh, valid client id (32 lowercase hex chars) for a re-create. */
+    fun newClientId(): String = remoteIdFor(UUID.randomUUID().toString())
+
+    /** The id a not-yet-confirmed create of [e] was (or will be) sent with. */
+    fun clientIdOf(e: EventEntity): String = e.pendingClientId ?: remoteIdFor(e.id)
+
     fun parseInstant(s: String): Instant = OffsetDateTime.parse(s).toInstant()
 
     fun zoneOf(dto: EventDto, calendar: CalendarSourceEntity): ZoneId =
@@ -111,7 +117,7 @@ object CalendarMapper {
             else listOf(rule.format()) + exdateLines(e, zone)
         } else null
         return EventDto(
-            id = if (forInsert) e.remoteId ?: remoteIdFor(e.id) else null,
+            id = if (forInsert) e.remoteId ?: clientIdOf(e) else null,
             summary = e.title,
             description = e.description,
             location = e.location,

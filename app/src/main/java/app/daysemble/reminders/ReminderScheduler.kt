@@ -121,6 +121,32 @@ class ReminderScheduler(
     private fun sourceActive(kind: app.daysemble.data.db.SourceKind, visible: Boolean, syncEnabled: Boolean) =
         visible && (kind == app.daysemble.data.db.SourceKind.LOCAL || syncEnabled)
 
+    /**
+     * True if the current data would still schedule [a] at its trigger time: the reminder still exists,
+     * the item is active, and re-planning just before the trigger yields the same occurrence and time.
+     */
+    suspend fun isStillPlanned(a: ScheduledAlarmEntity): Boolean {
+        if (isSnooze(a)) return isActive(a.ownerType, a.ownerId)
+        val s = settings.current()
+        if (!s.remindersEnabled || !isActive(a.ownerType, a.ownerId)) return false
+        val reminders = db.reminders().forOwner(a.ownerType, a.ownerId).filter { it.id == a.reminderId }
+        if (reminders.isEmpty()) return false
+        val before = Instant.ofEpochMilli(a.triggerAt - 1_000)
+        val zone = clock.zone()
+        val plan = when (a.ownerType) {
+            OwnerType.EVENT -> {
+                val e = db.events().get(a.ownerId) ?: return false
+                val ov = if (e.rrule != null) db.events().overridesFor(listOf(e.id)) else emptyList()
+                ReminderPlanner.forEvent(e, reminders, ov, before, zone, s.defaultTaskReminderMinuteOfDay)
+            }
+            OwnerType.TASK -> {
+                val t = db.tasks().get(a.ownerId) ?: return false
+                ReminderPlanner.forTask(t, reminders, before, zone, s.defaultTaskReminderMinuteOfDay)
+            }
+        }
+        return plan.any { it.occurrenceKey == a.occurrenceKey && it.triggerAt.toEpochMilli() == a.triggerAt }
+    }
+
     /** Whether reminders may still fire for this item (exists, not completed/deleted, its source shown). */
     private suspend fun isActive(type: OwnerType, ownerId: String): Boolean = when (type) {
         OwnerType.TASK -> db.tasks().get(ownerId)?.let { t ->
@@ -149,7 +175,9 @@ class ReminderScheduler(
             val due = a.triggerAt <= now
             val snoozeKept = isSnooze(a) && keepSnoozes && (snoozeOwners == null || (a.ownerType to a.ownerId) in snoozeOwners)
             when {
-                due && a.triggerAt > now - STALE_MS -> Unit // leave for AlarmReceiver
+                // Due but not yet delivered: leave it for AlarmReceiver, but only while the data still
+                // asks for exactly this notification (an edit may have removed or moved it).
+                due && a.triggerAt > now - STALE_MS && (if (isSnooze(a)) snoozeKept else isStillPlanned(a)) -> Unit
                 snoozeKept && !due -> Unit
                 (a.reminderId to a.occurrenceKey) in wanted && !due -> Unit // re-registered below with the same code
                 else -> { alarms.cancel(a.requestCode); dao.delete(a.requestCode) }
