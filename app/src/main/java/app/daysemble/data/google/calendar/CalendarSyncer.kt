@@ -357,7 +357,7 @@ class CalendarSyncer(
     private suspend fun reminders(id: String) = db.reminders().forOwner(OwnerType.EVENT, id).map { it.minutesBefore }
 
     private suspend fun replaceReminders(id: String, minutes: List<Int>) = db.reminders().replace(
-        OwnerType.EVENT, id, minutes.distinct().take(5).map { ReminderEntity(UUID.randomUUID().toString(), OwnerType.EVENT, id, it) },
+        OwnerType.EVENT, id, minutes.distinct().take(5).map { ReminderEntity.of(OwnerType.EVENT, id, it) },
     )
 
     private fun now() = clock.now().toEpochMilli()

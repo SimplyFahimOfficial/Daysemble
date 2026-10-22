@@ -274,7 +274,7 @@ class TaskRepository(
 
     private suspend fun saveReminders(id: String, draft: TaskDraft) {
         val reminders = draft.reminderMinutesBefore.distinct().take(5).map {
-            ReminderEntity(id = UUID.randomUUID().toString(), ownerType = OwnerType.TASK, ownerId = id, minutesBefore = it)
+            ReminderEntity.of(OwnerType.TASK, id, it)
         }
         db.reminders().replace(OwnerType.TASK, id, if (draft.dueDate == null) emptyList() else reminders)
     }

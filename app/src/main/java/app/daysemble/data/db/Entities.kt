@@ -175,7 +175,17 @@ data class ReminderEntity(
     val ownerType: OwnerType,
     val ownerId: String,
     val minutesBefore: Int,
-)
+) {
+    companion object {
+        /**
+         * Deterministic id: the same item + offset always gets the same id, so saving an unchanged
+         * reminder (local edit or Google pull) keeps scheduled alarms and delivery records valid.
+         */
+        fun idFor(type: OwnerType, ownerId: String, minutesBefore: Int) = "${type.name}:$ownerId:$minutesBefore"
+
+        fun of(type: OwnerType, ownerId: String, minutesBefore: Int) = ReminderEntity(idFor(type, ownerId, minutesBefore), type, ownerId, minutesBefore)
+    }
+}
 
 /** Source of truth for alarms registered with AlarmManager (used to cancel and to dedupe). */
 @Entity(

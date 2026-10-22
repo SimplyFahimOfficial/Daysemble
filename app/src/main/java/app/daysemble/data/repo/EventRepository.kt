@@ -347,7 +347,7 @@ class EventRepository(
     private suspend fun saveReminders(id: String, minutes: List<Int>) {
         db.reminders().replace(
             OwnerType.EVENT, id,
-            minutes.distinct().filter { it >= 0 }.take(5).map { ReminderEntity(UUID.randomUUID().toString(), OwnerType.EVENT, id, it) },
+            minutes.distinct().filter { it >= 0 }.take(5).map { ReminderEntity.of(OwnerType.EVENT, id, it) },
         )
     }
 

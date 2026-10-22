@@ -89,6 +89,27 @@ class ReviewFixesTest : SyncTestBase() {
         assertThat(alarms.set).isEmpty()
     }
 
+    @Test fun `a due alarm survives an unrelated edit and a google pull that rewrite reminders`() = runTest {
+        val list = tasks.ensureDefaultList("My tasks")
+        val due = LocalDateTime.ofInstant(clock.now(), zone).plusMinutes(40)
+        val id = tasks.create(TaskDraft(title = "Call", dueDate = due.toLocalDate(), dueTime = due.toLocalTime(), reminderMinutesBefore = listOf(30)), list)
+        val alarms = Alarms(); val s = scheduler(alarms)
+        s.rescheduleFor(OwnerType.TASK, id)
+        val before = db.reminders().forOwner(OwnerType.TASK, id).single().id
+        clock.instant = clock.instant.plusSeconds(11 * 60) // due, not yet delivered
+        // Unrelated edit: title changes, same reminder offset and time -> same reminder id.
+        tasks.update(id, TaskDraft(title = "Call the bank", dueDate = due.toLocalDate(), dueTime = due.toLocalTime(), reminderMinutesBefore = listOf(30)))
+        assertThat(db.reminders().forOwner(OwnerType.TASK, id).single().id).isEqualTo(before)
+        s.rescheduleFor(OwnerType.TASK, id)
+        val row = db.alarms().forOwner(id).single()
+        assertThat(s.isStillPlanned(row)).isTrue()
+        // Even if a rewrite did replace ids (legacy rows), validity is judged by time, not id.
+        db.reminders().replace(OwnerType.TASK, id, listOf(ReminderEntity("legacy-random-id", OwnerType.TASK, id, 30)))
+        assertThat(s.isStillPlanned(row)).isTrue()
+        s.rescheduleAll()
+        assertThat(db.alarms().forOwner(id)).hasSize(1)
+    }
+
     @Test fun `a due alarm whose task moved later is replaced, not kept`() = runTest {
         val list = tasks.ensureDefaultList("My tasks")
         val due = LocalDateTime.ofInstant(clock.now(), zone).plusMinutes(40)
@@ -132,6 +153,40 @@ class ReviewFixesTest : SyncTestBase() {
         assertThat(db.sync().outbox().single().permanentFailures).isEqualTo(1)
         db.sync().resetFailures()
         assertThat(db.sync().outbox().single().permanentFailures).isEqualTo(0)
+    }
+
+    @Test fun `sync status reports rejected changes instead of success`() = runTest {
+        router.on("GET", "/calendar/v3/users/me/calendarList") { calList() }
+        router.on("GET", "/calendar/v3/calendars/cal/events") { json(body = """{"items":[],"nextSyncToken":"t"}""") }
+        val accounts = app.daysemble.data.google.auth.AccountStore(
+            PreferenceDataStoreFactory.create(scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)) { File(tmp.root, "acct.preferences_pb") },
+        )
+        accounts.setConnected(acct); accounts.setTasksEnabled(false)
+        val manager = app.daysemble.data.google.sync.SyncManager(
+            db, accounts, app.daysemble.data.google.auth.GoogleAuthManager(androidx.test.core.app.ApplicationProvider.getApplicationContext()),
+            syncer(), app.daysemble.data.google.tasks.TasksSyncer(db, app.daysemble.data.google.tasks.TasksApi(http, base("/tasks/v1/")), clock),
+            clock, onLocalDataChanged = {},
+        )
+        assertThat(manager.syncNow()).isEqualTo(app.daysemble.data.google.sync.SyncOutcome.OK)
+        val cal = db.calendars().byKind(SourceKind.GOOGLE).single()
+        events.create(EventDraft(title = "A", startDate = LocalDate.parse("2026-10-23"), zone = zone), cal.id)
+        router.on("POST", "/calendar/v3/calendars/cal/events") { json(403, """{"error":{"errors":[{"reason":"forbidden"}]}}""") }
+        assertThat(manager.syncNow()).isEqualTo(app.daysemble.data.google.sync.SyncOutcome.FAILED)
+        val st = manager.status.first()
+        assertThat(st.calendar.lastError).isEqualTo("rejected_changes")
+        assertThat(st.hasError).isTrue()
+    }
+
+    @Test fun `RDATE instances stored from Google remind even though the RRULE parses`() {
+        val now = Instant.parse("2026-10-22T06:00:00Z")
+        val master = EventEntity(id = "m", calendarId = "c", title = "T", isAllDay = false,
+            startUtc = Instant.parse("2026-10-01T07:00:00Z").toEpochMilli(), endUtc = Instant.parse("2026-10-01T08:00:00Z").toEpochMilli(),
+            timeZone = zone.id, rrule = "RRULE:FREQ=MONTHLY;COUNT=3", isReadOnlyRecurrence = true, // had an RDATE
+            rangeStartUtc = 0, rangeEndUtc = Long.MAX_VALUE, createdAt = 0, updatedAt = 0, syncState = SyncState.SYNCED)
+        val extra = master.copy(id = "rd", rrule = null, isReadOnlyRecurrence = false, recurringParentId = "m", originalStartKey = "2026-10-24T09:00",
+            startUtc = Instant.parse("2026-10-24T07:00:00Z").toEpochMilli(), endUtc = Instant.parse("2026-10-24T08:00:00Z").toEpochMilli())
+        val plan = ReminderPlanner.forEvent(master, listOf(ReminderEntity("r", OwnerType.EVENT, "m", 10)), listOf(extra), now, zone, 540)
+        assertThat(plan.map { it.triggerAt }).containsExactly(Instant.parse("2026-10-24T06:50:00Z"))
     }
 
     @Test fun `deleting an event whose create response was lost deletes the deterministic remote id`() = runTest {

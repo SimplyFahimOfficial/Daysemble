@@ -122,14 +122,15 @@ class ReminderScheduler(
         visible && (kind == app.daysemble.data.db.SourceKind.LOCAL || syncEnabled)
 
     /**
-     * True if the current data would still schedule [a] at its trigger time: the reminder still exists,
-     * the item is active, and re-planning just before the trigger yields the same occurrence and time.
+     * True if the current data would still notify for [a] at its trigger time: the item is active and
+     * re-planning just before the trigger yields the same occurrence at the same instant, from any of
+     * its current reminders. Deliberately independent of reminder ids, which a rewrite may replace.
      */
     suspend fun isStillPlanned(a: ScheduledAlarmEntity): Boolean {
         if (isSnooze(a)) return isActive(a.ownerType, a.ownerId)
         val s = settings.current()
         if (!s.remindersEnabled || !isActive(a.ownerType, a.ownerId)) return false
-        val reminders = db.reminders().forOwner(a.ownerType, a.ownerId).filter { it.id == a.reminderId }
+        val reminders = db.reminders().forOwner(a.ownerType, a.ownerId)
         if (reminders.isEmpty()) return false
         val before = Instant.ofEpochMilli(a.triggerAt - 1_000)
         val zone = clock.zone()
