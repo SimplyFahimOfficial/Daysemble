@@ -2,6 +2,9 @@ package app.daysemble.ui.task
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -216,12 +219,26 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
 
             if (!state.isNew && state.task?.parentId == null) {
                 SectionHeader(stringResource(R.string.field_subtasks), Modifier.padding(top = Space.l))
-                state.subtasks.forEach { s ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TaskRow(s, now, onToggle = { vm.toggleSubtask(s.id, it) }, onClick = { vm.toggleSubtask(s.id, !s.isCompleted) }, showDue = false, modifier = Modifier.weight(1f))
-                        DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_delete_subtask, s.title), { vm.deleteSubtask(s.id) }, tint = c.textTertiary)
+                // New subtasks fade in and the list grows/shrinks smoothly instead of jumping.
+                // Subtasks already there when the task loads (same emission as the task) appear without motion.
+                val m = DsTheme.motion
+                val loadedIds = remember(state.task?.id) { state.subtasks.map { it.id }.toSet() }
+                Column(Modifier.animateContentSize(m.standard(m.medium))) {
+                    state.subtasks.forEach { s ->
+                        androidx.compose.runtime.key(s.id) {
+                            val shown = remember { androidx.compose.animation.core.MutableTransitionState(s.id in loadedIds) }
+                            androidx.compose.runtime.LaunchedEffect(Unit) { shown.targetState = true }
+                            androidx.compose.animation.AnimatedVisibility(shown, enter = fadeIn(m.enter()) + expandVertically(m.enter())) {
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        TaskRow(s, now, onToggle = { vm.toggleSubtask(s.id, it) }, onClick = { vm.toggleSubtask(s.id, !s.isCompleted) }, showDue = false, modifier = Modifier.weight(1f))
+                                        DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_delete_subtask, s.title), { vm.deleteSubtask(s.id) }, tint = c.textTertiary)
+                                    }
+                                    HairlineDivider(inset = true)
+                                }
+                            }
+                        }
                     }
-                    HairlineDivider(inset = true)
                 }
                 AddSubtaskField(onAdd = vm::addSubtask)
             }

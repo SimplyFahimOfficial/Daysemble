@@ -29,6 +29,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,7 +43,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.daysemble.R
@@ -306,11 +309,31 @@ fun TaskRow(
             dashed = isSubtask,
         )
         Column(Modifier.weight(1f).padding(vertical = Space.s)) {
+            // The strike-through is drawn across the text as the task completes (and retracts when it is
+            // reopened) instead of switching on halfway through.
+            var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+            val strikeColor = textColor
             Text(
                 task.title,
-                style = DsTheme.type.bodyStrong.copy(textDecoration = if (strike > 0.5f) TextDecoration.LineThrough else null),
+                style = DsTheme.type.bodyStrong,
                 color = textColor,
                 maxLines = 2, overflow = TextOverflow.Ellipsis,
+                onTextLayout = { layout = it },
+                modifier = Modifier.drawWithContent {
+                    drawContent()
+                    val l = layout ?: return@drawWithContent
+                    if (strike <= 0f) return@drawWithContent
+                    val rtl = layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl
+                    val stroke = 1.25.dp.toPx()
+                    for (i in 0 until l.lineCount) {
+                        val left = l.getLineLeft(i); val right = l.getLineRight(i)
+                        // Through the middle of the lowercase letters, where a regular strike-through sits.
+                        val y = l.getLineBaseline(i) - (l.getLineBottom(i) - l.getLineTop(i)) * 0.27f
+                        val len = (right - left) * strike
+                        val (x0, x1) = if (rtl) right to right - len else left to left + len
+                        drawLine(strikeColor, androidx.compose.ui.geometry.Offset(x0, y), androidx.compose.ui.geometry.Offset(x1, y), stroke)
+                    }
+                },
             )
             val due = task.dueDate
             val hasMeta = (showDue && due != null) || task.subtaskCount > 0

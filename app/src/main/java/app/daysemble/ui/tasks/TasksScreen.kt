@@ -301,6 +301,7 @@ private fun SwipeableTaskRow(
                     SwipeToDismissBoxValue.EndToStart -> c.errorContainer
                     else -> Color.Transparent
                 },
+                DsTheme.motion.standard(DsTheme.motion.short),
                 label = "swipeBg",
             )
             Box(
