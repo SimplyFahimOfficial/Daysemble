@@ -93,9 +93,47 @@ Otherwise `assembleRelease` produces an unsigned APK.
 ### Continuous integration
 
 `.github/workflows/android.yml` runs the debug build, unit tests, lint and an R8 release build on every
-push to `main` and on pull requests. It uploads the reports and a debug APK as artifacts. To sign
-CI release builds, add the repository secrets `DAYSEMBLE_KEYSTORE_BASE64` (the keystore, base64-encoded),
-`DAYSEMBLE_KEYSTORE_PASSWORD`, `DAYSEMBLE_KEY_ALIAS` and `DAYSEMBLE_KEY_PASSWORD`.
+push to `main` and on pull requests, using no secrets (the release build is unsigned). It uploads the
+reports and a debug APK as artifacts.
+
+#### Signed release builds in CI
+
+The `signed-release` job checks a signed R8 build after each push to `main`. It is optional: until
+the secrets below exist, it finishes without building. The signed APK is not uploaded.
+
+Two separate guards keep signing away from pull requests:
+- The job only runs for `push` events on `main`, so it is never scheduled for a pull request.
+- It uses the `release` environment, and the signing secrets are stored only there. Environment
+  secrets are available only to jobs that use that environment, and the environment only accepts
+  `main`.
+
+To set it up, go to **Settings → Environments** in this repository:
+1. Click **New environment** and name it `release` (exactly; the workflow refers to that name).
+   Do this before merging the workflow: if a job refers to an environment that doesn't exist,
+   GitHub creates it with no restrictions.
+2. Under **Deployment branches and tags**, choose **Selected branches and tags**, click
+   **Add deployment branch or tag rule**, choose **Branch**, and enter `main`. Don't add any other
+   rule. In particular, don't add `refs/pull/*/merge`, which would let pull-request runs in.
+3. Under **Environment secrets**, add:
+   - `DAYSEMBLE_KEYSTORE_BASE64`: the keystore file, base64-encoded on one line
+     (`base64 -w0 release.jks` on Linux, `base64 -i release.jks` on macOS)
+   - `DAYSEMBLE_KEYSTORE_PASSWORD`
+   - `DAYSEMBLE_KEY_ALIAS`
+   - `DAYSEMBLE_KEY_PASSWORD`
+4. If you previously added these as **repository** secrets (Settings → Secrets and variables →
+   Actions), delete them there. Repository secrets are available to every job, so they shouldn't
+   hold signing keys.
+5. Keep **Settings → Actions → General → "Send secrets to workflows from fork pull requests"** off.
+
+Optional: add yourself as a **Required reviewer** on the environment so every signed build waits for
+your approval.
+
+Plan note: this repository is private. For private repositories, GitHub offers environment secrets
+and deployment branch rules on GitHub Pro, Team or Enterprise, and required reviewers on Team or
+Enterprise. On GitHub Free, leave the secrets unset; CI stays fully working and the signed job does
+nothing.
+
+Never commit a keystore or passwords, and don't paste them into issues, pull requests or logs.
 
 ### Logo assets
 
