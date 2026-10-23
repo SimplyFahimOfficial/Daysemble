@@ -146,8 +146,9 @@ fun DsTextField(
         val m = DsTheme.motion
         AnimatedVisibility(
             error != null,
-            enter = fadeIn(m.enter()) + androidx.compose.animation.expandVertically(m.enter()),
-            exit = fadeOut(m.exit()) + androidx.compose.animation.shrinkVertically(m.exit()),
+            // Reduced motion: fade only, no size change pushing the content below.
+            enter = if (m.reduced) fadeIn(m.enter()) else fadeIn(m.enter()) + androidx.compose.animation.expandVertically(m.enter()),
+            exit = if (m.reduced) fadeOut(m.exit()) else fadeOut(m.exit()) + androidx.compose.animation.shrinkVertically(m.exit()),
         ) {
             Text(error.orEmpty(), style = DsTheme.type.label, color = c.error, modifier = Modifier.padding(top = Space.xs))
         }

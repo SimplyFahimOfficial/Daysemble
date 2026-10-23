@@ -262,7 +262,8 @@ fun DaysembleRoot(
             }
             // Moves with the bottom bar instead of jumping when the bar shows or hides.
             val snackbarLift by androidx.compose.animation.core.animateDpAsState(
-                if (tab != null) Sizes.bottomBar + Space.l else Space.l, motion.standard(motion.long), label = "snackbarLift",
+                if (tab != null) Sizes.bottomBar + Space.l else Space.l,
+                if (motion.reduced) androidx.compose.animation.core.snap() else motion.standard(motion.long), label = "snackbarLift",
             )
             SnackbarHost(
                 snackbar,
@@ -309,6 +310,7 @@ private fun DaysembleNavHost(
     onFocusedDate: (LocalDate) -> Unit,
 ) {
     val m = DsTheme.motion
+    val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     val openEvent: (String, String) -> Unit = { id, key -> nav.navigate(EventDetailRoute(id, key)) }
     val openTask: (String) -> Unit = { id -> nav.navigate(TaskEditorRoute(taskId = id)) }
     val back: () -> Unit = { nav.popBackStack() }
@@ -317,10 +319,10 @@ private fun DaysembleNavHost(
         navController = nav,
         startDestination = TodayRoute,
         // See NavMotion: only the screen on top fades, so there are no blank or double-exposed frames.
-        enterTransition = { with(NavMotion) { enter(m) } },
-        exitTransition = { with(NavMotion) { exit(m) } },
-        popEnterTransition = { with(NavMotion) { popEnter(m) } },
-        popExitTransition = { with(NavMotion) { popExit(m) } },
+        enterTransition = { with(NavMotion) { enter(m, rtl) } },
+        exitTransition = { with(NavMotion) { exit(m, rtl) } },
+        popEnterTransition = { with(NavMotion) { popEnter(m, rtl) } },
+        popExitTransition = { with(NavMotion) { popExit(m, rtl) } },
     ) {
         composable<TodayRoute> {
             TodayScreenRoute(
@@ -382,7 +384,10 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit) 
         // One selection pill that glides between tabs (instead of each tab fading its own background),
         // so the bar shows where you came from and where you went.
         val m = DsTheme.motion
-        val index by androidx.compose.animation.core.animateFloatAsState(current.ordinal.toFloat(), m.indicator(), label = "tabIndicator")
+        // With reduced motion the pill jumps to the new tab instead of travelling (the colours still fade).
+        val index by androidx.compose.animation.core.animateFloatAsState(
+            current.ordinal.toFloat(), if (m.reduced) androidx.compose.animation.core.snap() else m.indicator(), label = "tabIndicator",
+        )
         val pill = c.inverse
         Row(
             Modifier

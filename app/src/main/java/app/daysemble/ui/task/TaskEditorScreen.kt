@@ -223,12 +223,12 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                 // Subtasks already there when the task loads (same emission as the task) appear without motion.
                 val m = DsTheme.motion
                 val loadedIds = remember(state.task?.id) { state.subtasks.map { it.id }.toSet() }
-                Column(Modifier.animateContentSize(m.standard(m.medium))) {
+                Column(if (m.reduced) Modifier else Modifier.animateContentSize(m.standard(m.medium))) {
                     state.subtasks.forEach { s ->
                         androidx.compose.runtime.key(s.id) {
                             val shown = remember { androidx.compose.animation.core.MutableTransitionState(s.id in loadedIds) }
                             androidx.compose.runtime.LaunchedEffect(Unit) { shown.targetState = true }
-                            androidx.compose.animation.AnimatedVisibility(shown, enter = fadeIn(m.enter()) + expandVertically(m.enter())) {
+                            androidx.compose.animation.AnimatedVisibility(shown, enter = if (m.reduced) fadeIn(m.enter()) else fadeIn(m.enter()) + expandVertically(m.enter())) {
                                 Column {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         TaskRow(s, now, onToggle = { vm.toggleSubtask(s.id, it) }, onClick = { vm.toggleSubtask(s.id, !s.isCompleted) }, showDue = false, modifier = Modifier.weight(1f))

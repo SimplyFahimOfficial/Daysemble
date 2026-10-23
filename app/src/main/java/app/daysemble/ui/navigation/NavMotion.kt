@@ -26,6 +26,7 @@ import app.daysemble.ui.theme.DsMotion
  *   the leaving screen on top: it fades out over the destination, which is already opaque.
  * - Today, Calendar and Tasks are siblings: switching moves a short distance in tab order.
  * - Editors rise from below; detail and settings pages come in from the end side.
+ * - Horizontal offsets are mirrored in right-to-left layouts, so movement follows the visible order.
  * - Reduced motion keeps the same layering but with short cross-fades and no movement.
  */
 internal object NavMotion {
@@ -60,52 +61,56 @@ internal object NavMotion {
     /** Keeps the screen underneath fully visible until the screen on top has finished. */
     private fun hold(durationMillis: Int): ExitTransition = fadeOut(tween(durationMillis = 1, delayMillis = durationMillis))
 
-    fun AnimatedContentTransitionScope<NavBackStackEntry>.enter(m: DsMotion): EnterTransition {
+    fun AnimatedContentTransitionScope<NavBackStackEntry>.enter(m: DsMotion, rtl: Boolean): EnterTransition {
         if (m.reduced) return fadeIn(m.enter(m.short))
+        val e = if (rtl) -1 else 1
         if (isTabSwitch()) {
             val d = tabDuration(m); val dir = tabDirection()
-            return fadeIn(m.enter(d)) + slideInHorizontally(m.enter(d)) { w -> dir * w / 24 }
+            return fadeIn(m.enter(d)) + slideInHorizontally(m.enter(d)) { w -> e * dir * w / 24 }
         }
         return when (targetState.destination.kind()) {
             Kind.EDITOR -> fadeIn(m.enter(m.long)) + slideInVertically(m.enter(m.long)) { h -> h / 12 }
-            else -> fadeIn(m.enter(m.long)) + slideInHorizontally(m.enter(m.long)) { w -> w / 10 }
+            else -> fadeIn(m.enter(m.long)) + slideInHorizontally(m.enter(m.long)) { w -> e * w / 10 }
         }
     }
 
-    fun AnimatedContentTransitionScope<NavBackStackEntry>.exit(m: DsMotion): ExitTransition {
+    fun AnimatedContentTransitionScope<NavBackStackEntry>.exit(m: DsMotion, rtl: Boolean): ExitTransition {
         if (m.reduced) return hold(m.short)
+        val e = if (rtl) -1 else 1
         if (isTabSwitch()) {
             val d = tabDuration(m); val dir = tabDirection()
-            return slideOutHorizontally(m.enter(d)) { w -> -dir * w / 48 } + hold(d)
+            return slideOutHorizontally(m.enter(d)) { w -> -e * dir * w / 48 } + hold(d)
         }
         return when (targetState.destination.kind()) {
             Kind.EDITOR -> hold(m.long)
-            else -> slideOutHorizontally(m.enter(m.long)) { w -> -w / 16 } + hold(m.long)
+            else -> slideOutHorizontally(m.enter(m.long)) { w -> -e * w / 16 } + hold(m.long)
         }
     }
 
-    fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(m: DsMotion): EnterTransition {
+    fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(m: DsMotion, rtl: Boolean): EnterTransition {
         if (m.reduced) return EnterTransition.None
+        val e = if (rtl) -1 else 1
         if (isTabSwitch()) {
             val d = tabDuration(m); val dir = tabDirection()
-            return slideInHorizontally(m.standard(d)) { w -> dir * w / 48 }
+            return slideInHorizontally(m.standard(d)) { w -> e * dir * w / 48 }
         }
         return when (initialState.destination.kind()) {
             Kind.EDITOR -> EnterTransition.None
-            else -> slideInHorizontally(m.standard(m.long)) { w -> -w / 16 }
+            else -> slideInHorizontally(m.standard(m.long)) { w -> -e * w / 16 }
         }
     }
 
-    fun AnimatedContentTransitionScope<NavBackStackEntry>.popExit(m: DsMotion): ExitTransition {
+    fun AnimatedContentTransitionScope<NavBackStackEntry>.popExit(m: DsMotion, rtl: Boolean): ExitTransition {
         if (m.reduced) return fadeOut(m.exit(m.short))
+        val e = if (rtl) -1 else 1
         if (isTabSwitch()) {
             val d = tabDuration(m); val dir = tabDirection()
-            return fadeOut(m.standard(d)) + slideOutHorizontally(m.standard(d)) { w -> -dir * w / 24 }
+            return fadeOut(m.standard(d)) + slideOutHorizontally(m.standard(d)) { w -> -e * dir * w / 24 }
         }
         // Same duration and easing as popEnter underneath, so the pair moves as one.
         return when (initialState.destination.kind()) {
             Kind.EDITOR -> fadeOut(m.standard(m.long)) + slideOutVertically(m.standard(m.long)) { h -> h / 12 }
-            else -> fadeOut(m.standard(m.long)) + slideOutHorizontally(m.standard(m.long)) { w -> w / 10 }
+            else -> fadeOut(m.standard(m.long)) + slideOutHorizontally(m.standard(m.long)) { w -> e * w / 10 }
         }
     }
 }
