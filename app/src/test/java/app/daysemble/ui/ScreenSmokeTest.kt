@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -53,7 +56,7 @@ import java.time.ZoneId
  * The clock is advanced manually: the minute ticker never lets Compose go idle.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], qualifiers = "w360dp-h1800dp-mdpi")
+@Config(sdk = [35], qualifiers = "w360dp-h780dp-xhdpi")
 class ScreenSmokeTest {
     @get:Rule val compose = createComposeRule()
     private val c get() = ApplicationProvider.getApplicationContext<DaysembleApp>().container
@@ -83,12 +86,35 @@ class ScreenSmokeTest {
         settle()
     }
 
+    /** Vertical scrollers only; horizontal ones (date strip, 20k-page month pager) are never searched. */
+    private val verticalList = SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and
+        SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollBy)
+
+    /**
+     * Waits for data, then scrolls the phone-height vertical list step by step until the target is
+     * on screen, and asserts it is displayed (clipped/offscreen text fails). Scrolling uses the
+     * ScrollBy semantics action directly: performScrollToNode waits for Compose idle, which never
+     * comes with the paused test clock and the live minute ticker.
+     */
     private fun waitText(text: String, substring: Boolean = false) {
-        repeat(60) {
-            if (compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()) return
+        val target = hasText(text, substring = substring)
+        fun visible() = runCatching { compose.onAllNodes(target)[0].assertIsDisplayed() }.isSuccess
+        repeat(120) { attempt ->
+            if (visible()) return
+            // First give data time to load, then walk the list downwards; restart from the top once at the end.
+            if (attempt >= 10) {
+                compose.onAllNodes(verticalList).fetchSemanticsNodes().forEach { node ->
+                    val range = node.config[SemanticsProperties.VerticalScrollAxisRange]
+                    val scrollBy = node.config[SemanticsActions.ScrollBy].action
+                    val atEnd = range.value() >= range.maxValue()
+                    compose.runOnUiThread {
+                        if (atEnd) scrollBy?.invoke(0f, -100_000f) else scrollBy?.invoke(0f, 300f)
+                    }
+                }
+            }
             settle()
         }
-        compose.onNodeWithText(text, substring = substring).assertIsDisplayed()
+        compose.onAllNodes(target)[0].assertIsDisplayed()
     }
 
     @Test fun today_showsTimelineOverdueAndCountdown() {
