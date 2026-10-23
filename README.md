@@ -93,9 +93,11 @@ Otherwise `assembleRelease` produces an unsigned APK.
 ### Continuous integration
 
 `.github/workflows/android.yml` runs the debug build, unit tests, lint and an R8 release build on every
-push to `main` and on pull requests. It uploads the reports and a debug APK as artifacts. To sign
-CI release builds, add the repository secrets `DAYSEMBLE_KEYSTORE_BASE64` (the keystore, base64-encoded),
-`DAYSEMBLE_KEYSTORE_PASSWORD`, `DAYSEMBLE_KEY_ALIAS` and `DAYSEMBLE_KEY_PASSWORD`.
+push to `main` and on pull requests, using no secrets (the release build is unsigned). It uploads the
+reports and a debug APK as artifacts. To also check a signed release build on pushes to `main`, add the
+repository secrets `DAYSEMBLE_KEYSTORE_BASE64` (the keystore, base64-encoded),
+`DAYSEMBLE_KEYSTORE_PASSWORD`, `DAYSEMBLE_KEY_ALIAS` and `DAYSEMBLE_KEY_PASSWORD`. Pull requests never
+run that job, so their code can't read the signing secrets.
 
 ### Logo assets
 
