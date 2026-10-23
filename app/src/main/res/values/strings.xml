@@ -1,0 +1,485 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Daysemble</string>
+
+    <!-- Branding -->
+    <string name="logo_classic">Classic</string>
+    <string name="logo_classic_desc">Cream tile with coral and violet glass. The original.</string>
+    <string name="logo_midnight">Midnight</string>
+    <string name="logo_midnight_desc">Black tile, filled shapes.</string>
+    <string name="logo_outline">Outline</string>
+    <string name="logo_outline_desc">Black tile, outlined shapes.</string>
+    <string name="logo_content_description">Daysemble logo, %1$s</string>
+    <string name="logo_missing">Asset missing</string>
+    <string name="logo_default_badge">Default</string>
+    <string name="logo_launcher_note">The home-screen icon updates too. Some launchers take a few seconds to refresh it.</string>
+    <string name="logo_placeholder_note">Logo artwork hasn’t been bundled yet. Neutral placeholders are shown until the supplied files are added.</string>
+    <!-- Common -->
+    <string name="cd_back">Back</string>
+    <string name="state_selected">Selected</string>
+    <string name="action_retry">Try again</string>
+    <string name="loading">Loading</string>
+    <string name="debug_sample_data" translatable="false">Load sample data (debug)</string>
+    <string name="debug_sample_data_sub" translatable="false">Adds example events and tasks on this device for demos and screenshots</string>
+    <string name="debug_sample_data_done" translatable="false">Sample data added. Remove it with Data &amp; privacy › Delete local data</string>
+    <string name="page_x_of_y">Page %1$d of %2$d</string>
+    <string name="today_suffix">today</string>
+
+    <!-- Settings: appearance -->
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_logo">App logo</string>
+    <string name="settings_motion">Motion</string>
+    <string name="motion_system">System</string>
+    <string name="motion_reduced">Reduced</string>
+    <string name="motion_full">Full</string>
+    <string name="motion_note">Reduced motion replaces slides and scaling with short fades. “System” follows Android’s Remove animations setting.</string>
+    <!-- Navigation -->
+    <string name="tab_today">Today</string>
+    <string name="tab_calendar">Calendar</string>
+    <string name="tab_tasks">Tasks</string>
+    <string name="cd_add">Add task or event</string>
+    <string name="cd_search">Search</string>
+    <string name="cd_settings">Settings</string>
+    <string name="cd_previous">Previous</string>
+    <string name="cd_next">Next</string>
+    <string name="cd_sort">Sort tasks</string>
+    <string name="cd_expand">Expand</string>
+    <string name="cd_collapse">Collapse</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="cd_increase">Increase</string>
+    <string name="cd_decrease">Decrease</string>
+
+    <!-- Actions -->
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_done">Done</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_undo">Undo</string>
+    <string name="action_open">Open</string>
+    <string name="action_discard">Discard</string>
+    <string name="action_complete">Mark complete</string>
+    <string name="action_mark_incomplete">Mark incomplete</string>
+    <string name="more_options">More options</string>
+    <string name="discard_changes_title">Discard your changes?</string>
+    <string name="error_title_required">Add a title</string>
+    <string name="error_save_failed">Couldn’t save. The calendar may be read-only or no longer available.</string>
+
+    <!-- Days and time -->
+    <string name="day_today">Today</string>
+    <string name="day_tomorrow">Tomorrow</string>
+    <string name="day_yesterday">Yesterday</string>
+    <string name="all_day">All day</string>
+    <string name="hours_minutes_short">%1$d h %2$d min</string>
+    <string name="date_range">%1$s – %2$s</string>
+    <string name="in_zone">%1$s in %2$s</string>
+    <string name="rel_now">Now</string>
+    <string name="rel_ended">Ended</string>
+    <string name="rel_all_day_today">Today</string>
+    <string name="rel_in">in %1$s</string>
+    <string name="rel_ends_in">ends in %1$s</string>
+    <string name="rel_tomorrow">tomorrow</string>
+    <string name="back_to_today">Back to today</string>
+    <string name="default_calendar_name">Personal</string>
+    <string name="default_task_list_name">My tasks</string>
+
+    <!-- Today -->
+    <string name="summary_today_prefix">You have</string>
+    <string name="summary_day_prefix">There are</string>
+    <string name="summary_and">and</string>
+    <string name="summary_free_after_prefix">You’re free after</string>
+    <string name="summary_nothing_today">Nothing planned today. Enjoy the space.</string>
+    <string name="summary_nothing_day">Nothing planned for this day.</string>
+    <string name="today_empty_title">A clear day</string>
+    <string name="today_empty_body">Tap + to add a task or an event.</string>
+    <string name="section_overdue">Overdue</string>
+    <string name="section_today">Today</string>
+    <string name="section_upcoming">Upcoming</string>
+    <string name="section_no_date">No date</string>
+    <string name="section_completed">Completed</string>
+
+    <!-- Tasks -->
+    <string name="task">Task</string>
+    <string name="new_task">New task</string>
+    <string name="task_title_hint">What needs doing?</string>
+    <string name="search_tasks_hint">Search tasks</string>
+    <string name="filter_all">All</string>
+    <string name="filter_today">Today</string>
+    <string name="filter_upcoming">Upcoming</string>
+    <string name="filter_overdue">Overdue</string>
+    <string name="filter_completed">Completed</string>
+    <string name="filter_completed_past">Done &amp; past</string>
+    <string name="all_lists">All lists</string>
+    <string name="sort_due">Due date</string>
+    <string name="sort_priority">Priority</string>
+    <string name="sort_created">Newest first</string>
+    <string name="sort_manual">List order</string>
+    <string name="tasks_empty_title">No open tasks</string>
+    <string name="tasks_empty_filter_title">Nothing here</string>
+    <string name="tasks_empty_body">Tasks you add appear here.</string>
+    <string name="task_deleted">Task deleted</string>
+    <string name="overdue_since">Overdue · %1$s</string>
+    <string name="priority_none">None</string>
+    <string name="priority_low">Low</string>
+    <string name="priority_medium">Medium</string>
+    <string name="priority_high">High</string>
+    <string name="field_due">Due</string>
+    <string name="field_priority">Priority</string>
+    <string name="field_list">List</string>
+    <string name="field_notes">Notes</string>
+    <string name="field_subtasks">Subtasks</string>
+    <string name="no_date">No date</string>
+    <string name="add_time">Add time</string>
+    <string name="pick_date">Pick date</string>
+    <string name="notes_hint">Add notes</string>
+    <string name="add_subtask_hint">Add a subtask</string>
+    <string name="cd_add_subtask">Add subtask</string>
+    <string name="cd_delete_subtask">Delete subtask %1$s</string>
+    <string name="cd_mark_complete">Mark %1$s complete</string>
+    <string name="cd_mark_incomplete">Mark %1$s incomplete</string>
+    <string name="cd_pick_due_date">Due date</string>
+    <string name="cd_pick_due_time">Due time</string>
+    <string name="cd_clear_due">Remove due date</string>
+    <string name="delete_task_title">Delete this task?</string>
+    <string name="delete_task_body">Its subtasks are deleted too.</string>
+    <string name="delete_task_google_body">It’s also deleted from Google Tasks, with its subtasks.</string>
+    <string name="google_task_badge">Synced with Google Tasks</string>
+    <string name="google_task_time_local">Google Tasks only stores dates. The time is kept on this device.</string>
+    <string name="google_task_priority_local">Google Tasks has no priority. It’s kept on this device.</string>
+
+    <!-- Quick add -->
+    <string name="kind_task">Task</string>
+    <string name="kind_event">Event</string>
+    <string name="quick_add_task_hint">New task</string>
+    <string name="quick_add_event_hint">New event</string>
+    <string name="add_task">Add task</string>
+    <string name="add_event">Add event</string>
+    <string name="quick_add_event_note">Uses your default duration. Open more options for location, repeat and notes.</string>
+
+    <!-- Events -->
+    <string name="new_event">New event</string>
+    <string name="edit_event">Edit event</string>
+    <string name="event_title_hint">Event title</string>
+    <string name="untitled_event">(No title)</string>
+    <string name="field_starts">Starts</string>
+    <string name="field_ends">Ends</string>
+    <string name="field_repeat">Repeat</string>
+    <string name="field_location">Location</string>
+    <string name="field_calendar">Calendar</string>
+    <string name="location_hint">Add a place or address</string>
+    <string name="error_end_before_start">The end is before the start.</string>
+    <string name="field_time_zone">Time zone</string>
+    <string name="reorder_hint">Long-press the handle and drag to reorder. The order is kept on this device.</string>
+    <string name="cd_drag_handle">Reorder</string>
+    <string name="action_move_up">Move up</string>
+    <string name="action_move_down">Move down</string>
+    <string name="settings_lists_calendars">Lists &amp; calendars</string>
+    <string name="settings_lists_calendars_sub">Create, rename, colour, show or hide</string>
+    <string name="calendars_title">Calendars</string>
+    <string name="task_lists_title">Task lists</string>
+    <string name="calendar_google_sub">Google Calendar</string>
+    <string name="list_google_sub">Google Tasks</string>
+    <string name="calendar_hidden_note">Hidden calendars don’t appear in Today or Calendar and don’t send reminders. Nothing is deleted. Colours are a display choice on this device and aren’t changed in Google.</string>
+    <string name="list_google_note">Rename or delete Google task lists in Google Tasks; changes appear here after the next sync.</string>
+    <string name="new_calendar">New calendar</string>
+    <string name="edit_calendar">Edit</string>
+    <string name="new_list">New list</string>
+    <string name="edit_list">Edit list</string>
+    <string name="name_hint">Name</string>
+    <string name="delete_list_title">Delete this list?</string>
+    <string name="delete_list_body">All tasks in it are deleted from this device. This can’t be undone.</string>
+    <string name="delete_calendar_title">Delete this calendar?</string>
+    <string name="delete_calendar_body">All its events are deleted from this device. This can’t be undone.</string>
+    <string name="list_last_refused">You need at least one list on this device, so this one can’t be deleted.</string>
+    <string name="calendar_last_refused">You need at least one calendar on this device, so this one can’t be deleted.</string>
+    <string name="zone_picker_title">Time zone</string>
+    <string name="zone_search_hint">City or region</string>
+    <string name="zone_none">No matching time zone</string>
+    <string name="event_zone_local">Starts %1$s your time</string>
+    <string name="event_zone_note">Times are in %1$s, the event’s time zone.</string>
+    <string name="repeat_none">Never</string>
+    <string name="repeat_daily">Daily</string>
+    <string name="repeat_weekly">Weekly</string>
+    <string name="repeat_monthly">Monthly</string>
+    <string name="repeat_yearly">Yearly</string>
+    <string name="repeat_every">Every</string>
+    <string name="repeat_every_x">Every %1$s</string>
+    <string name="repeat_forever">Forever</string>
+    <string name="repeat_count">Number of times</string>
+    <string name="repeat_until">Until a date</string>
+    <string name="repeat_until_date">until %1$s</string>
+    <string name="repeat_custom">Custom repeat</string>
+    <string name="repeat_unsupported">This event uses a repeat rule Daysemble can’t edit. It’s kept exactly as it is.</string>
+    <string name="open_in_maps">Open in Maps</string>
+    <string name="no_maps_app">No maps app is installed.</string>
+    <string name="google_calendar">Google Calendar</string>
+    <string name="on_this_device">On this device</string>
+    <string name="event_read_only">You can’t edit this event.</string>
+    <string name="event_missing">This event no longer exists.</string>
+    <string name="delete_event_title">Delete this event?</string>
+    <string name="delete_event_body">This can’t be undone.</string>
+    <string name="delete_event_google_body">It’s also deleted from Google Calendar.</string>
+    <string name="delete_recurring_title">Delete repeating event</string>
+    <string name="delete_recurring_body">Delete only this occurrence, or every event in the series?</string>
+    <string name="delete_this_event">This event</string>
+    <string name="delete_all_events">All events</string>
+
+    <!-- Calendar -->
+    <string name="mode_month">Month</string>
+    <string name="mode_week">Week</string>
+    <string name="mode_day">Day</string>
+    <string name="mode_agenda">Agenda</string>
+    <string name="day_empty">Nothing on this day.</string>
+    <string name="agenda_empty_title">Nothing coming up</string>
+    <string name="agenda_empty_body">The next 60 days are clear.</string>
+
+    <!-- Search -->
+    <string name="search">Search</string>
+    <string name="search_hint">Events, tasks, places</string>
+    <string name="search_prompt">Search everything</string>
+    <string name="search_prompt_body">Titles, notes and locations of events and tasks.</string>
+    <string name="search_no_results">No results for “%1$s”</string>
+    <string name="search_events">Events</string>
+    <string name="search_tasks">Tasks</string>
+
+    <!-- Settings -->
+    <string name="settings">Settings</string>
+    <string name="settings_section_general">General</string>
+    <string name="settings_section_privacy">Privacy &amp; about</string>
+    <string name="settings_appearance_sub">Theme, logo, motion</string>
+    <string name="settings_date_time">Date &amp; time</string>
+    <string name="settings_date_time_sub">Clock, first day of week, event length</string>
+    <string name="settings_tasks">Tasks</string>
+    <string name="settings_tasks_sub">Sorting, default list, Today view</string>
+    <string name="settings_data">Data &amp; privacy</string>
+    <string name="settings_data_sub">What’s stored, delete local data</string>
+    <string name="settings_about">About</string>
+    <string name="version_label">Version %1$s</string>
+    <string name="setting_clock">Clock</string>
+    <string name="clock_12">12-hour</string>
+    <string name="clock_24">24-hour</string>
+    <string name="setting_first_day">First day of the week</string>
+    <string name="first_day_locale">Region default</string>
+    <string name="setting_event_duration">Default event length</string>
+    <string name="setting_zone_note">Times are shown in your device’s time zone (%1$s).</string>
+    <string name="setting_show_completed_today">Show completed on Today</string>
+    <string name="setting_show_completed_today_sub">A collapsed list of tasks finished that day</string>
+    <string name="setting_default_sort">Default sort</string>
+    <string name="setting_default_list">New tasks go to</string>
+    <string name="data_what_stored">What’s stored</string>
+    <string name="data_what_stored_body">Your events, tasks and settings are stored only on this device. Daysemble has no analytics and sends nothing anywhere unless you connect a Google account. Backups include your settings only.</string>
+    <string name="data_delete_title">Delete local data</string>
+    <string name="data_delete_body">Removes every event and task stored on this device. Your settings are kept.</string>
+    <string name="data_delete_action">Delete all local data</string>
+    <string name="data_delete_confirm_title">Delete all events and tasks?</string>
+    <string name="data_delete_confirm_body">This can’t be undone.</string>
+    <string name="data_deleted">Local data deleted.</string>
+    <string name="about_body">A calm calendar and task planner. Built with Kotlin and Jetpack Compose.</string>
+    <string name="about_troubleshooting">Troubleshooting</string>
+    <string name="about_zone">Time zone</string>
+    <string name="about_build">Build</string>
+
+    <plurals name="minutes_short">
+        <item quantity="one">%d min</item>
+        <item quantity="other">%d min</item>
+    </plurals>
+    <plurals name="hours_short">
+        <item quantity="one">%d h</item>
+        <item quantity="other">%d h</item>
+    </plurals>
+    <plurals name="rel_in_days">
+        <item quantity="one">in %d day</item>
+        <item quantity="other">in %d days</item>
+    </plurals>
+    <plurals name="n_events">
+        <item quantity="one">%d event</item>
+        <item quantity="other">%d events</item>
+    </plurals>
+    <plurals name="n_tasks">
+        <item quantity="one">%d task</item>
+        <item quantity="other">%d tasks</item>
+    </plurals>
+    <plurals name="n_items">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <plurals name="completed_count">
+        <item quantity="one">%d completed</item>
+        <item quantity="other">%d completed</item>
+    </plurals>
+    <plurals name="subtasks_progress">
+        <item quantity="one">%1$d/%2$d</item>
+        <item quantity="other">%1$d/%2$d</item>
+    </plurals>
+    <plurals name="repeat_times">
+        <item quantity="one">%d time</item>
+        <item quantity="other">%d times</item>
+    </plurals>
+    <plurals name="unit_days">
+        <item quantity="one">day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <plurals name="unit_weeks">
+        <item quantity="one">week</item>
+        <item quantity="other">%d weeks</item>
+    </plurals>
+    <plurals name="unit_months">
+        <item quantity="one">month</item>
+        <item quantity="other">%d months</item>
+    </plurals>
+    <plurals name="unit_years">
+        <item quantity="one">year</item>
+        <item quantity="other">%d years</item>
+    </plurals>
+    <plurals name="data_task_count">
+        <item quantity="one">%d task on this device</item>
+        <item quantity="other">%d tasks on this device</item>
+    </plurals>
+    <!-- Reminders -->
+    <string name="field_reminders">Reminders</string>
+    <string name="channel_reminders">Reminders</string>
+    <string name="channel_reminders_desc">Event and task reminders you set in Daysemble</string>
+    <string name="notif_public_task">Task reminder</string>
+    <string name="notif_public_event">Upcoming event</string>
+    <string name="notif_task_due">Task due</string>
+    <string name="notif_action_complete">Complete</string>
+    <string name="notif_action_snooze">Snooze 10 min</string>
+    <string name="reminder_at_start">At start</string>
+    <string name="reminder_on_time_task">On the day</string>
+    <string name="reminder_none">None</string>
+    <string name="reminder_needs_due">Add a due date to set reminders.</string>
+    <string name="reminder_task_default_time">Without a time, reminders use your default reminder time (Settings › Notifications).</string>
+    <string name="reminder_status_blocked">Notifications are off for Daysemble, so these reminders won’t appear.</string>
+    <string name="reminder_status_inexact">Precise alarms aren’t allowed, so reminders may arrive a few minutes late.</string>
+    <string name="reminder_status_disabled">Reminders are turned off in Settings › Notifications.</string>
+    <string name="action_fix">Fix</string>
+    <string name="action_allow">Allow</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_notifications_sub">Reminders, permissions, lock screen</string>
+    <string name="setting_reminders_enabled">Reminders</string>
+    <string name="setting_reminders_enabled_sub">Notify me before events and when tasks are due</string>
+    <string name="setting_permissions">Permissions</string>
+    <string name="perm_notifications">Notifications</string>
+    <string name="perm_allowed">Allowed</string>
+    <string name="perm_blocked">Blocked. Reminders can’t be shown</string>
+    <string name="perm_exact">Precise timing</string>
+    <string name="perm_exact_on">Reminders fire on the minute</string>
+    <string name="perm_exact_off">Not allowed. Reminders may be a few minutes late</string>
+    <string name="perm_battery">Battery optimisation</string>
+    <string name="perm_battery_optimized">Optimised. Usually fine; some devices delay alarms aggressively</string>
+    <string name="perm_battery_unrestricted">Unrestricted</string>
+    <string name="setting_default_event_reminder">Default event reminder</string>
+    <string name="setting_default_event_reminder_note">Applied to new events. Existing events keep their reminders.</string>
+    <string name="setting_default_task_time">Reminder time for all-day items</string>
+    <string name="setting_default_task_time_sub">Used by tasks without a time and by all-day events</string>
+    <string name="setting_privacy_lock">Lock screen</string>
+    <string name="setting_hide_details">Hide details on lock screen</string>
+    <string name="setting_hide_details_sub">Shows “Upcoming event” or “Task reminder” instead of the title</string>
+    <string name="reschedule_reminders">Reschedule all reminders</string>
+    <string name="reschedule_sub">Use if a reminder didn’t arrive</string>
+    <string name="reschedule_done">Done. All reminders were rescheduled</string>
+    <string name="reminder_limits_note">Reminders are scheduled on this device for the next 8 days and refreshed automatically, including after a restart or time-zone change. Force-stopping the app cancels alarms until Daysemble is opened again; this is an Android restriction.</string>
+
+    <plurals name="reminder_minutes_before">
+        <item quantity="one">%d min before</item>
+        <item quantity="other">%d min before</item>
+    </plurals>
+    <plurals name="reminder_hours_before">
+        <item quantity="one">%d hour before</item>
+        <item quantity="other">%d hours before</item>
+    </plurals>
+    <plurals name="reminder_days_before">
+        <item quantity="one">%d day before</item>
+        <item quantity="other">%d days before</item>
+    </plurals>
+    <!-- Google -->
+    <string name="settings_section_sync">Accounts</string>
+    <string name="settings_accounts">Google Calendar &amp; Tasks</string>
+    <string name="settings_accounts_sub">Connect, choose calendars, sync status</string>
+    <string name="google_intro_title">Sync with Google</string>
+    <string name="google_intro_body">See and edit your Google Calendar events and Google Tasks in Daysemble. Changes go both ways, including ones made offline, which sync when you’re back online.</string>
+    <string name="connect_google">Connect Google account</string>
+    <string name="connecting">Connecting…</string>
+    <string name="google_privacy_note">Daysemble asks for access to your calendars and tasks only. Data goes directly between this device and Google; there is no Daysemble server. You can disconnect at any time.</string>
+    <string name="google_setup_required_title">Google sign-in isn’t set up for this build</string>
+    <string name="google_setup_required_body">The developer must register an Android OAuth client for package %1$s and this build’s signing certificate (SHA-1) in Google Cloud Console, with the Calendar and Tasks APIs enabled. See docs/GOOGLE_SETUP.md.</string>
+    <string name="google_no_play_title">Google Play services required</string>
+    <string name="google_no_play_body">Install or update Google Play services to connect a Google account.</string>
+    <string name="google_connect_failed">Couldn’t connect</string>
+    <string name="google_error_code">Reason: %1$s. Check your connection and try again.</string>
+    <string name="google_account">Google account</string>
+    <string name="google_tasks">Google Tasks</string>
+    <string name="reauth_title">Google needs you to sign in again</string>
+    <string name="reauth_body">Access expired or was revoked. Sync is paused; your changes are kept and will sync after you reconnect.</string>
+    <string name="reconnect">Reconnect</string>
+    <string name="sync_now">Sync now</string>
+    <string name="sync_up_to_date">Everything on this device has been sent</string>
+    <string name="sync_calendars">Calendars to sync</string>
+    <string name="sync_task_lists">Task lists to sync</string>
+    <string name="sync_lists_pending">Appears after the first sync.</string>
+    <string name="sync_unchecked_note">Unchecked calendars and lists are hidden in Daysemble and not synced. Nothing is deleted from Google.</string>
+    <string name="sync_how">How sync works</string>
+    <string name="sync_how_body">Daysemble syncs when you open it, about every hour, and a few seconds after you change something. If the same item changed in both places, the most recent edit wins, and the other version is listed under Sync conflicts. Google Tasks has no priority or due time, so those stay on this device. Repeating Google events can be edited as a whole series or have single occurrences deleted; editing just one occurrence isn’t supported yet.</string>
+    <string name="sync_never">Not synced yet</string>
+    <string name="sync_last_success">Last synced %1$s</string>
+    <string name="sync_last_error">Last attempt failed: %1$s</string>
+    <string name="sync_state_syncing">Syncing</string>
+    <string name="sync_state_reauth">Sign in needed</string>
+    <string name="sync_state_offline">Offline</string>
+    <string name="sync_state_error">Sync problem</string>
+    <string name="sync_state_synced">Synced %1$s</string>
+    <string name="sync_state_waiting">Waiting to sync</string>
+    <string name="err_offline">no connection</string>
+    <string name="err_auth">sign-in expired</string>
+    <string name="err_rate">Google asked us to slow down; retrying</string>
+    <string name="err_server">Google had a problem; retrying</string>
+    <string name="err_other">unexpected error</string>
+    <string name="err_rejected">Google refused some changes</string>
+    <string name="retry_parked">Retry changes Google refused</string>
+    <string name="role_owner">Yours</string>
+    <string name="role_writer">You can edit</string>
+    <string name="role_reader">Read-only</string>
+    <string name="disconnect">Disconnect Google account</string>
+    <string name="disconnect_title">Disconnect Google?</string>
+    <string name="disconnect_body">Daysemble’s access is revoked and the Google calendars and task lists are removed from this device. Nothing is deleted from your Google account. Your on-device events and tasks stay.</string>
+    <string name="conflicts_title">Sync conflicts</string>
+    <string name="conflicts_sub">Versions replaced when an item changed in two places</string>
+    <string name="conflicts_rule">When the same item was edited here and on Google before syncing, the most recent edit is kept. A deletion made here always wins over a remote edit, and a remote deletion never removes edits you haven’t synced.</string>
+    <string name="conflicts_empty">No conflicts so far.</string>
+    <string name="conflicts_clear">Clear list</string>
+    <string name="conflict_kept_local">Kept your version</string>
+    <string name="conflict_kept_remote">Kept the Google version</string>
+
+    <plurals name="parked_changes">
+        <item quantity="one">%d change was refused several times and is paused</item>
+        <item quantity="other">%d changes were refused several times and are paused</item>
+    </plurals>
+    <plurals name="pending_changes">
+        <item quantity="one">%d change waiting to sync</item>
+        <item quantity="other">%d changes waiting to sync</item>
+    </plurals>
+    <plurals name="disconnect_pending">
+        <item quantity="one">%d change hasn’t synced yet and will be lost.</item>
+        <item quantity="other">%d changes haven’t synced yet and will be lost.</item>
+    </plurals>
+    <!-- Onboarding -->
+    <string name="onboarding_tagline">Your day, assembled. Events and tasks in one calm place.</string>
+    <string name="onboarding_point_1">Today at a glance, in plain words</string>
+    <string name="onboarding_point_2">Calendar, tasks and reminders that work offline</string>
+    <string name="onboarding_point_3">Optional two-way sync with Google Calendar and Google Tasks</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_start">Start planning</string>
+    <string name="onboarding_setup_title">A couple of optional extras</string>
+    <string name="onboarding_setup_body">You can change both later in Settings.</string>
+    <string name="onboarding_notifications_title">Reminders</string>
+    <string name="onboarding_notifications_body">Allow notifications so Daysemble can remind you before events and when tasks are due.</string>
+    <string name="onboarding_allowed">Allowed</string>
+    <string name="onboarding_google_title">Google Calendar &amp; Tasks</string>
+    <string name="onboarding_google_body">Bring in your Google events and tasks and keep them in sync. Without it, everything stays on this device.</string>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive-icon backgrounds. Rewritten by scripts/import_logos.py with colours sampled from the supplied tiles. -->
+<resources>
+    <color name="launcher_bg_classic">#FFFBF6EF</color>
+    <color name="launcher_bg_midnight">#FF0B0B0C</color>
+    <color name="launcher_bg_outline">#FF0B0B0C</color>
+</resources>
