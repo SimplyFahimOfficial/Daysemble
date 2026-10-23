@@ -11,6 +11,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.drawable.toDrawable
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.data.prefs.AppSettings
@@ -24,6 +26,9 @@ data class OpenRequest(val type: OwnerType, val id: String, val occurrenceKey: S
 class MainActivity : ComponentActivity() {
 
     private val openRequests = MutableStateFlow<OpenRequest?>(null)
+
+    /** Latest reduced-motion decision (system setting or the user's override), read by the splash exit. */
+    private var reducedMotion = false
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -45,6 +50,8 @@ class MainActivity : ComponentActivity() {
         // Keep the splash until settings are read, so the first frame has the right theme.
         var settingsLoaded = false
         splash.setKeepOnScreenCondition { !settingsLoaded }
+        splash.setOnExitAnimationListener { provider -> SplashExit.play(provider, reducedMotion) }
+        val animateIntro = savedInstanceState == null
 
         val settingsFlow: Flow<AppSettings?> = container.settings.settings
         setContent {
@@ -58,16 +65,23 @@ class MainActivity : ComponentActivity() {
                 reducedMotionOverride = s.reducedMotionOverride,
             ) {
                 val dark = app.daysemble.ui.theme.DsTheme.colors.isDark
-                LaunchedEffect(dark) {
+                val reduced = app.daysemble.ui.theme.DsTheme.motion.reduced
+                androidx.compose.runtime.SideEffect { reducedMotion = reduced }
+                // Applied while composing the frame (not one frame later), so the system bar icons and
+                // the window behind the app switch together with the in-app theme.
+                androidx.compose.runtime.DisposableEffect(dark) {
+                    val bg = if (dark) app.daysemble.ui.theme.DarkDsColors.background else app.daysemble.ui.theme.LightDsColors.background
+                    window.setBackgroundDrawable(bg.toArgb().toDrawable())
                     enableEdgeToEdge(
                         statusBarStyle = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
                         else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
                         navigationBarStyle = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
                         else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
                     )
+                    onDispose { }
                 }
                 DaysembleRoot(
-                    container = container, settings = s,
+                    container = container, settings = s, animateIntro = animateIntro,
                     openRequests = openRequests, onOpenHandled = { openRequests.value = null },
                 )
             }
