@@ -61,14 +61,16 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
-  # Optional signed release check, only for pushes to main (already-reviewed code). This job is never
-  # scheduled for pull requests, so PR code can't reach the signing secrets. Set repository secrets
-  # DAYSEMBLE_KEYSTORE_BASE64, DAYSEMBLE_KEYSTORE_PASSWORD, DAYSEMBLE_KEY_ALIAS and
-  # DAYSEMBLE_KEY_PASSWORD to enable it; without them it finishes without building.
-  # The signed APK is not uploaded.
+  # Optional signed release check, only for pushes to main (already-reviewed code).
+  # Two independent guards keep signing away from pull requests:
+  #   1. this `if` means the job is never scheduled for pull_request runs;
+  #   2. the signing secrets live only in the `release` environment, which should allow
+  #      deployments from `main` only (see README, "Signed release builds in CI").
+  # Without the environment secrets the job finishes without building. The signed APK is not uploaded.
   signed-release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
+    environment: release
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
