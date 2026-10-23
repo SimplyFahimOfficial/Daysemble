@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.onAllNodes
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -83,9 +86,21 @@ class ScreenSmokeTest {
         settle()
     }
 
+    /**
+     * Waits until [text] is on screen. Lazy lists only compose what fits, and how much fits depends on
+     * the time of day (e.g. countdown chips on upcoming events make rows taller), so scroll to it.
+     */
     private fun waitText(text: String, substring: Boolean = false) {
         repeat(60) {
-            if (compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()) return
+            val lists = compose.onAllNodes(hasScrollToNodeAction()).fetchSemanticsNodes()
+            for (i in lists.indices) {
+                runCatching { compose.onAllNodes(hasScrollToNodeAction())[i].performScrollToNode(hasText(text, substring = substring)) }
+            }
+            if (compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()) {
+                settle()
+                compose.onAllNodesWithText(text, substring = substring)[0].assertIsDisplayed()
+                return
+            }
             settle()
         }
         compose.onNodeWithText(text, substring = substring).assertIsDisplayed()
