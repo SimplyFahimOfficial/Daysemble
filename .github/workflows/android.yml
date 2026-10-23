@@ -134,6 +134,24 @@ jobs:
           DAYSEMBLE_KEY_ALIAS: ${{ secrets.DAYSEMBLE_KEY_ALIAS }}
           DAYSEMBLE_KEY_PASSWORD: ${{ secrets.DAYSEMBLE_KEY_PASSWORD }}
 
+      # app/build.gradle.kts falls back to an unsigned build (app-release-unsigned.apk) when any signing
+      # variable is missing, and Gradle still succeeds. Fail here instead of reporting a signed build that
+      # isn't one. Prints only pass/fail, not certificate details.
+      - name: Verify release APK is signed
+        if: steps.keys.outputs.present == 'true'
+        shell: bash
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$apk" ]; then
+            echo "::error title=Release APK not signed::$apk was not produced (the build fell back to unsigned)."
+            exit 1
+          fi
+          if ! "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk" > /dev/null 2>&1; then
+            echo "::error title=Release APK not signed::apksigner could not verify $apk."
+            exit 1
+          fi
+          echo "Release APK signature verified."
+
       - name: Remove keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
