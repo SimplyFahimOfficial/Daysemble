@@ -72,19 +72,37 @@ fun DaysembleTheme(
     }
 }
 
-/** Cross-fades the core surfaces on theme change so switching modes isn't a hard cut. */
+/**
+ * Cross-fades every theme colour together on theme change, so switching modes is one smooth change
+ * (previously only six surfaces/text colours animated and accents, pills and inverse surfaces cut).
+ */
 @Composable
 private fun animatedColors(target: DsColors, motion: DsMotion): DsColors {
     val spec = tween<androidx.compose.ui.graphics.Color>(motion.long, easing = DsMotion.Standard)
-    val bg by animateColorAsState(target.background, spec, label = "bg")
-    val surface by animateColorAsState(target.surface, spec, label = "surface")
-    val variant by animateColorAsState(target.surfaceVariant, spec, label = "variant")
-    val text by animateColorAsState(target.textPrimary, spec, label = "text")
-    val text2 by animateColorAsState(target.textSecondary, spec, label = "text2")
-    val outline by animateColorAsState(target.outline, spec, label = "outline")
+    @Composable fun a(c: androidx.compose.ui.graphics.Color, label: String) = animateColorAsState(c, spec, label = label).value
     return target.copy(
-        background = bg, surface = surface, surfaceVariant = variant,
-        textPrimary = text, textSecondary = text2, outline = outline,
+        background = a(target.background, "background"),
+        surface = a(target.surface, "surface"),
+        surfaceRaised = a(target.surfaceRaised, "surfaceRaised"),
+        surfaceVariant = a(target.surfaceVariant, "surfaceVariant"),
+        outline = a(target.outline, "outline"),
+        outlineStrong = a(target.outlineStrong, "outlineStrong"),
+        textPrimary = a(target.textPrimary, "textPrimary"),
+        textSecondary = a(target.textSecondary, "textSecondary"),
+        textTertiary = a(target.textTertiary, "textTertiary"),
+        accent = a(target.accent, "accent"),
+        accentFill = a(target.accentFill, "accentFill"),
+        onAccent = a(target.onAccent, "onAccent"),
+        accentContainer = a(target.accentContainer, "accentContainer"),
+        violet = a(target.violet, "violet"),
+        violetContainer = a(target.violetContainer, "violetContainer"),
+        success = a(target.success, "success"),
+        warning = a(target.warning, "warning"),
+        error = a(target.error, "error"),
+        errorContainer = a(target.errorContainer, "errorContainer"),
+        inverse = a(target.inverse, "inverse"),
+        onInverse = a(target.onInverse, "onInverse"),
+        scrim = a(target.scrim, "scrim"),
     )
 }
 

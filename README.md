@@ -98,19 +98,28 @@ reports and a debug APK as artifacts.
 
 #### Signed release builds in CI
 
-The `signed-release` job checks a signed R8 build after each push to `main`. It is optional: until
-the secrets below exist, it finishes without building. The signed APK is not uploaded.
+The `signed-release` job checks a signed R8 build after each push to `main`. It is optional: unless
+all four secrets below are set, it finishes without building and adds a notice naming the missing
+secrets (names only, never values). The signed APK is not uploaded. The normal CI above (unsigned
+debug and release builds, tests, lint, artifacts) never depends on it.
+
+Configure and protect the `release` environment **before** adding any signing secrets. Signed
+builds are only as safe as that environment's settings.
 
 Two separate guards keep signing away from pull requests:
 - The job only runs for `push` events on `main`, so it is never scheduled for a pull request.
-- It uses the `release` environment, and the signing secrets are stored only there. Environment
-  secrets are available only to jobs that use that environment, and the environment only accepts
-  `main`.
+- It uses the `release` environment, and the signing secrets belong only there. Environment
+  secrets are available only to jobs that use that environment. Once you add the branch rule
+  below, the environment also refuses any branch other than `main`.
+
+**An environment GitHub creates automatically is not protected.** When a workflow job refers to an
+environment that doesn't exist yet, GitHub creates it with no branch rule and no reviewers. That
+already happened here: the first `main` run after this job was added created `release` with no
+restrictions. Treat it as unprotected until you've completed steps 2–5.
 
 To set it up, go to **Settings → Environments** in this repository:
-1. Click **New environment** and name it `release` (exactly; the workflow refers to that name).
-   Do this before merging the workflow: if a job refers to an environment that doesn't exist,
-   GitHub creates it with no restrictions.
+1. Open `release`, or create it with **New environment** if it isn't listed (the name must be exactly
+   `release`; the workflow refers to it).
 2. Under **Deployment branches and tags**, choose **Selected branches and tags**, click
    **Add deployment branch or tag rule**, choose **Branch**, and enter `main`. Don't add any other
    rule. In particular, don't add `refs/pull/*/merge`, which would let pull-request runs in.
@@ -128,10 +137,12 @@ To set it up, go to **Settings → Environments** in this repository:
 Optional: add yourself as a **Required reviewer** on the environment so every signed build waits for
 your approval.
 
-Plan note: this repository is private. For private repositories, GitHub offers environment secrets
-and deployment branch rules on GitHub Pro, Team or Enterprise, and required reviewers on Team or
-Enterprise. On GitHub Free, leave the secrets unset; CI stays fully working and the signed job does
-nothing.
+Plan note: this repository is private, and stays private. For private repositories, GitHub offers
+environment secrets and deployment branch rules on GitHub Pro, Team or Enterprise, and required
+reviewers on Team or Enterprise. If your plan doesn't include them, don't enable signed releases
+in CI: leave the secrets unset. The normal unsigned CI keeps running as usual, and the signed job
+just posts its "missing secrets" notice. Don't put the signing secrets at repository level as a
+workaround.
 
 Never commit a keystore or passwords, and don't paste them into issues, pull requests or logs.
 
@@ -146,7 +157,10 @@ python3 scripts/import_logos.py --classic brand/Logo1.png --midnight brand/Logo2
 ```
 
 The originals stay unmodified in `brand/`. It removes only the black square around each tile
-(the artwork itself isn't recoloured or redrawn), then resizes the tile to 512 px for in-app use. For the
+(the artwork itself isn't recoloured or redrawn), then resizes the tile to 512 px for in-app use. In-app
+copies also drop the faint glow and black gap around the tile, rebuild a clean edge (no dark seam on
+light backgrounds) and keep a small transparent margin, so the tile's sides are never cut at the image
+bounds. For the
 launcher icon, it keeps the artwork from the tile's centre (dropping the tile's own border and
 shadow) and scales it so the outer dots stay inside the 66dp safe zone of round masks. The wordmark is trimmed and resized to 900 px wide. Until the files are imported,
 the app shows neutral placeholders labelled *Asset missing*. **Status: imported.** The supplied logos and wordmark are in the app.

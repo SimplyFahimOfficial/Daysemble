@@ -79,7 +79,7 @@ fun DsSearchField(
                     .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
             )
         }
-        AnimatedVisibility(value.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(value.isNotEmpty(), enter = fadeIn(DsTheme.motion.enter()), exit = fadeOut(DsTheme.motion.exit())) {
             DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_clear_search), { onValueChange("") }, tint = c.textSecondary)
         }
     }
@@ -143,7 +143,13 @@ fun DsTextField(
                     },
             )
         }
-        AnimatedVisibility(error != null) {
+        val m = DsTheme.motion
+        AnimatedVisibility(
+            error != null,
+            // Reduced motion: fade only, no size change pushing the content below.
+            enter = if (m.reduced) fadeIn(m.enter()) else fadeIn(m.enter()) + androidx.compose.animation.expandVertically(m.enter()),
+            exit = if (m.reduced) fadeOut(m.exit()) else fadeOut(m.exit()) + androidx.compose.animation.shrinkVertically(m.exit()),
+        ) {
             Text(error.orEmpty(), style = DsTheme.type.label, color = c.error, modifier = Modifier.padding(top = Space.xs))
         }
     }

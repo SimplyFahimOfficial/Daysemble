@@ -82,7 +82,8 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
     val ctx = LocalContext.current
     val c = (ctx.applicationContext as DaysembleApp).container
     val statusFlow = remember(c) { c.sync.status }
-    val status by statusFlow.collectAsStateWithLifecycle(initialValue = null)
+    // Starts from the root's last status (if any) so the page body doesn't pop in after the transition.
+    val status by statusFlow.collectAsStateWithLifecycle(initialValue = app.daysemble.ui.LocalSyncStatus.current?.value)
     val calsFlow = remember(c) { c.database.calendars().observeAll() }
     val calendars by calsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val listsFlow = remember(c) { c.database.taskLists().observeAll() }

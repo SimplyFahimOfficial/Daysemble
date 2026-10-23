@@ -154,11 +154,12 @@ private fun modeLabel(m: CalendarMode) = when (m) {
 /** Keeps a pager and the VM selection in sync in both directions. */
 @Composable
 private fun SyncPager(pager: PagerState, targetPage: Int, onPageSettled: (Int) -> Unit) {
-    val reduced = DsTheme.motion.reduced
+    val m = DsTheme.motion
     val settled by androidx.compose.runtime.rememberUpdatedState(onPageSettled)
     LaunchedEffect(targetPage) {
         if (pager.currentPage != targetPage) {
-            if (reduced) pager.scrollToPage(targetPage) else pager.animateScrollToPage(targetPage)
+            // Arrow/"Today" jumps use the app's motion curve instead of the pager's default spring.
+            if (m.reduced) pager.scrollToPage(targetPage) else pager.animateScrollToPage(targetPage, animationSpec = m.enter(m.long))
         }
     }
     LaunchedEffect(pager) {
@@ -340,6 +341,10 @@ private fun GridMode(
                     Row(Modifier.fillMaxWidth().padding(start = 52.dp)) {
                         days.forEach { d ->
                             val sel = d == state.selected
+                            val selBg by androidx.compose.animation.animateColorAsState(if (sel) c.inverse else Color.Transparent, DsTheme.motion.indicator(), label = "weekSel")
+                            val selFg by androidx.compose.animation.animateColorAsState(
+                                if (sel) c.onInverse else if (d == state.today) c.accent else c.textPrimary, DsTheme.motion.indicator(), label = "weekSelText",
+                            )
                             Column(
                                 Modifier.weight(1f).selectable(sel, role = Role.Tab) { vm.select(d) }.padding(vertical = Space.xs),
                                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -347,11 +352,11 @@ private fun GridMode(
                                 Text(Fmt.weekdayNarrow(d.dayOfWeek, p), style = DsTheme.type.caps, color = if (d == state.today) c.accent else c.textTertiary)
                                 Text(
                                     d.dayOfMonth.toString(), style = DsTheme.type.bodyStrong,
-                                    color = if (sel) c.onInverse else if (d == state.today) c.accent else c.textPrimary,
+                                    color = selFg,
                                     modifier = Modifier
                                         .defaultMinSize(30.dp, 30.dp)
                                         .clip(Radii.pill)
-                                        .background(if (sel) c.inverse else Color.Transparent)
+                                        .background(selBg)
                                         .wrapContentSize(Alignment.Center)
                                         .padding(horizontal = 4.dp, vertical = 2.dp),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -396,10 +401,10 @@ private fun AgendaMode(
                 SectionHeader(dayLabel(d, state.today, p) + if (d == state.today || d == state.today.plusDays(1)) " · " + Fmt.mediumDate(d, p) else "", Modifier.padding(top = Space.m))
             }
             items(state.byDate[d].orEmpty(), key = { "e$d" + it.stableKey }) { e ->
-                EventRow(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showCountdown = d == state.today)
+                EventRow(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showCountdown = d == state.today, modifier = Modifier.then(itemMotion()))
             }
             items(state.tasksByDate[d].orEmpty(), key = { "t$d" + it.id }) { t ->
-                TaskRow(t, now, onToggle = { vm.setTaskCompleted(t.id, it) }, onClick = { onOpenTask(t.id) }, showDue = false)
+                TaskRow(t, now, onToggle = { vm.setTaskCompleted(t.id, it) }, onClick = { onOpenTask(t.id) }, showDue = false, modifier = Modifier.then(itemMotion()))
             }
         }
         item(key = "spacer") { Spacer(Modifier.height(Space.l)) }
