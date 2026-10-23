@@ -12,7 +12,7 @@ Kotlin · Jetpack Compose · Material 3 · Room · WorkManager · minSdk 26
 
 ## Screenshots
 
-There are no screenshots yet. This README will only ever show genuine captures of the running app,
+There are no screenshots yet; capturing them is scheduled for later. This README will only ever show genuine captures of the running app,
 taken with [`scripts/capture_screenshots.sh`](scripts/capture_screenshots.sh) and stored in
 `docs/screenshots/`.
 

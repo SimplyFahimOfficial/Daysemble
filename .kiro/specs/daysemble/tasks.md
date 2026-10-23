@@ -78,5 +78,8 @@ Each milestone ends with `./gradlew assembleDebug testDebugUnitTest lintDebug` p
 - [x] 11.1 (lint 0 errors; release R8 build passes) Lint/static analysis clean, Compose stability check
 - [x] 11.2 README (real features only), ARCHITECTURE.md, limitations
 - [x] 11.3 `scripts/capture_screenshots.sh` (adb) + demo-data seeding (debug only, clearly labelled)
-- [ ] 11.4 (blocked: no KVM here; needs owner device/emulator) Capture genuine screenshots on a device/emulator → `docs/screenshots/` (needs KVM or owner device)
+- [ ] 11.4 Moved to "Later" below
 - [ ] 11.5 Commit/push **only after owner approval**
+
+## Later (deferred by the owner)
+- [ ] L.1 Capture genuine screenshots on a device or emulator with `scripts/capture_screenshots.sh` → `docs/screenshots/`, then add them to the README. Deferred by the owner on 2026-10-22. Needs an owner device, or an environment with KVM (this sandbox has none). Never use mock-ups or renders in place of real captures.
