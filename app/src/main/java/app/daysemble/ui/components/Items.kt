@@ -290,7 +290,11 @@ fun TaskRow(
     val today = now.atZone(p.zone).toLocalDate()
     val overdue = TaskRules.isOverdue(task, now, p.zone)
     val textColor by animateColorAsState(if (task.isCompleted) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskText")
-    val strike by animateFloatAsState(if (task.isCompleted) 1f else 0f, m.standard(m.medium), label = "strike")
+    // Reduced motion: the line appears in full at once (only the text colour fades).
+    val strike by animateFloatAsState(
+        if (task.isCompleted) 1f else 0f,
+        if (m.reduced) androidx.compose.animation.core.snap() else m.standard(m.medium), label = "strike",
+    )
     Row(
         modifier
             .fillMaxWidth()
