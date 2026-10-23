@@ -198,6 +198,22 @@ class ReviewFixesTest : SyncTestBase() {
         val st = manager.status.first()
         assertThat(st.calendar.lastError).isEqualTo("rejected_changes")
         assertThat(st.hasError).isTrue()
+        // Keep refusing until the change is parked; later runs skip it but must still report it.
+        repeat(6) { manager.syncNow() }
+        assertThat(db.sync().outbox().single().permanentFailures).isAtLeast(CalendarSyncer.MAX_ATTEMPTS)
+        val postsBefore = router.count("POST", "/calendar/v3/calendars/cal/events")
+        assertThat(manager.syncNow()).isEqualTo(app.daysemble.data.google.sync.SyncOutcome.FAILED)
+        assertThat(router.count("POST", "/calendar/v3/calendars/cal/events")).isEqualTo(postsBefore) // skipped, not retried
+        assertThat(manager.status.first().calendar.lastError).isEqualTo("rejected_changes")
+        assertThat(manager.status.first().parkedChanges).isEqualTo(1)
+        // After "Retry" and a successful push the error clears.
+        router.on("POST", "/calendar/v3/calendars/cal/events") { r ->
+            val id = Regex("\"id\":\"([a-f0-9]+)\"").find(r.body!!.utf8())!!.groupValues[1]
+            json(body = """{"id":"$id","summary":"A","updated":"2026-10-22T08:00:05Z"}""")
+        }
+        manager.retryParked()
+        assertThat(manager.syncNow()).isEqualTo(app.daysemble.data.google.sync.SyncOutcome.OK)
+        assertThat(manager.status.first().calendar.lastError).isNull()
     }
 
     @Test fun `RDATE instances stored from Google remind even though the RRULE parses`() {

@@ -3,6 +3,7 @@ package app.daysemble.data.google.sync
 import androidx.room.withTransaction
 import app.daysemble.core.time.AppClock
 import app.daysemble.data.db.DaysembleDatabase
+import app.daysemble.data.db.OwnerType
 import app.daysemble.data.db.SyncService
 import app.daysemble.data.db.SyncStateEntity
 import app.daysemble.data.google.ApiError
@@ -68,8 +69,8 @@ class SyncManager(
         running.value = true
         try {
             var outcome = SyncOutcome.OK
-            if (acc.calendarEnabled) outcome = worst(outcome, runService(SyncService.CALENDAR) { calendar.sync(email).failedOps })
-            if (acc.tasksEnabled) outcome = worst(outcome, runService(SyncService.TASKS) { tasks.sync(email).failedOps })
+            if (acc.calendarEnabled) outcome = worst(outcome, runService(SyncService.CALENDAR) { calendar.sync(email).failedOps + parked(OwnerType.EVENT) })
+            if (acc.tasksEnabled) outcome = worst(outcome, runService(SyncService.TASKS) { tasks.sync(email).failedOps + parked(OwnerType.TASK) })
             onLocalDataChanged()
             return outcome
         } finally {
@@ -77,7 +78,16 @@ class SyncManager(
         }
     }
 
-    /** [block] returns the number of local changes Google rejected this run. */
+    /**
+     * Changes refused often enough to be parked. Syncers skip them (so they don't count in failedOps),
+     * but they're still unsynced: keep reporting them until the user retries or they're resolved.
+     */
+    private suspend fun parked(type: OwnerType): Int {
+        val ops = db.sync().outbox(type)
+        return ops.count { it.permanentFailures >= CalendarSyncer.MAX_ATTEMPTS }
+    }
+
+    /** [block] returns the number of local changes Google rejected or still holds parked. */
     private suspend fun runService(svc: SyncService, block: suspend () -> Int): SyncOutcome {
         val prev = db.sync().state(svc) ?: SyncStateEntity(svc)
         db.sync().upsertState(prev.copy(lastAttemptAt = now()))
