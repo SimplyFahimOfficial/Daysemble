@@ -1,14 +1,21 @@
 # Brand assets
 
-Put the supplied files here, then run (from the repo root):
+The supplied originals, kept unmodified:
+
+| File | Variant |
+|---|---|
+| `Logo1.png` | **Classic**, cream tile (the default) |
+| `Logo2.png` | Midnight, black tile with filled shapes |
+| `Logo3.png` | Outline, black tile with outlined shapes |
+| `Wordlogo.png` | Horizontal "Daysemble." wordmark |
+
+To regenerate the app resources after changing a file, run this from the repo root:
 
 ```bash
-python3 scripts/import_logos.py \
-  --classic  brand/logo1.png \   # supplied logo #1, light/cream tile, the DEFAULT
-  --midnight brand/logo2.png \   # supplied logo #2, black tile, filled shapes
-  --outline  brand/logo3.png \   # supplied logo #3, black tile, outlined shapes
-  --wordmark brand/wordmark.png
+pip install pillow
+python3 scripts/import_logos.py --classic brand/Logo1.png --midnight brand/Logo2.png \
+  --outline brand/Logo3.png --wordmark brand/Wordlogo.png
 ```
 
-The script keeps the originals here (`*_original.png`), removes only the black square
-outside each tile, and writes resized copies for the app (512 px) and the adaptive launcher icons.
+The script removes only the black square outside each tile; the artwork isn't recoloured or redrawn.
+It writes 512 px copies for in-app use and adaptive launcher icons sized to the 66dp safe zone.

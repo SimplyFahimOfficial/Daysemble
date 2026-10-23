@@ -16,7 +16,7 @@ Each milestone ends with `./gradlew assembleDebug testDebugUnitTest lintDebug` p
 - [x] 2.3 `LogoVariant` (explicit CLASSIC default), `BrandLogo`, placeholder assets, launcher activity-aliases, `scripts/import_logos.py`, Appearance screen with logo picker (R2)
 - [x] 2.4 `SettingsRepository` (DataStore): theme mode, logo, reduced motion + tests (R2.2, R3.1)
 - [x] 2.5 Shared components: buttons, rows, check, chips, section header, state views (loading/empty/error/offline), sync badge
-- [ ] 2.6 **Blocked on owner:** drop in the supplied logo PNGs
+- [x] 2.6 Supplied logos imported (Logo1 = Classic default, Logo2 = Midnight, Logo3 = Outline, Wordlogo); in-app 512 px, launcher icons in the 66dp safe zone, checked by eye
 
 ## M3 Navigation, Today, local tasks
 - [x] 3.1 Room DB v1: all entities from design §3, DAOs, converters, schema export
@@ -78,5 +78,8 @@ Each milestone ends with `./gradlew assembleDebug testDebugUnitTest lintDebug` p
 - [x] 11.1 (lint 0 errors; release R8 build passes) Lint/static analysis clean, Compose stability check
 - [x] 11.2 README (real features only), ARCHITECTURE.md, limitations
 - [x] 11.3 `scripts/capture_screenshots.sh` (adb) + demo-data seeding (debug only, clearly labelled)
-- [ ] 11.4 (blocked: no KVM here; needs owner device/emulator) Capture genuine screenshots on a device/emulator → `docs/screenshots/` (needs KVM or owner device)
+- [ ] 11.4 Moved to "Later" below
 - [ ] 11.5 Commit/push **only after owner approval**
+
+## Later (deferred by the owner)
+- [ ] L.1 Capture genuine screenshots on a device or emulator with `scripts/capture_screenshots.sh` → `docs/screenshots/`, then add them to the README. Deferred by the owner on 2026-10-22. Needs an owner device, or an environment with KVM (this sandbox has none). Never use mock-ups or renders in place of real captures.

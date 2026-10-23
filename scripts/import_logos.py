@@ -9,14 +9,17 @@ The mapping is EXPLICIT (never inferred from file names or order):
     --wordmark  horizontal "Daysemble." wordmark (optional)
 
 What it does. The artwork itself is never recoloured or redrawn:
-  1. Keeps the untouched originals in brand/ (provenance).
+  1. Leaves the originals untouched (keep them in brand/).
   2. Finds the rounded tile in each image and makes only the pixels OUTSIDE the tile
      transparent (the supplied files sit on a black square background).
   3. In-app logos: the cut-out tile, resized to --app-size px (default 512),
      saved as res/drawable-nodpi/logo_<variant>.png.
-  4. Launcher icons: the cut-out tile scaled to --launcher-scale of the 108dp adaptive canvas
-     (default 0.86, so the orbit ring stays inside the 66dp safe zone of circular masks),
-     centred on the tile's own sampled background colour, for every density.
+  4. Launcher icons: the artwork from the tile's centre (a soft-edged circle that drops the tile's
+     own border and drop shadow), scaled to --launcher-scale of the 108dp adaptive canvas (default
+     0.63, so the outer dots stay inside the 66dp safe zone of round masks), on the tile's own
+     sampled background colour, for every density.
+  4b. Themed-icon monochrome layer: a white silhouette of the same artwork shapes (Android 13+
+     launchers tint it), written as ic_launcher_mono_<variant> and referenced from the XML.
   5. Wordmark: trimmed of surrounding empty margin, resized to --wordmark-width px.
   6. Flips <bool name="logo_*_supplied"> flags to true.
 
@@ -67,37 +70,87 @@ def cut_out_tile(img: Image.Image, tolerance: int) -> Image.Image:
 
 
 def tile_colour(tile: Image.Image) -> str:
-    """Tile background colour sampled just inside its left edge at mid-height."""
-    px = tile.convert("RGB").getpixel((int(tile.width * 0.08), tile.height // 2))
+    """Tile background colour sampled inside its left edge at mid-height (clear of edge shading)."""
+    px = tile.convert("RGB").getpixel((int(tile.width * 0.12), tile.height // 2))
     return "#FF%02X%02X%02X" % px
+
+
+def monochrome(square: Image.Image, bg_hex: str, lo: int, hi: int) -> Image.Image:
+    """
+    Silhouette of the artwork for Android 13+ themed icons: every pixel that differs from the tile's
+    background becomes opaque white (the launcher tints it), with a soft ramp between [lo, hi] colour
+    distance so anti-aliased edges stay smooth. Shapes are kept exactly; only colour is dropped.
+    """
+    rgb = square.convert("RGB")
+    bg = tuple(int(bg_hex[i:i + 2], 16) for i in (3, 5, 7))
+    diff = ImageChops.difference(rgb, Image.new("RGB", rgb.size, bg))
+    r, g, b = diff.split()
+    dist = ImageChops.lighter(ImageChops.lighter(r, g), b)
+    span = max(1, hi - lo)
+    alpha = dist.point(lambda d: 0 if d <= lo else 255 if d >= hi else int((d - lo) * 255 / span))
+    alpha = ImageChops.multiply(alpha, square.getchannel("A"))
+    out = Image.new("RGBA", rgb.size, (255, 255, 255, 0))
+    out.putalpha(alpha)
+    return out
+
+
+def centre_disc(square: Image.Image, radius: float, feather: float) -> Image.Image:
+    """Keeps a soft-edged disc of the artwork (radius/feather as fractions of the side)."""
+    s = square.width
+    big = 4  # supersample the mask for a smooth edge
+    m = Image.new("L", (s * big, s * big), 0)
+    r = radius * s * big
+    c = s * big / 2
+    ImageDraw.Draw(m).ellipse((c - r, c - r, c + r, c + r), fill=255)
+    m = m.resize((s, s), Image.LANCZOS).filter(ImageFilter.GaussianBlur(feather * s))
+    out = square.copy()
+    out.putalpha(ImageChops.multiply(square.getchannel("A"), m))
+    return out
 
 
 def resized(im: Image.Image, size: int) -> Image.Image:
     return im.resize((size, size), Image.LANCZOS)
 
 
-def import_variant(name: str, src: pathlib.Path, a):
-    BRAND.mkdir(exist_ok=True)
-    shutil.copyfile(src, BRAND / f"logo_{name}_original{src.suffix.lower()}")
-
-    tile = cut_out_tile(Image.open(src), a.tolerance)
+def square_tile(src: pathlib.Path, tolerance: int) -> Image.Image:
+    tile = cut_out_tile(Image.open(src), tolerance)
     side = max(tile.size)
     square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     square.paste(tile, ((side - tile.width) // 2, (side - tile.height) // 2))
+    return square
+
+
+def import_variant(name: str, src: pathlib.Path, a, mono_src: pathlib.Path | None = None):
+    square = square_tile(src, a.tolerance)
 
     # In-app artwork
     (RES / "drawable-nodpi").mkdir(parents=True, exist_ok=True)
     resized(square, a.app_size).save(RES / "drawable-nodpi" / f"logo_{name}.png", optimize=True)
     (RES / "drawable" / f"logo_{name}.xml").unlink(missing_ok=True)
 
-    # Launcher foregrounds
+    # Launcher foregrounds: centre disc of the artwork (no tile border/shadow), safe-zone sized.
     bg = tile_colour(square)
+    disc = centre_disc(square, a.disc_radius, 0.01)
     (RES / "drawable" / f"ic_launcher_fg_{name}.xml").unlink(missing_ok=True)
+    # The silhouette needs artwork that separates cleanly from its background. Classic's cream glass
+    # square and soft shadows sit too close to its cream tile, so it uses the same composition from
+    # the Midnight artwork when that's supplied.
+    mono_square = square_tile(mono_src, a.tolerance) if mono_src else square
+    mono_bg = tile_colour(mono_square) if mono_src else bg
+    # Tighter, harder-edged disc: the silhouette must not pick up the faint tile border near the edge.
+    mono_disc = centre_disc(monochrome(mono_square, mono_bg, a.mono_low, a.mono_high), min(a.disc_radius, a.mono_radius), 0.003)
     for density, scale in DENSITIES.items():
         canvas = round(ADAPTIVE_DP * scale)
         inner = round(canvas * a.launcher_scale)
+        off = ((canvas - inner) // 2, (canvas - inner) // 2)
+        mono = Image.new("RGBA", (canvas, canvas), (255, 255, 255, 0))
+        mono.alpha_composite(resized(mono_disc, inner), off)
+        mono_out = RES / f"mipmap-{density}" / f"ic_launcher_mono_{name}.png"
+        mono_out.parent.mkdir(parents=True, exist_ok=True)
+        mono.save(mono_out, optimize=True)
         fg = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
-        fg.paste(resized(square, inner), ((canvas - inner) // 2, (canvas - inner) // 2), resized(square, inner))
+        art = resized(disc, inner)
+        fg.alpha_composite(art, off)
         out = RES / f"mipmap-{density}" / f"ic_launcher_fg_{name}.png"
         out.parent.mkdir(parents=True, exist_ok=True)
         fg.save(out, optimize=True)
@@ -108,16 +161,16 @@ def import_variant(name: str, src: pathlib.Path, a):
         '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
         f'    <background android:drawable="@color/launcher_bg_{name}" />\n'
         f'    <foreground android:drawable="@mipmap/ic_launcher_fg_{name}" />\n'
+        '    <!-- Themed icons (Android 13+): silhouette of the same artwork, tinted by the launcher. -->\n'
+        f'    <monochrome android:drawable="@mipmap/ic_launcher_mono_{name}" />\n'
         '</adaptive-icon>\n'
     )
     set_colour(f"launcher_bg_{name}", bg)
     set_flag(f"logo_{name}_supplied")
-    print(f"  {name}: tile {tile.size}, background {bg}")
+    print(f"  {name}: tile {square.size}, background {bg}" + (f", silhouette from {mono_src.name}" if mono_src else ""))
 
 
 def import_wordmark(src: pathlib.Path, width: int):
-    BRAND.mkdir(exist_ok=True)
-    shutil.copyfile(src, BRAND / f"wordmark_original{src.suffix.lower()}")
     im = Image.open(src).convert("RGBA")
     # Trim the empty margin (same colour as the corner) around the mark, keeping a small pad.
     bg = Image.new("RGBA", im.size, im.getpixel((2, 2)))
@@ -152,7 +205,14 @@ def main():
     ap.add_argument("--outline", type=pathlib.Path, help="supplied logo #3")
     ap.add_argument("--wordmark", type=pathlib.Path)
     ap.add_argument("--app-size", type=int, default=512)
-    ap.add_argument("--launcher-scale", type=float, default=0.86)
+    ap.add_argument("--launcher-scale", type=float, default=0.63,
+                    help="tile size as a fraction of the 108dp canvas (0.63 keeps the artwork in the 66dp safe zone)")
+    ap.add_argument("--disc-radius", type=float, default=0.49,
+                    help="radius of the kept artwork disc, as a fraction of the tile side")
+    ap.add_argument("--mono-low", type=int, default=28, help="colour distance below which a pixel is background (themed icon)")
+    ap.add_argument("--mono-high", type=int, default=72, help="colour distance above which a pixel is fully artwork (themed icon)")
+    ap.add_argument("--mono-radius", type=float, default=0.482,
+                    help="disc radius for the themed-icon silhouette (excludes the tile border, which starts near 0.487)")
     ap.add_argument("--wordmark-width", type=int, default=900)
     ap.add_argument("--tolerance", type=int, default=6, help="colour distance separating tile from outer background")
     a = ap.parse_args()
@@ -160,7 +220,7 @@ def main():
         ap.error("provide at least one asset")
     for name in ("classic", "midnight", "outline"):
         if getattr(a, name):
-            import_variant(name, getattr(a, name), a)
+            import_variant(name, getattr(a, name), a, mono_src=a.midnight if name == "classic" else None)
     if a.wordmark:
         import_wordmark(a.wordmark, a.wordmark_width)
     if a.classic:

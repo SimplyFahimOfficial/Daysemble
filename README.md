@@ -12,7 +12,7 @@ Kotlin · Jetpack Compose · Material 3 · Room · WorkManager · minSdk 26
 
 ## Screenshots
 
-There are no screenshots yet. This README will only ever show genuine captures of the running app,
+There are no screenshots yet; capturing them is scheduled for later. This README will only ever show genuine captures of the running app,
 taken with [`scripts/capture_screenshots.sh`](scripts/capture_screenshots.sh) and stored in
 `docs/screenshots/`.
 
@@ -104,14 +104,14 @@ doesn't matter:
 
 ```bash
 pip install pillow
-python3 scripts/import_logos.py --classic brand/logo1.png --midnight brand/logo2.png --outline brand/logo3.png --wordmark brand/wordmark.png
+python3 scripts/import_logos.py --classic brand/Logo1.png --midnight brand/Logo2.png --outline brand/Logo3.png --wordmark brand/Wordlogo.png
 ```
 
-The script keeps the originals in `brand/`. It removes only the black square around each tile
+The originals stay unmodified in `brand/`. It removes only the black square around each tile
 (the artwork itself isn't recoloured or redrawn), then resizes the tile to 512 px for in-app use. For the
-launcher icon, the tile is scaled to 86% of the adaptive canvas so the orbit ring isn't clipped
-by round masks. The wordmark is trimmed and resized to 900 px wide. Until the files are imported,
-the app shows neutral placeholders labelled *Asset missing*. **Status: the files haven't been imported yet.**
+launcher icon, it keeps the artwork from the tile's centre (dropping the tile's own border and
+shadow) and scales it so the outer dots stay inside the 66dp safe zone of round masks. The wordmark is trimmed and resized to 900 px wide. Until the files are imported,
+the app shows neutral placeholders labelled *Asset missing*. **Status: imported.** The supplied logos and wordmark are in the app.
 
 ## Architecture
 
