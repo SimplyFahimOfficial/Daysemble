@@ -16,7 +16,7 @@ Each milestone ends with `./gradlew assembleDebug testDebugUnitTest lintDebug` p
 - [x] 2.3 `LogoVariant` (explicit CLASSIC default), `BrandLogo`, placeholder assets, launcher activity-aliases, `scripts/import_logos.py`, Appearance screen with logo picker (R2)
 - [x] 2.4 `SettingsRepository` (DataStore): theme mode, logo, reduced motion + tests (R2.2, R3.1)
 - [x] 2.5 Shared components: buttons, rows, check, chips, section header, state views (loading/empty/error/offline), sync badge
-- [ ] 2.6 **Blocked on owner:** drop in the supplied logo PNGs
+- [x] 2.6 Supplied logos imported (Logo1 = Classic default, Logo2 = Midnight, Logo3 = Outline, Wordlogo); in-app 512 px, launcher icons in the 66dp safe zone, checked by eye
 
 ## M3 Navigation, Today, local tasks
 - [x] 3.1 Room DB v1: all entities from design §3, DAOs, converters, schema export

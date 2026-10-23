@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- PLACEHOLDER. Not brand artwork. Replaced by the supplied wordmark PNG via scripts/import_logos.py -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="200dp" android:height="56dp"
-    android:viewportWidth="200" android:viewportHeight="56">
-    <path android:strokeColor="#FF9A958C" android:strokeWidth="2" android:fillColor="#00000000"
-        android:pathData="M2,2h196v52h-196z" />
-</vector>

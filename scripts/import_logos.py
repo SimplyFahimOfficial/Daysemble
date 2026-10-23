@@ -9,14 +9,15 @@ The mapping is EXPLICIT (never inferred from file names or order):
     --wordmark  horizontal "Daysemble." wordmark (optional)
 
 What it does. The artwork itself is never recoloured or redrawn:
-  1. Keeps the untouched originals in brand/ (provenance).
+  1. Leaves the originals untouched (keep them in brand/).
   2. Finds the rounded tile in each image and makes only the pixels OUTSIDE the tile
      transparent (the supplied files sit on a black square background).
   3. In-app logos: the cut-out tile, resized to --app-size px (default 512),
      saved as res/drawable-nodpi/logo_<variant>.png.
-  4. Launcher icons: the cut-out tile scaled to --launcher-scale of the 108dp adaptive canvas
-     (default 0.86, so the orbit ring stays inside the 66dp safe zone of circular masks),
-     centred on the tile's own sampled background colour, for every density.
+  4. Launcher icons: the artwork from the tile's centre (a soft-edged circle that drops the tile's
+     own border and drop shadow), scaled to --launcher-scale of the 108dp adaptive canvas (default
+     0.63, so the outer dots stay inside the 66dp safe zone of round masks), on the tile's own
+     sampled background colour, for every density.
   5. Wordmark: trimmed of surrounding empty margin, resized to --wordmark-width px.
   6. Flips <bool name="logo_*_supplied"> flags to true.
 
@@ -67,9 +68,23 @@ def cut_out_tile(img: Image.Image, tolerance: int) -> Image.Image:
 
 
 def tile_colour(tile: Image.Image) -> str:
-    """Tile background colour sampled just inside its left edge at mid-height."""
-    px = tile.convert("RGB").getpixel((int(tile.width * 0.08), tile.height // 2))
+    """Tile background colour sampled inside its left edge at mid-height (clear of edge shading)."""
+    px = tile.convert("RGB").getpixel((int(tile.width * 0.12), tile.height // 2))
     return "#FF%02X%02X%02X" % px
+
+
+def centre_disc(square: Image.Image, radius: float, feather: float) -> Image.Image:
+    """Keeps a soft-edged disc of the artwork (radius/feather as fractions of the side)."""
+    s = square.width
+    big = 4  # supersample the mask for a smooth edge
+    m = Image.new("L", (s * big, s * big), 0)
+    r = radius * s * big
+    c = s * big / 2
+    ImageDraw.Draw(m).ellipse((c - r, c - r, c + r, c + r), fill=255)
+    m = m.resize((s, s), Image.LANCZOS).filter(ImageFilter.GaussianBlur(feather * s))
+    out = square.copy()
+    out.putalpha(ImageChops.multiply(square.getchannel("A"), m))
+    return out
 
 
 def resized(im: Image.Image, size: int) -> Image.Image:
@@ -77,9 +92,6 @@ def resized(im: Image.Image, size: int) -> Image.Image:
 
 
 def import_variant(name: str, src: pathlib.Path, a):
-    BRAND.mkdir(exist_ok=True)
-    shutil.copyfile(src, BRAND / f"logo_{name}_original{src.suffix.lower()}")
-
     tile = cut_out_tile(Image.open(src), a.tolerance)
     side = max(tile.size)
     square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
@@ -90,14 +102,16 @@ def import_variant(name: str, src: pathlib.Path, a):
     resized(square, a.app_size).save(RES / "drawable-nodpi" / f"logo_{name}.png", optimize=True)
     (RES / "drawable" / f"logo_{name}.xml").unlink(missing_ok=True)
 
-    # Launcher foregrounds
+    # Launcher foregrounds: centre disc of the artwork (no tile border/shadow), safe-zone sized.
     bg = tile_colour(square)
+    disc = centre_disc(square, a.disc_radius, 0.01)
     (RES / "drawable" / f"ic_launcher_fg_{name}.xml").unlink(missing_ok=True)
     for density, scale in DENSITIES.items():
         canvas = round(ADAPTIVE_DP * scale)
         inner = round(canvas * a.launcher_scale)
         fg = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
-        fg.paste(resized(square, inner), ((canvas - inner) // 2, (canvas - inner) // 2), resized(square, inner))
+        art = resized(disc, inner)
+        fg.alpha_composite(art, ((canvas - inner) // 2, (canvas - inner) // 2))
         out = RES / f"mipmap-{density}" / f"ic_launcher_fg_{name}.png"
         out.parent.mkdir(parents=True, exist_ok=True)
         fg.save(out, optimize=True)
@@ -116,8 +130,6 @@ def import_variant(name: str, src: pathlib.Path, a):
 
 
 def import_wordmark(src: pathlib.Path, width: int):
-    BRAND.mkdir(exist_ok=True)
-    shutil.copyfile(src, BRAND / f"wordmark_original{src.suffix.lower()}")
     im = Image.open(src).convert("RGBA")
     # Trim the empty margin (same colour as the corner) around the mark, keeping a small pad.
     bg = Image.new("RGBA", im.size, im.getpixel((2, 2)))
@@ -152,7 +164,10 @@ def main():
     ap.add_argument("--outline", type=pathlib.Path, help="supplied logo #3")
     ap.add_argument("--wordmark", type=pathlib.Path)
     ap.add_argument("--app-size", type=int, default=512)
-    ap.add_argument("--launcher-scale", type=float, default=0.86)
+    ap.add_argument("--launcher-scale", type=float, default=0.63,
+                    help="tile size as a fraction of the 108dp canvas (0.63 keeps the artwork in the 66dp safe zone)")
+    ap.add_argument("--disc-radius", type=float, default=0.49,
+                    help="radius of the kept artwork disc, as a fraction of the tile side")
     ap.add_argument("--wordmark-width", type=int, default=900)
     ap.add_argument("--tolerance", type=int, default=6, help="colour distance separating tile from outer background")
     a = ap.parse_args()
