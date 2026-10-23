@@ -85,7 +85,8 @@ private fun SettingsScaffold(title: String, onBack: () -> Unit, content: @Compos
 private fun rememberSettings(): Pair<AppSettings?, app.daysemble.AppContainer> {
     val container = (LocalContext.current.applicationContext as DaysembleApp).container
     val flow = remember(container) { container.settings.settings.map<AppSettings, AppSettings?> { it } }
-    val s by flow.collectAsStateWithLifecycle(initialValue = null)
+    // Starts from the settings the app is already running with, so the page body is there on its first frame.
+    val s by flow.collectAsStateWithLifecycle(initialValue = app.daysemble.ui.LocalAppSettings.current)
     return s to container
 }
 

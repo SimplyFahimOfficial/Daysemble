@@ -4,17 +4,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,6 +50,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -86,6 +85,7 @@ import app.daysemble.ui.format.rememberTimePrefs
 import app.daysemble.ui.navigation.CalendarRoute
 import app.daysemble.ui.navigation.EventDetailRoute
 import app.daysemble.ui.navigation.EventEditorRoute
+import app.daysemble.ui.navigation.NavMotion
 import app.daysemble.ui.navigation.SearchRoute
 import app.daysemble.ui.navigation.SettingsPageRoute
 import app.daysemble.ui.navigation.SettingsRoute
@@ -102,7 +102,6 @@ import app.daysemble.ui.settings.SettingsPage
 import app.daysemble.ui.settings.TaskSettingsRoute
 import app.daysemble.ui.task.TaskEditorRoute as TaskEditorScreenRoute
 import app.daysemble.ui.tasks.TasksRoute as TasksScreenRoute
-import app.daysemble.ui.theme.DsMotion
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
@@ -113,6 +112,19 @@ import kotlinx.coroutines.launch
 import java.time.ZoneId
 
 val LocalSnackbar = staticCompositionLocalOf { SnackbarHostState() }
+
+/**
+ * The settings the app is currently running with (already loaded before the first frame). Settings
+ * pages use it as their initial value, so they never render an empty frame while their own flow
+ * starts. Null outside [DaysembleRoot] (e.g. in screen tests).
+ */
+val LocalAppSettings = staticCompositionLocalOf<AppSettings?> { null }
+
+/**
+ * Sync status collected once at the app root, which stays alive across navigation, so screens have
+ * it on their first frame when you return to them. Null outside [DaysembleRoot]: collect locally.
+ */
+val LocalSyncStatus = staticCompositionLocalOf<androidx.compose.runtime.State<app.daysemble.data.google.sync.SyncStatus?>?> { null }
 
 /**
  * Call after a task was soft-deleted. Shows "Task deleted · Undo" from the root scope, so the
@@ -140,6 +152,8 @@ fun DaysembleRoot(
     settings: AppSettings,
     openRequests: kotlinx.coroutines.flow.StateFlow<app.daysemble.OpenRequest?> = kotlinx.coroutines.flow.MutableStateFlow(null),
     onOpenHandled: () -> Unit = {},
+    /** True on a fresh launch: the app settles in while the splash closes around the logo (SplashExit). */
+    animateIntro: Boolean = false,
 ) {
     val zone = rememberSystemZone()
     val prefs = rememberTimePrefs(settings.clockFormat, settings.firstDayOfWeek, zone)
@@ -158,6 +172,10 @@ fun DaysembleRoot(
         container.timeContext.value = app.daysemble.core.time.TimeContext(prefs.zone, prefs.firstDayOfWeek)
     }
     val open by openRequests.collectAsStateWithLifecycle()
+    // Collected here (alive across navigation) so Today has the sync badge on its first frame when
+    // you come back to it, instead of the badge popping in after the transition.
+    val syncFlow = remember(container) { container.sync.status }
+    val syncStatus = syncFlow.collectAsStateWithLifecycle(initialValue = null)
 
     val rootScope = androidx.compose.runtime.rememberCoroutineScope()
     val deletedMsg = stringResource(R.string.task_deleted)
@@ -171,23 +189,39 @@ fun DaysembleRoot(
             }
         }
     }
+    // Fresh launch only (not after rotation or when returning to the app), and never with reduced motion.
+    val introMotion = DsTheme.motion
+    val intro = remember { androidx.compose.animation.core.Animatable(if (animateIntro && !introMotion.reduced) 0f else 1f) }
+    LaunchedEffect(Unit) {
+        if (intro.value < 1f) intro.animateTo(1f, androidx.compose.animation.core.tween(420, easing = app.daysemble.ui.theme.DsMotion.EmphasizedDecelerate))
+    }
+    val introModifier = Modifier.graphicsLayer {
+        val t = intro.value
+        val sc = 1.03f - 0.03f * t
+        scaleX = sc; scaleY = sc
+        alpha = 0.6f + 0.4f * t
+    }
     CompositionLocalProvider(
         LocalTimePrefs provides prefs,
         LocalAppClock provides container.clock,
         LocalSnackbar provides snackbar,
         LocalTaskDeleted provides onTaskDeleted,
+        LocalAppSettings provides settings,
+        LocalSyncStatus provides syncStatus,
     ) {
         if (!settings.onboardingDone) {
             val scope = androidx.compose.runtime.rememberCoroutineScope()
-            app.daysemble.ui.onboarding.OnboardingScreen { openGoogle ->
-                openAccountsAfterOnboarding = openGoogle
-                scope.launch { container.settings.setOnboardingDone() }
+            Box(introModifier) {
+                app.daysemble.ui.onboarding.OnboardingScreen { openGoogle ->
+                    openAccountsAfterOnboarding = openGoogle
+                    scope.launch { container.settings.setOnboardingDone() }
+                }
             }
             return@CompositionLocalProvider
         }
         val c = DsTheme.colors
         val bottomPadding = PaddingValues(bottom = Sizes.bottomBar + Space.xl + 24.dp)
-        Box(Modifier.fillMaxSize().background(c.background)) {
+        Box(Modifier.fillMaxSize().background(c.background).then(introModifier)) {
             DaysembleNavHost(
                 nav, bottomPadding,
                 onCreateEventAt = { d, m -> nav.navigate(EventEditorRoute(dateEpochDay = d.toEpochDay(), startMinute = m)) },
@@ -197,7 +231,8 @@ fun DaysembleRoot(
             val motion = DsTheme.motion
             AnimatedVisibility(
                 visible = tab != null,
-                enter = fadeIn(motion.enter()) + slideInVertically(motion.enter()) { if (motion.reduced) 0 else it / 2 },
+                // Same length as the back transition it usually accompanies (NavMotion popEnter).
+                enter = fadeIn(motion.enter(motion.long)) + slideInVertically(motion.enter(motion.long)) { if (motion.reduced) 0 else it / 2 },
                 exit = fadeOut(motion.exit()) + slideOutVertically(motion.exit()) { if (motion.reduced) 0 else it / 2 },
                 modifier = Modifier.align(Alignment.BottomCenter),
             ) {
@@ -225,12 +260,16 @@ fun DaysembleRoot(
                     nav.navigate(SettingsPageRoute(SettingsPage.ACCOUNTS.name))
                 }
             }
+            // Moves with the bottom bar instead of jumping when the bar shows or hides.
+            val snackbarLift by androidx.compose.animation.core.animateDpAsState(
+                if (tab != null) Sizes.bottomBar + Space.l else Space.l, motion.standard(motion.long), label = "snackbarLift",
+            )
             SnackbarHost(
                 snackbar,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = if (tab != null) Sizes.bottomBar + Space.l else Space.l),
+                    .padding(bottom = snackbarLift),
             ) { data ->
                 Snackbar(
                     data, shape = Radii.control,
@@ -277,12 +316,13 @@ private fun DaysembleNavHost(
     NavHost(
         navController = nav,
         startDestination = TodayRoute,
-        enterTransition = { detailEnter(m) },
-        exitTransition = { fadeOut(m.exit()) },
-        popEnterTransition = { fadeIn(m.enter()) },
-        popExitTransition = { detailExit(m) },
+        // See NavMotion: only the screen on top fades, so there are no blank or double-exposed frames.
+        enterTransition = { with(NavMotion) { enter(m) } },
+        exitTransition = { with(NavMotion) { exit(m) } },
+        popEnterTransition = { with(NavMotion) { popEnter(m) } },
+        popExitTransition = { with(NavMotion) { popExit(m) } },
     ) {
-        composable<TodayRoute>(enterTransition = { tabEnter(m) }, exitTransition = { tabExit(m) }, popEnterTransition = { tabEnter(m) }) {
+        composable<TodayRoute> {
             TodayScreenRoute(
                 contentPadding, onOpenEvent = openEvent, onOpenTask = openTask,
                 onSearch = { nav.navigate(SearchRoute) }, onSettings = { nav.navigate(SettingsRoute) },
@@ -290,13 +330,13 @@ private fun DaysembleNavHost(
                 onOpenSync = { nav.navigate(SettingsPageRoute(SettingsPage.ACCOUNTS.name)) },
             )
         }
-        composable<CalendarRoute>(enterTransition = { tabEnter(m) }, exitTransition = { tabExit(m) }, popEnterTransition = { tabEnter(m) }) {
+        composable<CalendarRoute> {
             CalendarScreenRoute(contentPadding, onOpenEvent = openEvent, onOpenTask = openTask, onCreateAt = onCreateEventAt, onFocusedDate = onFocusedDate)
         }
-        composable<TasksRoute>(enterTransition = { tabEnter(m) }, exitTransition = { tabExit(m) }, popEnterTransition = { tabEnter(m) }) {
+        composable<TasksRoute> {
             TasksScreenRoute(contentPadding, onOpenTask = openTask)
         }
-        composable<TaskEditorRoute>(enterTransition = { editorEnter(m) }, popExitTransition = { editorExit(m) }) { e ->
+        composable<TaskEditorRoute> { e ->
             val r = e.toRoute<TaskEditorRoute>()
             TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), onClose = back)
         }
@@ -304,7 +344,7 @@ private fun DaysembleNavHost(
             val r = e.toRoute<EventDetailRoute>()
             EventDetailScreenRoute(r.eventId, r.occurrenceKey, onEdit = { id -> nav.navigate(EventEditorRoute(eventId = id)) }, onClose = back)
         }
-        composable<EventEditorRoute>(enterTransition = { editorEnter(m) }, popExitTransition = { editorExit(m) }) { e ->
+        composable<EventEditorRoute> { e ->
             val r = e.toRoute<EventEditorRoute>()
             EventEditorScreenRoute(r.eventId, r.dateEpochDay?.let(LocalDate::ofEpochDay), r.startMinute, r.title, onClose = back)
         }
@@ -327,25 +367,6 @@ private fun DaysembleNavHost(
     }
 }
 
-// ---- Transitions (one vocabulary, see design.md §6) -----------------------------------------
-
-private fun tabEnter(m: DsMotion): EnterTransition =
-    if (m.reduced) fadeIn(m.enter(m.short)) else fadeIn(m.enter(m.long)) + scaleIn(m.enter(m.long), initialScale = 0.985f)
-
-private fun tabExit(m: DsMotion): ExitTransition = fadeOut(m.exit(m.short))
-
-private fun AnimatedContentTransitionScope<*>.detailEnter(m: DsMotion): EnterTransition =
-    if (m.reduced) fadeIn(m.enter(m.short)) else fadeIn(m.enter(m.long)) + slideInHorizontally(m.enter(m.long)) { it / 10 }
-
-private fun AnimatedContentTransitionScope<*>.detailExit(m: DsMotion): ExitTransition =
-    if (m.reduced) fadeOut(m.exit()) else fadeOut(m.exit(m.medium)) + slideOutHorizontally(m.exit(m.medium)) { it / 10 }
-
-private fun AnimatedContentTransitionScope<*>.editorEnter(m: DsMotion): EnterTransition =
-    if (m.reduced) fadeIn(m.enter(m.short)) else fadeIn(m.enter(m.long)) + slideInVertically(m.enter(m.long)) { it / 12 }
-
-private fun AnimatedContentTransitionScope<*>.editorExit(m: DsMotion): ExitTransition =
-    if (m.reduced) fadeOut(m.exit()) else fadeOut(m.exit(m.medium)) + slideOutVertically(m.exit(m.medium)) { it / 12 }
-
 // ---- Bottom bar -----------------------------------------------------------------------------
 
 @Composable
@@ -358,6 +379,11 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit) 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.m),
     ) {
+        // One selection pill that glides between tabs (instead of each tab fading its own background),
+        // so the bar shows where you came from and where you went.
+        val m = DsTheme.motion
+        val index by androidx.compose.animation.core.animateFloatAsState(current.ordinal.toFloat(), m.indicator(), label = "tabIndicator")
+        val pill = c.inverse
         Row(
             Modifier
                 .weight(1f, fill = false)
@@ -367,6 +393,14 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit) 
                 .background(c.surfaceRaised)
                 .border(Sizes.hairline, c.outline, Radii.pill)
                 .padding(4.dp)
+                .drawBehind {
+                    val w = size.width / Tab.entries.size
+                    val x = if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) size.width - w * (index + 1) else w * index
+                    drawRoundRect(
+                        pill, topLeft = Offset(x, 0f), size = Size(w, size.height),
+                        cornerRadius = CornerRadius(size.height / 2),
+                    )
+                }
                 .selectableGroup(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -380,20 +414,26 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit) 
 private fun TabItem(tab: Tab, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val c = DsTheme.colors
     val m = DsTheme.motion
-    val bg by animateColorAsState(if (selected) c.inverse else androidx.compose.ui.graphics.Color.Transparent, m.indicator(), label = "tabBg")
     val fg by animateColorAsState(if (selected) c.onInverse else c.textSecondary, m.indicator(), label = "tabFg")
+    // A small lift of the selected icon; nothing at all with reduced motion.
+    val lift by androidx.compose.animation.core.animateFloatAsState(if (selected && !m.reduced) 1f else 0f, m.indicator(), label = "tabLift")
     Column(
         modifier
             .heightIn(min = Sizes.bottomBar - 16.dp)
             .widthIn(min = 64.dp)
             .clip(Radii.pill)
-            .background(bg)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = Space.m),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(tab.icon, null, tint = fg, modifier = Modifier.size(20.dp))
+        Icon(
+            tab.icon, null, tint = fg,
+            modifier = Modifier.size(20.dp).graphicsLayer {
+                val s = 1f + 0.06f * lift
+                scaleX = s; scaleY = s; translationY = -1.5.dp.toPx() * lift
+            },
+        )
         Text(stringResource(tab.label), style = DsTheme.type.caps, color = fg, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }

@@ -71,7 +71,7 @@ fun NotificationSettingsRoute(onBack: () -> Unit) {
     val c = DsTheme.colors
     var resume by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resume++ }
-    val s = loaded ?: return
+    val s = loaded ?: app.daysemble.ui.LocalAppSettings.current ?: return
     val notificationsAllowed = remember(resume) { ReminderScheduler.notificationsAllowed(ctx) }
     val health = remember(resume, s.remindersEnabled) { container.reminders.health(s.remindersEnabled) }
     val ignoringBattery = remember(resume) { ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName) }

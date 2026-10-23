@@ -53,7 +53,8 @@ import app.daysemble.ui.theme.Space
 fun AppearanceRoute(onBack: (() -> Unit)?) {
     val vm = daysembleViewModel { c, _ -> AppearanceViewModel(c.settings, c.launcherIcon::apply) }
     val s by vm.state.collectAsStateWithLifecycle()
-    val settings = s ?: return
+    // Until the page's own flow emits, use the settings the app is already running with (no empty frame).
+    val settings = s ?: app.daysemble.ui.LocalAppSettings.current ?: return
     AppearanceScreen(
         theme = settings.themeMode,
         logo = settings.logo,

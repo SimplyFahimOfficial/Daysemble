@@ -88,8 +88,11 @@ fun TodayRoute(
 ) {
     val prefs = LocalTimePrefs.current
     val container = (androidx.compose.ui.platform.LocalContext.current.applicationContext as app.daysemble.DaysembleApp).container
-    val syncFlow = androidx.compose.runtime.remember(container) { container.sync.status }
-    val sync by syncFlow.collectAsStateWithLifecycle(initialValue = null)
+    val rootSync = app.daysemble.ui.LocalSyncStatus.current
+    val sync = if (rootSync != null) rootSync.value else {
+        val syncFlow = androidx.compose.runtime.remember(container) { container.sync.status }
+        syncFlow.collectAsStateWithLifecycle(initialValue = null).value
+    }
     val vm = daysembleViewModel { c, h -> TodayViewModel(c.events, c.tasks, c.settings, c.clock, c.timeContext, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()
