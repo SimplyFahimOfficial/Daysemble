@@ -12,8 +12,10 @@ What it does. The artwork itself is never recoloured or redrawn:
   1. Leaves the originals untouched (keep them in brand/).
   2. Finds the rounded tile in each image and makes only the pixels OUTSIDE the tile
      transparent (the supplied files sit on a black square background).
-  3. In-app logos: the cut-out tile, resized to --app-size px (default 512),
-     saved as res/drawable-nodpi/logo_<variant>.png.
+  3. In-app logos: the cut-out tile with its faint outer glow and the black gap around it removed,
+     edge alpha rebuilt from the black background (no dark fringe), placed on a transparent square
+     with a small --app-margin so the edge never touches the image bounds, resized to --app-size px
+     (default 512), saved as res/drawable-nodpi/logo_<variant>.png.
   4. Launcher icons: the artwork from the tile's centre (a soft-edged circle that drops the tile's
      own border and drop shadow), scaled to --launcher-scale of the 108dp adaptive canvas (default
      0.63, so the outer dots stay inside the 66dp safe zone of round masks), on the tile's own
@@ -67,6 +69,74 @@ def cut_out_tile(img: Image.Image, tolerance: int) -> Image.Image:
     out = rgba.copy()
     out.putalpha(ImageChops.multiply(alpha, mask))
     return out.crop(box)
+
+
+def clean_tile(img: Image.Image, tolerance: int, halo: int, band: int) -> Image.Image:
+    """
+    In-app cut-out of the tile, with a clean anti-aliased edge.
+
+    The supplied tiles sit on pure black with a faint glow ring around them (levels up to ~12),
+    separated from the tile by a 1px black gap. A plain flood fill at `tolerance` stops at the glow,
+    so the black gap ends up inside the cut-out as a dark line along every side. This removes the
+    glow and gap, then rebuilds the edge: because the outside is pure black, an edge pixel is
+    coverage x tile colour, so alpha = luminance / nearby tile luminance and the colour is the
+    nearby tile colour (no black fringe). Only edge pixels change; the artwork itself is untouched.
+    """
+    rgb = img.convert("RGB")
+    w, h = rgb.size
+    corner = rgb.getpixel((2, 2))
+    diff = ImageChops.difference(rgb, Image.new("RGB", (w, h), corner)).convert("L")
+
+    def outside_mask(thresh: int, seed: Image.Image | None) -> Image.Image:
+        m = diff.point(lambda d: 255 if d > thresh else 0)
+        if seed is not None:
+            m = ImageChops.multiply(m, ImageChops.invert(seed))  # already-outside stays outside
+        for xy in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]:
+            if m.getpixel(xy) == 0:
+                ImageDraw.floodfill(m, xy, 128)
+        return m.point(lambda v: 255 if v == 128 else 0)
+
+    outer = outside_mask(tolerance, None)
+    # Second pass from the outside through the glow ring and gap. Dark tiles have interiors close
+    # to black, so if this leaks into the tile (removes more than a thin ring) it is discarded.
+    through = outside_mask(halo, outer)
+    inside_before = 255 * w * h - sum(i * c for i, c in enumerate(outer.histogram()))
+    removed = sum(i * c for i, c in enumerate(through.histogram())) - (255 * w * h - inside_before)
+    outside = through if removed < 0.03 * inside_before else outer
+    inside = ImageChops.invert(outside)
+
+    box = inside.getbbox()
+    if box is None:
+        sys.exit("Could not detect the tile")
+    core = inside.filter(ImageFilter.MinFilter(2 * band + 1))   # interior, `band` px away from the edge
+    fg = rgb.filter(ImageFilter.MaxFilter(2 * band + 1))         # nearby tile colour for edge pixels
+    src, ins, cor, near = rgb.load(), inside.load(), core.load(), fg.load()
+    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    px = out.load()
+    for y in range(max(0, box[1] - 1), min(h, box[3] + 1)):
+        for x in range(max(0, box[0] - 1), min(w, box[2] + 1)):
+            if not ins[x, y]:
+                continue
+            r, g, b = src[x, y]
+            if cor[x, y]:
+                px[x, y] = (r, g, b, 255)
+                continue
+            nr, ng, nb = near[x, y]
+            lum, nlum = r + g + b, max(1, nr + ng + nb)
+            if lum >= nlum:                 # edge pixel already as bright as its tile: keep it
+                px[x, y] = (r, g, b, 255)
+            else:
+                px[x, y] = (nr, ng, nb, round(255 * lum / nlum))
+    return out.crop(out.getbbox())
+
+
+def padded_square(tile: Image.Image, margin: float) -> Image.Image:
+    """Centres the tile on a transparent square with a small margin, so the edge never touches the bounds."""
+    side = max(tile.size)
+    pad = max(1, round(side * margin))
+    square = Image.new("RGBA", (side + 2 * pad, side + 2 * pad), (0, 0, 0, 0))
+    square.paste(tile, (pad + (side - tile.width) // 2, pad + (side - tile.height) // 2))
+    return square
 
 
 def tile_colour(tile: Image.Image) -> str:
@@ -123,9 +193,12 @@ def square_tile(src: pathlib.Path, tolerance: int) -> Image.Image:
 def import_variant(name: str, src: pathlib.Path, a, mono_src: pathlib.Path | None = None):
     square = square_tile(src, a.tolerance)
 
-    # In-app artwork
+    # In-app artwork: clean edge plus a small transparent margin (see clean_tile).
     (RES / "drawable-nodpi").mkdir(parents=True, exist_ok=True)
-    resized(square, a.app_size).save(RES / "drawable-nodpi" / f"logo_{name}.png", optimize=True)
+    app_tile = padded_square(clean_tile(Image.open(src), a.tolerance, a.halo, 3), a.app_margin)
+    app_img = resized(app_tile, a.app_size)
+    app_img.putalpha(app_img.getchannel("A").point(lambda v: 0 if v < 8 else v))  # drop resampling ringing
+    app_img.save(RES / "drawable-nodpi" / f"logo_{name}.png", optimize=True)
     (RES / "drawable" / f"logo_{name}.xml").unlink(missing_ok=True)
 
     # Launcher foregrounds: centre disc of the artwork (no tile border/shadow), safe-zone sized.
@@ -170,6 +243,33 @@ def import_variant(name: str, src: pathlib.Path, a, mono_src: pathlib.Path | Non
     print(f"  {name}: tile {square.size}, background {bg}" + (f", silhouette from {mono_src.name}" if mono_src else ""))
 
 
+def unblend(im: Image.Image, bg: tuple, noise: int = 3) -> Image.Image:
+    """
+    Makes the flat background of an opaque image transparent while keeping soft shading: each pixel
+    gets the smallest alpha that reproduces it over `bg` (colour-to-alpha). Composited over `bg` the
+    result is the original; over a slightly different background (the app's cream) there is no box.
+    Deviations of `noise` levels or less (background grain) count as background.
+    """
+    src = im.convert("RGB").load()
+    out = Image.new("RGBA", im.size, (0, 0, 0, 0))
+    px = out.load()
+    for y in range(im.height):
+        for x in range(im.width):
+            c = src[x, y]
+            a = 0.0
+            for ch in range(3):
+                d = c[ch] - bg[ch]
+                room = (255 - bg[ch]) if d > 0 else bg[ch]
+                if room > noise and abs(d) > noise:
+                    a = max(a, (abs(d) - noise) / (room - noise))
+            a = min(1.0, a)
+            if a <= 0:
+                continue
+            col = tuple(max(0, min(255, round((c[ch] - bg[ch] * (1 - a)) / a))) for ch in range(3))
+            px[x, y] = col + (round(a * 255),)
+    return out
+
+
 def import_wordmark(src: pathlib.Path, width: int):
     im = Image.open(src).convert("RGBA")
     # Trim the empty margin (same colour as the corner) around the mark, keeping a small pad.
@@ -178,6 +278,7 @@ def import_wordmark(src: pathlib.Path, width: int):
     pad = int(0.04 * im.height)
     box = (max(0, box[0] - pad), max(0, box[1] - pad), min(im.width, box[2] + pad), min(im.height, box[3] + pad))
     im = im.crop(box)
+    im = unblend(im, im.getpixel((2, 2))[:3])
     h = round(im.height * width / im.width)
     (RES / "drawable-nodpi").mkdir(parents=True, exist_ok=True)
     im.resize((width, h), Image.LANCZOS).save(RES / "drawable-nodpi" / "wordmark.png", optimize=True)
@@ -205,6 +306,10 @@ def main():
     ap.add_argument("--outline", type=pathlib.Path, help="supplied logo #3")
     ap.add_argument("--wordmark", type=pathlib.Path)
     ap.add_argument("--app-size", type=int, default=512)
+    ap.add_argument("--app-margin", type=float, default=0.012,
+                    help="transparent margin around the in-app tile, as a fraction of its side")
+    ap.add_argument("--halo", type=int, default=12,
+                    help="colour distance of the faint glow ring around the supplied tiles (removed in-app)")
     ap.add_argument("--launcher-scale", type=float, default=0.63,
                     help="tile size as a fraction of the 108dp canvas (0.63 keeps the artwork in the 66dp safe zone)")
     ap.add_argument("--disc-radius", type=float, default=0.49,

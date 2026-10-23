@@ -18,4 +18,6 @@ python3 scripts/import_logos.py --classic brand/Logo1.png --midnight brand/Logo2
 ```
 
 The script removes only the black square outside each tile; the artwork isn't recoloured or redrawn.
-It writes 512 px copies for in-app use and adaptive launcher icons sized to the 66dp safe zone.
+In-app copies also drop the faint glow and black gap around the tile, rebuild a clean anti-aliased
+edge (so no dark seam shows on light backgrounds) and keep a small transparent margin, so the tile's
+edge is never cut at the image bounds. It writes 512 px copies for in-app use and adaptive launcher icons sized to the 66dp safe zone.
