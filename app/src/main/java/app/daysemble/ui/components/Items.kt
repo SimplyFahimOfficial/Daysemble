@@ -85,13 +85,21 @@ fun DateStrip(
     val p = LocalTimePrefs.current
     val first = today.minusDays(daysBefore.toLong())
     val count = daysBefore + daysAfter + 1
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = (daysBefore - 1).coerceAtLeast(0))
+    val reduced = DsTheme.motion.reduced
+    val selectedIdx = (selected.toEpochDay() - first.toEpochDay()).toInt()
+    // Starts at the selected day. The scroll position is saved, so coming back to Today shows the
+    // strip exactly where it was. The effect below used to run on every return as well, before the
+    // first layout, saw no visible items and scrolled the strip during the screen transition.
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIdx - 2).coerceIn(0, count - 1))
+    val firstRun = remember { booleanArrayOf(true) }
     LaunchedEffect(selected) {
-        val idx = (selected.toEpochDay() - first.toEpochDay()).toInt()
+        if (firstRun[0]) { firstRun[0] = false; return@LaunchedEffect }
+        val idx = selectedIdx
         if (idx in 0 until count) {
             val visible = state.layoutInfo.visibleItemsInfo
             if (visible.none { it.index == idx } || visible.firstOrNull()?.index == idx || visible.lastOrNull()?.index == idx) {
-                state.animateScrollToItem((idx - 2).coerceAtLeast(0))
+                val target = (idx - 2).coerceAtLeast(0)
+                if (reduced) state.scrollToItem(target) else state.animateScrollToItem(target)
             }
         }
     }

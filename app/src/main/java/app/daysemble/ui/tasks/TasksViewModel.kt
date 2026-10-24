@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -48,6 +49,7 @@ class TasksViewModel(
     private val clock: AppClock,
     private val time: kotlinx.coroutines.flow.StateFlow<app.daysemble.core.time.TimeContext>,
     private val handle: SavedStateHandle,
+    private val compute: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
 ) : ViewModel() {
     private fun zone(): ZoneId = time.value.zone
 
@@ -60,9 +62,11 @@ class TasksViewModel(
     )
     private val tick = MutableStateFlow(clock.now())
 
+    // Grouping, sorting and recurrence expansion run off the main thread, so a month change or a tab
+    // switch never waits for them; the result is collected on the main thread as before.
     val state: StateFlow<TasksUiState> = combine(
         combine(repo.allTasks, repo.taskLists) { a, b -> a to b }, settings.settings, query, tick, time,
-    ) { (tasks, lists), s, q, now, _ -> build(tasks, lists, s.taskSort, q, now) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TasksUiState())
+    ) { (tasks, lists), s, q, now, _ -> build(tasks, lists, s.taskSort, q, now) }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TasksUiState())
 
     fun setQuery(q: String) = update { it.copy(query = q) }.also { handle["q"] = q }
     fun setFilter(f: TaskFilter) = update { it.copy(filter = f) }.also { handle["f"] = f.name }

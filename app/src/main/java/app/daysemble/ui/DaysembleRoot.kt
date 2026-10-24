@@ -4,12 +4,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import androidx.compose.animation.AnimatedVisibility
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -64,7 +63,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -82,7 +80,6 @@ import app.daysemble.ui.event.EventEditorRoute as EventEditorScreenRoute
 import app.daysemble.ui.format.LocalAppClock
 import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.rememberTimePrefs
-import app.daysemble.ui.navigation.CalendarRoute
 import app.daysemble.ui.navigation.EventDetailRoute
 import app.daysemble.ui.navigation.EventEditorRoute
 import app.daysemble.ui.navigation.NavMotion
@@ -90,8 +87,7 @@ import app.daysemble.ui.navigation.SearchRoute
 import app.daysemble.ui.navigation.SettingsPageRoute
 import app.daysemble.ui.navigation.SettingsRoute
 import app.daysemble.ui.navigation.TaskEditorRoute
-import app.daysemble.ui.navigation.TasksRoute
-import app.daysemble.ui.navigation.TodayRoute
+import app.daysemble.ui.navigation.MainRoute
 import app.daysemble.ui.search.SearchRoute as SearchScreenRoute
 import app.daysemble.ui.settings.AboutRoute
 import app.daysemble.ui.settings.AppearanceRoute
@@ -138,13 +134,8 @@ private enum class Tab(val icon: ImageVector, val label: Int) {
     TASKS(Icons.Rounded.CheckCircleOutline, R.string.tab_tasks),
 }
 
-private fun NavDestination?.tab(): Tab? = when {
-    this == null -> null
-    hasRoute<TodayRoute>() -> Tab.TODAY
-    hasRoute<CalendarRoute>() -> Tab.CALENDAR
-    hasRoute<TasksRoute>() -> Tab.TASKS
-    else -> null
-}
+/** True while the main screen (tabs + bottom bar) is the current destination, or before the graph exists. */
+private fun NavDestination?.isMain(): Boolean = this == null || hasRoute<MainRoute>()
 
 @Composable
 fun DaysembleRoot(
@@ -152,15 +143,15 @@ fun DaysembleRoot(
     settings: AppSettings,
     openRequests: kotlinx.coroutines.flow.StateFlow<app.daysemble.OpenRequest?> = kotlinx.coroutines.flow.MutableStateFlow(null),
     onOpenHandled: () -> Unit = {},
-    /** True on a fresh launch: the app settles in while the splash closes around the logo (SplashExit). */
-    animateIntro: Boolean = false,
 ) {
     val zone = rememberSystemZone()
     val prefs = rememberTimePrefs(settings.clockFormat, settings.firstDayOfWeek, zone)
     val snackbar = remember { SnackbarHostState() }
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
-    val tab = entry?.destination.tab()
+    val onMain = entry?.destination.isMain()
+    // The selected tab lives here (saved across rotation and process death), not in the back stack.
+    var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var addDate by rememberSaveable { mutableStateOf<Long?>(null) }
     // Date the Today/Calendar screen is focused on, used to prefill quick add.
@@ -189,18 +180,6 @@ fun DaysembleRoot(
             }
         }
     }
-    // Fresh launch only (not after rotation or when returning to the app), and never with reduced motion.
-    val introMotion = DsTheme.motion
-    val intro = remember { androidx.compose.animation.core.Animatable(if (animateIntro && !introMotion.reduced) 0f else 1f) }
-    LaunchedEffect(Unit) {
-        if (intro.value < 1f) intro.animateTo(1f, androidx.compose.animation.core.tween(420, easing = app.daysemble.ui.theme.DsMotion.EmphasizedDecelerate))
-    }
-    val introModifier = Modifier.graphicsLayer {
-        val t = intro.value
-        val sc = 1.03f - 0.03f * t
-        scaleX = sc; scaleY = sc
-        alpha = 0.6f + 0.4f * t
-    }
     CompositionLocalProvider(
         LocalTimePrefs provides prefs,
         LocalAppClock provides container.clock,
@@ -209,73 +188,25 @@ fun DaysembleRoot(
         LocalAppSettings provides settings,
         LocalSyncStatus provides syncStatus,
     ) {
-        if (!settings.onboardingDone) {
-            val scope = androidx.compose.runtime.rememberCoroutineScope()
-            Box(introModifier) {
-                app.daysemble.ui.onboarding.OnboardingScreen { openGoogle ->
+        val m = DsTheme.motion
+        // Finishing setup: the app fades in over the last onboarding step (no blank frame between).
+        // Returning users start directly in the app; this only animates when the value changes.
+        AnimatedContent(
+            settings.onboardingDone,
+            transitionSpec = { androidx.compose.animation.ContentTransform(fadeIn(m.enter(m.long)), m.hold(m.long), sizeTransform = null) },
+            label = "firstUse",
+        ) { done ->
+            if (!done) {
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
+                app.daysemble.ui.onboarding.OnboardingScreen(initialName = settings.displayName) { name, openGoogle ->
                     openAccountsAfterOnboarding = openGoogle
-                    scope.launch { container.settings.setOnboardingDone() }
+                    scope.launch { container.settings.completeOnboarding(name) }
                 }
-            }
-            return@CompositionLocalProvider
-        }
-        val c = DsTheme.colors
-        val bottomPadding = PaddingValues(bottom = Sizes.bottomBar + Space.xl + 24.dp)
-        Box(Modifier.fillMaxSize().background(c.background).then(introModifier)) {
-            DaysembleNavHost(
-                nav, bottomPadding,
-                onCreateEventAt = { d, m -> nav.navigate(EventEditorRoute(dateEpochDay = d.toEpochDay(), startMinute = m)) },
-                onFocusedDate = { focusedDate = it.toEpochDay() },
-            )
-
-            val motion = DsTheme.motion
-            AnimatedVisibility(
-                visible = tab != null,
-                // Same length as the back transition it usually accompanies (NavMotion popEnter).
-                enter = fadeIn(motion.enter(motion.long)) + slideInVertically(motion.enter(motion.long)) { if (motion.reduced) 0 else it / 2 },
-                exit = fadeOut(motion.exit()) + slideOutVertically(motion.exit()) { if (motion.reduced) 0 else it / 2 },
-                modifier = Modifier.align(Alignment.BottomCenter),
-            ) {
-                BottomBar(
-                    current = tab ?: Tab.TODAY,
-                    onSelect = { t -> nav.navigateToTab(t) },
-                    onAdd = {
-                        addDate = if (tab == Tab.TASKS) null else focusedDate
-                        showAdd = true
-                    },
-                )
-            }
-            LaunchedEffect(open) {
-                val r = open ?: return@LaunchedEffect
-                when (r.type) {
-                    app.daysemble.data.db.OwnerType.TASK -> nav.navigate(TaskEditorRoute(taskId = r.id))
-                    app.daysemble.data.db.OwnerType.EVENT -> nav.navigate(EventDetailRoute(r.id, r.occurrenceKey))
-                }
-                onOpenHandled()
-            }
-            LaunchedEffect(openAccountsAfterOnboarding) {
-                // Runs only once the NavHost above exists, so its graph is set.
-                if (openAccountsAfterOnboarding) {
-                    openAccountsAfterOnboarding = false
-                    nav.navigate(SettingsPageRoute(SettingsPage.ACCOUNTS.name))
-                }
-            }
-            // Moves with the bottom bar instead of jumping when the bar shows or hides.
-            val snackbarLift by androidx.compose.animation.core.animateDpAsState(
-                if (tab != null) Sizes.bottomBar + Space.l else Space.l,
-                if (motion.reduced) androidx.compose.animation.core.snap() else motion.standard(motion.long), label = "snackbarLift",
-            )
-            SnackbarHost(
-                snackbar,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = snackbarLift),
-            ) { data ->
-                Snackbar(
-                    data, shape = Radii.control,
-                    containerColor = c.inverse, contentColor = c.onInverse, actionColor = c.accentFill,
-                )
+            } else {
+                AppContent(nav, onMain, tab, { tab = it }, container, settings, open, onOpenHandled,
+                    openAccountsAfterOnboarding, { openAccountsAfterOnboarding = false }, snackbar,
+                    onAdd = { addDate = if (tab == Tab.TASKS) null else focusedDate; showAdd = true },
+                    onFocusedDate = { focusedDate = it.toEpochDay() })
             }
         }
 
@@ -293,69 +224,171 @@ fun DaysembleRoot(
     }
 }
 
-private fun NavHostController.navigateToTab(t: Tab) {
-    val route: Any = when (t) { Tab.TODAY -> TodayRoute; Tab.CALENDAR -> CalendarRoute; Tab.TASKS -> TasksRoute }
-    navigate(route) {
-        popUpTo(graph.findStartDestination().id) { saveState = true }
-        launchSingleTop = true
-        restoreState = true
-    }
+@Composable
+private fun AppContent(
+    nav: NavHostController,
+    onMain: Boolean,
+    tab: Tab,
+    onTab: (Tab) -> Unit,
+    container: AppContainer,
+    settings: AppSettings,
+    open: app.daysemble.OpenRequest?,
+    onOpenHandled: () -> Unit,
+    openAccountsAfterOnboarding: Boolean,
+    onAccountsOpened: () -> Unit,
+    snackbar: SnackbarHostState,
+    onAdd: () -> Unit,
+    onFocusedDate: (LocalDate) -> Unit,
+) {
+        val c = DsTheme.colors
+        val bottomPadding = PaddingValues(bottom = Sizes.bottomBar + Space.xl + 24.dp)
+        Box(Modifier.fillMaxSize().background(c.background)) {
+            DaysembleNavHost(
+                nav, bottomPadding, tab, onTab, onAdd,
+                onCreateEventAt = { d, m -> nav.navigate(EventEditorRoute(dateEpochDay = d.toEpochDay(), startMinute = m)) },
+                onFocusedDate = onFocusedDate,
+            )
+
+            val motion = DsTheme.motion
+            LaunchedEffect(open) {
+                val r = open ?: return@LaunchedEffect
+                when (r.type) {
+                    app.daysemble.data.db.OwnerType.TASK -> nav.navigate(TaskEditorRoute(taskId = r.id))
+                    app.daysemble.data.db.OwnerType.EVENT -> nav.navigate(EventDetailRoute(r.id, r.occurrenceKey))
+                }
+                onOpenHandled()
+            }
+            LaunchedEffect(openAccountsAfterOnboarding) {
+                // Runs only once the NavHost above exists, so its graph is set.
+                if (openAccountsAfterOnboarding) {
+                    onAccountsOpened()
+                    nav.navigate(SettingsPageRoute(SettingsPage.ACCOUNTS.name))
+                }
+            }
+            // Moves with the bottom bar instead of jumping when the bar shows or hides.
+            val snackbarLift by androidx.compose.animation.core.animateDpAsState(
+                if (onMain) Sizes.bottomBar + Space.l else Space.l,
+                if (motion.reduced) androidx.compose.animation.core.snap() else motion.standard(motion.long), label = "snackbarLift",
+            )
+            SnackbarHost(
+                snackbar,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = snackbarLift),
+            ) { data ->
+                Snackbar(
+                    data, shape = Radii.control,
+                    containerColor = c.inverse, contentColor = c.onInverse, actionColor = c.accentFill,
+                )
+            }
+        }
+}
+
+/**
+ * Opens [route] only if [from] is still the screen the user is looking at. A second tap that lands
+ * while the first transition is still running (the source is no longer RESUMED) is ignored, so
+ * double taps can't stack two copies of the same page.
+ */
+private fun NavHostController.openFrom(from: androidx.navigation.NavBackStackEntry, route: Any) {
+    if (from.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.RESUMED) navigate(route)
+}
+
+/**
+ * Back from a user tap (app-bar arrow, Cancel): pops [from] only while it is RESUMED and on top. A
+ * second quick tap lands while the first pop is animating, often on the page underneath, which
+ * isn't RESUMED yet, so it is ignored instead of popping Settings after Appearance.
+ */
+private fun NavHostController.backFrom(from: androidx.navigation.NavBackStackEntry) {
+    if (from.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.RESUMED) closeFrom(from)
+}
+
+/**
+ * A screen closing itself (after a save or delete, or because its item is gone). Not tied to
+ * RESUMED, so it also works while the page is paused or still entering; it pops only if [from] is
+ * still on top, so it can't close a different page. The main screen is never popped.
+ */
+private fun NavHostController.closeFrom(from: androidx.navigation.NavBackStackEntry) {
+    val top = currentBackStackEntry ?: return
+    if (top.id == from.id && !top.destination.hasRoute<MainRoute>()) popBackStack()
 }
 
 @Composable
 private fun DaysembleNavHost(
     nav: NavHostController,
     contentPadding: PaddingValues,
+    tab: Tab,
+    onTab: (Tab) -> Unit,
+    onAdd: () -> Unit,
     onCreateEventAt: (LocalDate, Int?) -> Unit,
     onFocusedDate: (LocalDate) -> Unit,
 ) {
     val m = DsTheme.motion
     val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
-    val openEvent: (String, String) -> Unit = { id, key -> nav.navigate(EventDetailRoute(id, key)) }
-    val openTask: (String) -> Unit = { id -> nav.navigate(TaskEditorRoute(taskId = id)) }
-    val back: () -> Unit = { nav.popBackStack() }
 
     NavHost(
         navController = nav,
-        startDestination = TodayRoute,
+        startDestination = MainRoute,
         // See NavMotion: only the screen on top fades, so there are no blank or double-exposed frames.
         enterTransition = { with(NavMotion) { enter(m, rtl) } },
         exitTransition = { with(NavMotion) { exit(m, rtl) } },
         popEnterTransition = { with(NavMotion) { popEnter(m, rtl) } },
         popExitTransition = { with(NavMotion) { popExit(m, rtl) } },
     ) {
-        composable<TodayRoute> {
-            TodayScreenRoute(
-                contentPadding, onOpenEvent = openEvent, onOpenTask = openTask,
-                onSearch = { nav.navigate(SearchRoute) }, onSettings = { nav.navigate(SettingsRoute) },
-                onFocusedDate = onFocusedDate,
-                onOpenSync = { nav.navigate(SettingsPageRoute(SettingsPage.ACCOUNTS.name)) },
-            )
-        }
-        composable<CalendarRoute> {
-            CalendarScreenRoute(contentPadding, onOpenEvent = openEvent, onOpenTask = openTask, onCreateAt = onCreateEventAt, onFocusedDate = onFocusedDate)
-        }
-        composable<TasksRoute> {
-            TasksScreenRoute(contentPadding, onOpenTask = openTask)
+        composable<MainRoute> { e ->
+            val openEvent: (String, String) -> Unit = { id, key -> nav.openFrom(e, EventDetailRoute(id, key)) }
+            val openTask: (String) -> Unit = { id -> nav.openFrom(e, TaskEditorRoute(taskId = id)) }
+            MainScreen(
+                tab = tab, onTab = onTab, onAdd = onAdd, rtl = rtl,
+            ) { t ->
+                when (t) {
+                    Tab.TODAY -> TodayScreenRoute(
+                        contentPadding, onOpenEvent = openEvent, onOpenTask = openTask,
+                        onSearch = { nav.openFrom(e, SearchRoute) }, onSettings = { nav.openFrom(e, SettingsRoute) },
+                        onFocusedDate = onFocusedDate,
+                        onOpenSync = { nav.openFrom(e, SettingsPageRoute(SettingsPage.ACCOUNTS.name)) },
+                    )
+                    Tab.CALENDAR -> CalendarScreenRoute(
+                        contentPadding, onOpenEvent = openEvent, onOpenTask = openTask,
+                        onCreateAt = { d, min -> if (e.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.RESUMED) onCreateEventAt(d, min) },
+                        onFocusedDate = onFocusedDate,
+                    )
+                    Tab.TASKS -> TasksScreenRoute(contentPadding, onOpenTask = openTask)
+                }
+            }
         }
         composable<TaskEditorRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
             val r = e.toRoute<TaskEditorRoute>()
-            TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), onClose = back)
+            TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), onDone = { nav.closeFrom(e) }, onClose = back)
         }
         composable<EventDetailRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
             val r = e.toRoute<EventDetailRoute>()
-            EventDetailScreenRoute(r.eventId, r.occurrenceKey, onEdit = { id -> nav.navigate(EventEditorRoute(eventId = id)) }, onClose = back)
+            EventDetailScreenRoute(r.eventId, r.occurrenceKey, onEdit = { id -> nav.openFrom(e, EventEditorRoute(eventId = id)) }, onDone = { nav.closeFrom(e) }, onClose = back)
         }
         composable<EventEditorRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
             val r = e.toRoute<EventEditorRoute>()
-            EventEditorScreenRoute(r.eventId, r.dateEpochDay?.let(LocalDate::ofEpochDay), r.startMinute, r.title, onClose = back)
+            EventEditorScreenRoute(r.eventId, r.dateEpochDay?.let(LocalDate::ofEpochDay), r.startMinute, r.title, onDone = { nav.closeFrom(e) }, onClose = back)
         }
-        composable<SearchRoute> { SearchScreenRoute(onBack = back, onOpenEvent = openEvent, onOpenTask = openTask) }
-        composable<SettingsRoute> { SettingsHomeRoute(onBack = back, onOpen = { nav.navigate(SettingsPageRoute(it.name)) }) }
+        composable<SearchRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
+            SearchScreenRoute(
+                onBack = back,
+                onOpenEvent = { id, key -> nav.openFrom(e, EventDetailRoute(id, key)) },
+                onOpenTask = { id -> nav.openFrom(e, TaskEditorRoute(taskId = id)) },
+            )
+        }
+        composable<SettingsRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
+            SettingsHomeRoute(onBack = back, onOpen = { nav.openFrom(e, SettingsPageRoute(it.name)) })
+        }
         composable<SettingsPageRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
             when (runCatching { SettingsPage.valueOf(e.toRoute<SettingsPageRoute>().page) }.getOrNull()) {
                 SettingsPage.APPEARANCE -> AppearanceRoute(onBack = back)
-                SettingsPage.ACCOUNTS -> app.daysemble.ui.settings.AccountSettingsRoute(onBack = back, onOpenConflicts = { nav.navigate(SettingsPageRoute(SettingsPage.CONFLICTS.name)) })
+                SettingsPage.ACCOUNTS -> app.daysemble.ui.settings.AccountSettingsRoute(onBack = back, onOpenConflicts = { nav.openFrom(e, SettingsPageRoute(SettingsPage.CONFLICTS.name)) })
                 SettingsPage.LISTS_CALENDARS -> app.daysemble.ui.settings.ListsCalendarsRoute(onBack = back)
                 SettingsPage.CONFLICTS -> app.daysemble.ui.settings.ConflictLogRoute(onBack = back)
                 SettingsPage.NOTIFICATIONS -> app.daysemble.ui.settings.NotificationSettingsRoute(onBack = back)
@@ -363,19 +396,58 @@ private fun DaysembleNavHost(
                 SettingsPage.TASKS -> TaskSettingsRoute(onBack = back)
                 SettingsPage.DATA -> DataSettingsRoute(onBack = back)
                 SettingsPage.ABOUT -> AboutRoute(onBack = back)
-                null -> LaunchedEffect(Unit) { back() }
+                null -> LaunchedEffect(Unit) { nav.popBackStack(e.destination.id, inclusive = true) }
             }
         }
+    }
+}
+
+/**
+ * Today, Calendar and Tasks plus the bottom bar, as one screen. The bar is part of this screen, so it
+ * is simply there when you come back from Settings or a detail page (including mid predictive-back
+ * gesture) instead of animating in on its own afterwards.
+ *
+ * Each tab keeps its scroll positions and other saved UI state in [rememberSaveableStateHolder]; its
+ * ViewModel lives in this destination's store, so its data is already loaded when you return and the
+ * first frame is complete. Tapping the selected tab does nothing (no rebuild).
+ * Back on Calendar or Tasks goes to Today first, then leaves the app, as before.
+ */
+@Composable
+private fun MainScreen(
+    tab: Tab,
+    onTab: (Tab) -> Unit,
+    onAdd: () -> Unit,
+    rtl: Boolean,
+    content: @Composable (Tab) -> Unit,
+) {
+    val m = DsTheme.motion
+    val holder = rememberSaveableStateHolder()
+    BackHandler(enabled = tab != Tab.TODAY) { onTab(Tab.TODAY) }
+    Box(Modifier.fillMaxSize().background(DsTheme.colors.background)) {
+        AnimatedContent(
+            targetState = tab,
+            transitionSpec = { m.cover(Integer.signum(targetState.ordinal - initialState.ordinal), rtl) },
+            label = "tabs",
+            modifier = Modifier.fillMaxSize(),
+        ) { t ->
+            holder.SaveableStateProvider(t.name) { content(t) }
+        }
+        BottomBar(
+            current = tab,
+            onSelect = { t -> if (t != tab) onTab(t) },
+            onAdd = onAdd,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 
 // ---- Bottom bar -----------------------------------------------------------------------------
 
 @Composable
-private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit) {
+private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier) {
     val c = DsTheme.colors
     Row(
-        Modifier
+        modifier
             .navigationBarsPadding()
             .padding(horizontal = Space.gutter, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,

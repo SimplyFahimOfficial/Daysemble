@@ -14,7 +14,8 @@ import kotlin.math.hypot
  *
  * The splash background closes in as a circle around the logo (echoing the orbit ring in the
  * artwork), revealing the app from the edges inward, while the logo settles slightly and fades.
- * The app's own entrance (DaysembleRoot `animateIntro`) runs underneath at the same time.
+ * This is the only launch animation for returning users; the app underneath is already in place
+ * (first-time users then see the onboarding entrance, OnboardingScreen).
  * Only the supplied artwork is shown; nothing is redrawn. Total 420 ms, no added waiting:
  * this starts as soon as settings are loaded and the first frame is ready.
  *

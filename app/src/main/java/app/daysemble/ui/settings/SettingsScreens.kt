@@ -16,12 +16,14 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,6 +94,16 @@ private fun rememberSettings(): Pair<AppSettings?, app.daysemble.AppContainer> {
 
 @Composable
 fun SettingsHomeRoute(onBack: () -> Unit, onOpen: (SettingsPage) -> Unit) {
+    val (s, container) = rememberSettings()
+    val scope = rememberCoroutineScope()
+    var editName by rememberSaveable { mutableStateOf(false) }
+    if (editName) {
+        DisplayNameDialog(
+            initial = s?.displayName.orEmpty(),
+            onDismiss = { editName = false },
+            onSave = { name -> editName = false; scope.launch { container.settings.setDisplayName(name) } },
+        )
+    }
     SettingsScaffold(stringResource(R.string.settings), onBack) {
         val chevron: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = DsTheme.colors.textTertiary)
@@ -99,6 +111,11 @@ fun SettingsHomeRoute(onBack: () -> Unit, onOpen: (SettingsPage) -> Unit) {
         SectionHeader(stringResource(R.string.settings_section_sync))
         DsRow(stringResource(R.string.settings_accounts), subtitle = stringResource(R.string.settings_accounts_sub), icon = Icons.Rounded.Sync, onClick = { onOpen(SettingsPage.ACCOUNTS) }, trailing = chevron)
         SectionHeader(stringResource(R.string.settings_section_general), Modifier.padding(top = Space.l))
+        DsRow(
+            stringResource(R.string.settings_your_name),
+            subtitle = s?.displayName ?: stringResource(R.string.settings_your_name_unset),
+            icon = Icons.Rounded.Person, onClick = { editName = true }, trailing = chevron,
+        )
         DsRow(stringResource(R.string.settings_appearance), subtitle = stringResource(R.string.settings_appearance_sub), icon = Icons.Rounded.Palette, onClick = { onOpen(SettingsPage.APPEARANCE) }, trailing = chevron)
         DsRow(stringResource(R.string.settings_notifications), subtitle = stringResource(R.string.settings_notifications_sub), icon = Icons.Rounded.Notifications, onClick = { onOpen(SettingsPage.NOTIFICATIONS) }, trailing = chevron)
         DsRow(stringResource(R.string.settings_date_time), subtitle = stringResource(R.string.settings_date_time_sub), icon = Icons.Rounded.CalendarMonth, onClick = { onOpen(SettingsPage.DATE_TIME) }, trailing = chevron)
@@ -108,6 +125,29 @@ fun SettingsHomeRoute(onBack: () -> Unit, onOpen: (SettingsPage) -> Unit) {
         DsRow(stringResource(R.string.settings_data), subtitle = stringResource(R.string.settings_data_sub), icon = Icons.Rounded.Shield, onClick = { onOpen(SettingsPage.DATA) }, trailing = chevron)
         DsRow(stringResource(R.string.settings_about), subtitle = stringResource(R.string.version_label, BuildConfig.VERSION_NAME), icon = Icons.Rounded.Info, onClick = { onOpen(SettingsPage.ABOUT) }, trailing = chevron)
     }
+}
+
+/** Edits the display name shown beside the logo on Today. Saving an empty name clears it. */
+@Composable
+private fun DisplayNameDialog(initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    val c = DsTheme.colors
+    var name by rememberSaveable { mutableStateOf(initial) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss, shape = app.daysemble.ui.theme.Radii.dialog, containerColor = c.surfaceRaised,
+        title = { Text(stringResource(R.string.settings_your_name), style = DsTheme.type.titleLarge, color = c.textPrimary) },
+        text = {
+            app.daysemble.ui.components.DsTextField(
+                name, { name = it.take(app.daysemble.data.prefs.DISPLAY_NAME_MAX) },
+                placeholder = stringResource(R.string.onboarding_name_hint),
+                imeAction = androidx.compose.ui.text.input.ImeAction.Done, onImeAction = { onSave(name) },
+                focusRequester = focus, capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words,
+            )
+        },
+        confirmButton = { app.daysemble.ui.components.DsButton(stringResource(R.string.action_save), { onSave(name) }, style = app.daysemble.ui.components.DsButtonStyle.Ghost) },
+        dismissButton = { app.daysemble.ui.components.DsButton(stringResource(R.string.action_cancel), onDismiss, style = app.daysemble.ui.components.DsButtonStyle.Ghost) },
+    )
 }
 
 @Composable

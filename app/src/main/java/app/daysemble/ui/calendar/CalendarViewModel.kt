@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -47,6 +48,7 @@ class CalendarViewModel(
     private val clock: AppClock,
     private val time: kotlinx.coroutines.flow.StateFlow<app.daysemble.core.time.TimeContext>,
     private val handle: SavedStateHandle,
+    private val compute: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
 ) : ViewModel() {
     private fun zone(): ZoneId = time.value.zone
     private fun firstDayOfWeek(): DayOfWeek = time.value.firstDayOfWeek
@@ -61,6 +63,8 @@ class CalendarViewModel(
     /** Load window derived from mode + selection; changes only when the visible span does. */
     private val window = combine(mode, selected, time) { m, s, t -> Triple(windowFor(m, s), t.zone, t.firstDayOfWeek) }.distinctUntilChanged()
 
+    // Grouping, sorting and recurrence expansion run off the main thread, so a month change or a tab
+    // switch never waits for them; the result is collected on the main thread as before.
     val state: StateFlow<CalendarUiState> = window.flatMapLatest { (range, z, _) ->
         val (from, to) = range
         combine(events.occurrences(from, to, z), tasks.allTasks, mode, selected, tick) { occ, all, m, s, now ->
@@ -72,7 +76,7 @@ class CalendarViewModel(
                 loadedFrom = from, loadedTo = to, isLoading = false,
             )
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CalendarUiState(mode.value, selected.value, clock.today()))
+    }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CalendarUiState(mode.value, selected.value, clock.today()))
 
     fun setMode(m: CalendarMode) { mode.value = m; handle["mode"] = m.name }
 

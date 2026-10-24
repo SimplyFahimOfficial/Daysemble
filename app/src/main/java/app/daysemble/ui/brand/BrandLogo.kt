@@ -71,6 +71,27 @@ fun BrandLogo(
 }
 
 /**
+ * The logo with the user's display name beside it (or the app name when none is set), as shown at the
+ * top of Today. The name takes only the width it needs and ends with "…" when the space runs out, so
+ * it never pushes the actions next to it off screen. Logo and text are centred on one line, and the
+ * text uses the theme's line height, so tall scripts and large font sizes aren't clipped.
+ */
+@Composable
+fun BrandNameplate(displayName: String?, modifier: Modifier = Modifier, logoSize: Dp = 30.dp) {
+    androidx.compose.foundation.layout.Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        BrandLogo(size = logoSize)
+        androidx.compose.foundation.layout.Spacer(Modifier.size(10.dp))
+        Text(
+            text = displayName ?: stringResource(R.string.app_name),
+            style = DsTheme.type.title,
+            color = DsTheme.colors.textPrimary,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
  * The supplied horizontal wordmark. Its artwork has dark lettering made for light backgrounds, so on
  * dark themes (or before it is supplied) the logo tile plus the app name in type is shown instead.
  */

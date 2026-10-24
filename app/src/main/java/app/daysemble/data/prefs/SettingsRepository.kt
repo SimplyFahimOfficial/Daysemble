@@ -68,7 +68,16 @@ data class AppSettings(
     val taskSort: TaskSort = TaskSort.DUE,
     val defaultTaskListId: String? = null,
     val onboardingDone: Boolean = false,
+    /** Optional name shown beside the logo on Today. null = not set (the app name is shown instead). */
+    val displayName: String? = null,
 )
+
+/** Longest display name kept; longer input is cut (the header also truncates visually). */
+const val DISPLAY_NAME_MAX = 40
+
+/** Trims and collapses whitespace; blank becomes null. */
+fun normalizeDisplayName(raw: String?): String? =
+    raw?.trim()?.replace(Regex("\\s+"), " ")?.take(DISPLAY_NAME_MAX)?.trim()?.takeIf { it.isNotEmpty() }
 
 class SettingsRepository(private val store: DataStore<Preferences>) {
 
@@ -87,6 +96,7 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         val taskSort = stringPreferencesKey("task_sort")
         val defaultList = stringPreferencesKey("default_task_list")
         val onboarding = booleanPreferencesKey("onboarding_done")
+        val displayName = stringPreferencesKey("display_name")
     }
 
     val settings: Flow<AppSettings> = store.data
@@ -118,6 +128,7 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
             taskSort = TaskSort.fromKey(this[Keys.taskSort]),
             defaultTaskListId = this[Keys.defaultList],
             onboardingDone = this[Keys.onboarding] ?: false,
+            displayName = normalizeDisplayName(this[Keys.displayName]),
         )
     }
 
@@ -142,4 +153,18 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         if (id == null) it.remove(Keys.defaultList) else it[Keys.defaultList] = id
     }
     suspend fun setOnboardingDone() = store.edit { it[Keys.onboarding] = true }
+
+    suspend fun setDisplayName(name: String?) = store.edit {
+        val n = normalizeDisplayName(name)
+        if (n == null) it.remove(Keys.displayName) else it[Keys.displayName] = n
+    }
+
+    /**
+     * Finishes first-use setup in one write, so the app never sees "done" without the chosen name
+     * (or the name without "done"). A null/blank name leaves any existing name untouched.
+     */
+    suspend fun completeOnboarding(name: String?) = store.edit {
+        normalizeDisplayName(name)?.let { n -> it[Keys.displayName] = n }
+        it[Keys.onboarding] = true
+    }
 }
