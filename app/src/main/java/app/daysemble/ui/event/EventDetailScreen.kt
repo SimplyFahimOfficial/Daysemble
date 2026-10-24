@@ -72,7 +72,13 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 
 @Composable
-fun EventDetailRoute(eventId: String, occurrenceKey: String?, onEdit: (String) -> Unit, onClose: () -> Unit) {
+fun EventDetailRoute(
+    eventId: String, occurrenceKey: String?, onEdit: (String) -> Unit,
+    /** Called when the screen closes itself (after saving, deleting, or when its item is gone). Defaults to [onClose]. */
+    onDone: (() -> Unit)? = null,
+    onClose: () -> Unit,
+) {
+    val finish = onDone ?: onClose
     val ctx = LocalContext.current
     val container = (ctx.applicationContext as DaysembleApp).container
     val p = LocalTimePrefs.current
@@ -94,8 +100,8 @@ fun EventDetailRoute(eventId: String, occurrenceKey: String?, onEdit: (String) -
     }
     EventDetailScreen(
         event = event, rrule = rrule, calendarName = calendarName, onClose = onClose, onEdit = { onEdit(eventId) },
-        onDeleteSeries = { scope.launch { container.events.delete(eventId); onClose() } },
-        onDeleteOccurrence = { scope.launch { container.events.deleteOccurrence(eventId, event.occurrenceKey); onClose() } },
+        onDeleteSeries = { scope.launch { container.events.delete(eventId); finish() } },
+        onDeleteOccurrence = { scope.launch { container.events.deleteOccurrence(eventId, event.occurrenceKey); finish() } },
     )
 }
 

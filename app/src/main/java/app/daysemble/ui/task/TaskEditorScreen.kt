@@ -73,7 +73,13 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 @Composable
-fun TaskEditorRoute(taskId: String?, parentId: String?, initialDue: LocalDate?, onClose: () -> Unit) {
+fun TaskEditorRoute(
+    taskId: String?, parentId: String?, initialDue: LocalDate?,
+    /** Called when the screen closes itself (after saving, deleting, or when its item is gone). Defaults to [onClose]. */
+    onDone: (() -> Unit)? = null,
+    onClose: () -> Unit,
+) {
+    val finish = onDone ?: onClose
     val vm = daysembleViewModel(key = "task:$taskId:$parentId") { c, h ->
         TaskEditorViewModel(c.tasks, { c.newTaskListId() }, taskId, parentId, initialDue, h)
     }
@@ -82,16 +88,16 @@ fun TaskEditorRoute(taskId: String?, parentId: String?, initialDue: LocalDate?, 
     val onDeleted = app.daysemble.ui.LocalTaskDeleted.current
     LaunchedEffect(event) {
         when (event) {
-            EditorEvent.Saved -> { vm.consumeEvent(); onClose() }
+            EditorEvent.Saved -> { vm.consumeEvent(); finish() }
             EditorEvent.Deleted -> {
                 vm.consumeEvent()
                 taskId?.let(onDeleted)
-                onClose()
+                finish()
             }
             null -> Unit
         }
     }
-    LaunchedEffect(state.isMissing) { if (state.isMissing) onClose() }
+    LaunchedEffect(state.isMissing) { if (state.isMissing) finish() }
     TaskEditorScreen(state, vm, onClose)
 }
 

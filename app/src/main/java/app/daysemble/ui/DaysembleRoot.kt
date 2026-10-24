@@ -295,13 +295,20 @@ private fun NavHostController.openFrom(from: androidx.navigation.NavBackStackEnt
 }
 
 /**
- * Pops [from] if it is still the top of the stack. After the first pop, the page is no longer on top,
- * so a second quick Back tap from Settings > Appearance is ignored instead of popping Settings too.
- * It deliberately doesn't require RESUMED: editors and detail pages also call this to close
- * themselves after a save or when their item is gone, and that must work while the page is paused
- * or still entering. The main screen is never popped.
+ * Back from a user tap (app-bar arrow, Cancel): pops [from] only while it is RESUMED and on top. A
+ * second quick tap lands while the first pop is animating, often on the page underneath, which
+ * isn't RESUMED yet, so it is ignored instead of popping Settings after Appearance.
  */
 private fun NavHostController.backFrom(from: androidx.navigation.NavBackStackEntry) {
+    if (from.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.RESUMED) closeFrom(from)
+}
+
+/**
+ * A screen closing itself (after a save or delete, or because its item is gone). Not tied to
+ * RESUMED, so it also works while the page is paused or still entering; it pops only if [from] is
+ * still on top, so it can't close a different page. The main screen is never popped.
+ */
+private fun NavHostController.closeFrom(from: androidx.navigation.NavBackStackEntry) {
     val top = currentBackStackEntry ?: return
     if (top.id == from.id && !top.destination.hasRoute<MainRoute>()) popBackStack()
 }
@@ -353,17 +360,17 @@ private fun DaysembleNavHost(
         composable<TaskEditorRoute> { e ->
             val back: () -> Unit = { nav.backFrom(e) }
             val r = e.toRoute<TaskEditorRoute>()
-            TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), onClose = back)
+            TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), onDone = { nav.closeFrom(e) }, onClose = back)
         }
         composable<EventDetailRoute> { e ->
             val back: () -> Unit = { nav.backFrom(e) }
             val r = e.toRoute<EventDetailRoute>()
-            EventDetailScreenRoute(r.eventId, r.occurrenceKey, onEdit = { id -> nav.openFrom(e, EventEditorRoute(eventId = id)) }, onClose = back)
+            EventDetailScreenRoute(r.eventId, r.occurrenceKey, onEdit = { id -> nav.openFrom(e, EventEditorRoute(eventId = id)) }, onDone = { nav.closeFrom(e) }, onClose = back)
         }
         composable<EventEditorRoute> { e ->
             val back: () -> Unit = { nav.backFrom(e) }
             val r = e.toRoute<EventEditorRoute>()
-            EventEditorScreenRoute(r.eventId, r.dateEpochDay?.let(LocalDate::ofEpochDay), r.startMinute, r.title, onClose = back)
+            EventEditorScreenRoute(r.eventId, r.dateEpochDay?.let(LocalDate::ofEpochDay), r.startMinute, r.title, onDone = { nav.closeFrom(e) }, onClose = back)
         }
         composable<SearchRoute> { e ->
             val back: () -> Unit = { nav.backFrom(e) }

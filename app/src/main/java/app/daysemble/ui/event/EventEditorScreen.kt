@@ -67,6 +67,8 @@ fun EventEditorRoute(
     date: LocalDate?,
     startMinute: Int?,
     title: String?,
+    /** Called when the screen closes itself (after saving, deleting, or when its item is gone). Defaults to [onClose]. */
+    onDone: (() -> Unit)? = null,
     onClose: () -> Unit,
 ) {
     val prefs = LocalTimePrefs.current
@@ -86,7 +88,7 @@ fun EventEditorRoute(
     }
     val state by vm.state.collectAsStateWithLifecycle()
     val done by vm.done.collectAsStateWithLifecycle()
-    LaunchedEffect(done) { if (done) onClose() }
+    LaunchedEffect(done) { if (done) (onDone ?: onClose)() }
     EventEditorScreen(state, vm::update, { vm.save() }, onClose)
 }
 
