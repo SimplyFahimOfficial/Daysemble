@@ -295,14 +295,15 @@ private fun NavHostController.openFrom(from: androidx.navigation.NavBackStackEnt
 }
 
 /**
- * Pops [from], but only while it is still the current, settled screen. A second back tap that lands
- * while the first pop is animating (the page is no longer RESUMED, or is no longer on top) is ignored,
- * so two quick taps can't pop both Appearance and Settings. The main screen is never popped.
+ * Pops [from] if it is still the top of the stack. After the first pop, the page is no longer on top,
+ * so a second quick Back tap from Settings > Appearance is ignored instead of popping Settings too.
+ * It deliberately doesn't require RESUMED: editors and detail pages also call this to close
+ * themselves after a save or when their item is gone, and that must work while the page is paused
+ * or still entering. The main screen is never popped.
  */
 private fun NavHostController.backFrom(from: androidx.navigation.NavBackStackEntry) {
     val top = currentBackStackEntry ?: return
-    if (top.id != from.id || top.destination.hasRoute<MainRoute>()) return
-    if (from.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.RESUMED) popBackStack()
+    if (top.id == from.id && !top.destination.hasRoute<MainRoute>()) popBackStack()
 }
 
 @Composable
