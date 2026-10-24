@@ -294,9 +294,15 @@ private fun NavHostController.openFrom(from: androidx.navigation.NavBackStackEnt
     if (from.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.RESUMED) navigate(route)
 }
 
-/** Pops the top screen, but never the main screen: a repeated back tap can't leave an empty NavHost. */
-private fun NavHostController.backFromPage() {
-    if (currentBackStackEntry?.destination?.hasRoute<MainRoute>() == false) popBackStack()
+/**
+ * Pops [from], but only while it is still the current, settled screen. A second back tap that lands
+ * while the first pop is animating (the page is no longer RESUMED, or is no longer on top) is ignored,
+ * so two quick taps can't pop both Appearance and Settings. The main screen is never popped.
+ */
+private fun NavHostController.backFrom(from: androidx.navigation.NavBackStackEntry) {
+    val top = currentBackStackEntry ?: return
+    if (top.id != from.id || top.destination.hasRoute<MainRoute>()) return
+    if (from.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.RESUMED) popBackStack()
 }
 
 @Composable
@@ -311,7 +317,6 @@ private fun DaysembleNavHost(
 ) {
     val m = DsTheme.motion
     val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
-    val back: () -> Unit = { nav.backFromPage() }
 
     NavHost(
         navController = nav,
@@ -345,26 +350,34 @@ private fun DaysembleNavHost(
             }
         }
         composable<TaskEditorRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
             val r = e.toRoute<TaskEditorRoute>()
             TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), onClose = back)
         }
         composable<EventDetailRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
             val r = e.toRoute<EventDetailRoute>()
             EventDetailScreenRoute(r.eventId, r.occurrenceKey, onEdit = { id -> nav.openFrom(e, EventEditorRoute(eventId = id)) }, onClose = back)
         }
         composable<EventEditorRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
             val r = e.toRoute<EventEditorRoute>()
             EventEditorScreenRoute(r.eventId, r.dateEpochDay?.let(LocalDate::ofEpochDay), r.startMinute, r.title, onClose = back)
         }
         composable<SearchRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
             SearchScreenRoute(
                 onBack = back,
                 onOpenEvent = { id, key -> nav.openFrom(e, EventDetailRoute(id, key)) },
                 onOpenTask = { id -> nav.openFrom(e, TaskEditorRoute(taskId = id)) },
             )
         }
-        composable<SettingsRoute> { e -> SettingsHomeRoute(onBack = back, onOpen = { nav.openFrom(e, SettingsPageRoute(it.name)) }) }
+        composable<SettingsRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
+            SettingsHomeRoute(onBack = back, onOpen = { nav.openFrom(e, SettingsPageRoute(it.name)) })
+        }
         composable<SettingsPageRoute> { e ->
+            val back: () -> Unit = { nav.backFrom(e) }
             when (runCatching { SettingsPage.valueOf(e.toRoute<SettingsPageRoute>().page) }.getOrNull()) {
                 SettingsPage.APPEARANCE -> AppearanceRoute(onBack = back)
                 SettingsPage.ACCOUNTS -> app.daysemble.ui.settings.AccountSettingsRoute(onBack = back, onOpenConflicts = { nav.openFrom(e, SettingsPageRoute(SettingsPage.CONFLICTS.name)) })
@@ -375,7 +388,7 @@ private fun DaysembleNavHost(
                 SettingsPage.TASKS -> TaskSettingsRoute(onBack = back)
                 SettingsPage.DATA -> DataSettingsRoute(onBack = back)
                 SettingsPage.ABOUT -> AboutRoute(onBack = back)
-                null -> LaunchedEffect(Unit) { back() }
+                null -> LaunchedEffect(Unit) { nav.popBackStack(e.destination.id, inclusive = true) }
             }
         }
     }

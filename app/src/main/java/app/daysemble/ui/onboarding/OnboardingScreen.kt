@@ -51,8 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -209,7 +207,7 @@ private fun Welcome(progress: () -> Float) {
 
 /**
  * A small, static example of a day built from the app's real components (the same task rows and
- * colours as Today). It is decoration: one description for screen readers and no touch handling.
+ * colours as Today). It is decoration: one description for screen readers, and tapping it changes nothing.
  */
 @Composable
 private fun DayPreview(modifier: Modifier = Modifier) {
@@ -232,11 +230,8 @@ private fun DayPreview(modifier: Modifier = Modifier) {
             .clip(Radii.card)
             .background(c.surface)
             .border(Sizes.hairline, c.outline, Radii.card)
+            // The sample rows have empty callbacks, so tapping them does nothing; drags still scroll the page.
             .clearAndSetSemantics { contentDescription = desc }
-            // Swallow touches so the sample rows can't be toggled.
-            .pointerInput(Unit) {
-                awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } }
-            }
             .padding(vertical = Space.m),
     ) {
         Text(

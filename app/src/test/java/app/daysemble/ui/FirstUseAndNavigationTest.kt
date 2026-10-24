@@ -8,7 +8,10 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -147,6 +150,22 @@ class FirstUseAndNavigationTest {
         back() // system back
         gone("Appearance")
         tab("Today").assertIsSelected()
+    }
+
+    @Test fun settings_doubleTapOnBack_popsOnlyOnePage() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        compose.onNodeWithContentDescription("Settings").performClick(); settle()
+        compose.onNodeWithText("Appearance").performClick(); settle()
+        compose.onNodeWithText("APP LOGO").assertIsDisplayed()
+        // Second tap lands while the first pop is still animating: Appearance's back button is still on screen.
+        val appBarBack = compose.onAllNodes(hasContentDescription("Back") and hasClickAction()).onFirst()
+        appBarBack.performClick()
+        compose.mainClock.advanceTimeBy(50)
+        compose.onAllNodes(hasContentDescription("Back") and hasClickAction()).onFirst().performClick()
+        settle()
+        compose.onNodeWithText("Appearance").assertIsDisplayed() // still on Settings, not back at Today
+        gone("APP LOGO")
     }
 
     /**
