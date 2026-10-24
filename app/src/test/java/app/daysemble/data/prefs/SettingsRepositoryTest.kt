@@ -69,6 +69,65 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun `fresh install starts with setup not done and no display name`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val s = repo(File(tmp.root, "e.preferences_pb"), scope).current()
+        assertThat(s.onboardingDone).isFalse()
+        assertThat(s.displayName).isNull()
+        scope.cancel()
+    }
+
+    @Test
+    fun `finishing setup saves the name and completion together and survives a restart`() = runTest {
+        val file = File(tmp.root, "f.preferences_pb")
+        val scope1 = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        repo(file, scope1).completeOnboarding("  Ada \n  Lovelace ")
+        scope1.cancel()
+
+        val scope2 = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val s = repo(file, scope2).current()
+        assertThat(s.onboardingDone).isTrue()
+        assertThat(s.displayName).isEqualTo("Ada Lovelace")
+        scope2.cancel()
+    }
+
+    @Test
+    fun `skipping the name finishes setup without one and keeps an existing name`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val r = repo(File(tmp.root, "g.preferences_pb"), scope)
+        r.completeOnboarding("   ")
+        assertThat(r.current().onboardingDone).isTrue()
+        assertThat(r.current().displayName).isNull()
+        r.setDisplayName("Sam")
+        r.completeOnboarding(null)
+        assertThat(r.current().displayName).isEqualTo("Sam")
+        scope.cancel()
+    }
+
+    @Test
+    fun `an existing user who finished setup before display names existed is not sent back to setup`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val r = repo(File(tmp.root, "h.preferences_pb"), scope)
+        r.setOnboardingDone() // what older versions wrote
+        val s = r.current()
+        assertThat(s.onboardingDone).isTrue()
+        assertThat(s.displayName).isNull()
+        scope.cancel()
+    }
+
+    @Test
+    fun `display name is trimmed, length-limited and cleared when blank`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val r = repo(File(tmp.root, "i.preferences_pb"), scope)
+        r.setDisplayName("x".repeat(DISPLAY_NAME_MAX + 25))
+        assertThat(r.current().displayName).hasLength(DISPLAY_NAME_MAX)
+        r.setDisplayName(" \t ")
+        assertThat(r.current().displayName).isNull()
+        assertThat(normalizeDisplayName("  Jo   Ann ")).isEqualTo("Jo Ann")
+        scope.cancel()
+    }
+
+    @Test
     fun `out of range values are clamped`() = runTest {
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
         val r = repo(File(tmp.root, "d.preferences_pb"), scope)

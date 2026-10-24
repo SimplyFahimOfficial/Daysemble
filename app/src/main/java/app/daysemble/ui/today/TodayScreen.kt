@@ -57,7 +57,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.R
-import app.daysemble.ui.brand.BrandLogo
 import app.daysemble.ui.components.DashedDivider
 import app.daysemble.ui.components.DateStrip
 import app.daysemble.ui.components.DsChip
@@ -104,6 +103,7 @@ fun TodayRoute(
         onToggleTask = vm::setCompleted, onOpenEvent = onOpenEvent, onOpenTask = onOpenTask,
         onSearch = onSearch, onSettings = onSettings,
         syncStatus = sync?.takeIf { it.account.isConnected }, onOpenSync = onOpenSync,
+        displayName = app.daysemble.ui.LocalAppSettings.current?.displayName,
     )
 }
 
@@ -121,6 +121,8 @@ fun TodayScreen(
     onSettings: () -> Unit,
     syncStatus: app.daysemble.data.google.sync.SyncStatus? = null,
     onOpenSync: () -> Unit = {},
+    /** Shown beside the logo; null shows the app name. */
+    displayName: String? = null,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
@@ -141,8 +143,9 @@ fun TodayScreen(
                         .padding(start = Space.gutter, end = Space.xs, top = Space.xs),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    BrandLogo(size = 30.dp)
-                    Spacer(Modifier.weight(1f))
+                    // Logo and name take the free space and truncate first; the actions keep their size.
+                    // With a sync badge, the two share the free space equally.
+                    app.daysemble.ui.brand.BrandNameplate(displayName, Modifier.weight(1f).padding(end = Space.s))
                     if (syncStatus != null) {
                         app.daysemble.ui.components.SyncBadge(
                             app.daysemble.ui.settings.syncIndicator(syncStatus),

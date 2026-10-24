@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -62,6 +63,7 @@ class TodayViewModel(
     private val clock: AppClock,
     private val time: kotlinx.coroutines.flow.StateFlow<app.daysemble.core.time.TimeContext>,
     private val handle: SavedStateHandle,
+    private val compute: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
 ) : ViewModel() {
     private fun zone(): ZoneId = time.value.zone
 
@@ -70,6 +72,8 @@ class TodayViewModel(
     /** Bumped by the screen once a minute so "today", overdue and focus stay current. */
     private val tick = MutableStateFlow(clock.now())
 
+    // Grouping, sorting and recurrence expansion run off the main thread, so a month change or a tab
+    // switch never waits for them; the result is collected on the main thread as before.
     val state: StateFlow<TodayUiState> = combine(selected, time) { d, t -> d to t.zone }.flatMapLatest { (date, z) ->
         combine(
             events.occurrences(date, date, z),
@@ -77,7 +81,7 @@ class TodayViewModel(
             settings.settings,
             tick,
         ) { occ, allTasks, s, now -> build(date, occ, allTasks, s.showCompletedOnToday, now) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState(selected.value, clock.today()))
+    }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState(selected.value, clock.today()))
 
     fun select(date: LocalDate) {
         selected.value = date

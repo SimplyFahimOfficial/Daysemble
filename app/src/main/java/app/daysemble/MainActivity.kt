@@ -51,7 +51,6 @@ class MainActivity : ComponentActivity() {
         var settingsLoaded = false
         splash.setKeepOnScreenCondition { !settingsLoaded }
         splash.setOnExitAnimationListener { provider -> SplashExit.play(provider, reducedMotion) }
-        val animateIntro = savedInstanceState == null
 
         val settingsFlow: Flow<AppSettings?> = container.settings.settings
         setContent {
@@ -81,7 +80,7 @@ class MainActivity : ComponentActivity() {
                     onDispose { }
                 }
                 DaysembleRoot(
-                    container = container, settings = s, animateIntro = animateIntro,
+                    container = container, settings = s,
                     openRequests = openRequests, onOpenHandled = { openRequests.value = null },
                 )
             }

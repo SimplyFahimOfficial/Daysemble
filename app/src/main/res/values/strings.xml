@@ -22,7 +22,6 @@
     <string name="debug_sample_data" translatable="false">Load sample data (debug)</string>
     <string name="debug_sample_data_sub" translatable="false">Adds example events and tasks on this device for demos and screenshots</string>
     <string name="debug_sample_data_done" translatable="false">Sample data added. Remove it with Data &amp; privacy › Delete local data</string>
-    <string name="page_x_of_y">Page %1$d of %2$d</string>
     <string name="today_suffix">today</string>
 
     <!-- Settings: appearance -->
@@ -468,13 +467,17 @@
         <item quantity="other">%d changes haven’t synced yet and will be lost.</item>
     </plurals>
     <!-- Onboarding -->
-    <string name="onboarding_tagline">Your day, assembled. Events and tasks in one calm place.</string>
-    <string name="onboarding_point_1">Today at a glance, in plain words</string>
-    <string name="onboarding_point_2">Calendar, tasks and reminders that work offline</string>
-    <string name="onboarding_point_3">Optional two-way sync with Google Calendar and Google Tasks</string>
+    <string name="onboarding_headline">Make room for what matters.</string>
+    <string name="onboarding_body">Your calendar, tasks and reminders in one calm daily plan. It all works offline on this phone; syncing with Google is optional.</string>
+    <string name="onboarding_get_started">Get started</string>
+    <string name="onboarding_skip_setup">Skip setup</string>
     <string name="onboarding_skip">Skip</string>
-    <string name="onboarding_next">Next</string>
-    <string name="onboarding_start">Start planning</string>
+    <string name="onboarding_continue">Continue</string>
+    <string name="onboarding_start">Start using Daysemble</string>
+    <string name="onboarding_step">Step %1$d of %2$d</string>
+    <string name="onboarding_name_title">What should we call you?</string>
+    <string name="onboarding_name_body">Your name sits next to the logo at the top of Today. It stays on this phone, and you can change it any time in Settings.</string>
+    <string name="onboarding_name_hint">Your name (optional)</string>
     <string name="onboarding_setup_title">A couple of optional extras</string>
     <string name="onboarding_setup_body">You can change both later in Settings.</string>
     <string name="onboarding_notifications_title">Reminders</string>
@@ -482,4 +485,16 @@
     <string name="onboarding_allowed">Allowed</string>
     <string name="onboarding_google_title">Google Calendar &amp; Tasks</string>
     <string name="onboarding_google_body">Bring in your Google events and tasks and keep them in sync. Without it, everything stays on this device.</string>
+    <!-- Onboarding preview card: sample content only, never the user's data. -->
+    <string name="onboarding_preview_cd">Example of a day in Daysemble: an event, a finished task and two tasks to do</string>
+    <string name="onboarding_preview_day">Today</string>
+    <string name="onboarding_preview_event">Design review</string>
+    <string name="onboarding_preview_event_time">09:30 – 10:15</string>
+    <string name="onboarding_preview_in">in 25 min</string>
+    <string name="onboarding_preview_task_1">Send the agenda</string>
+    <string name="onboarding_preview_task_2">Book the dentist</string>
+    <string name="onboarding_preview_task_3">Pick up the dry cleaning</string>
+    <!-- Display name -->
+    <string name="settings_your_name">Your name</string>
+    <string name="settings_your_name_unset">Not set. Shown next to the logo on Today.</string>
 </resources>
