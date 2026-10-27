@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -30,10 +30,12 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +47,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.R
 import app.daysemble.domain.model.EventOccurrence
@@ -70,6 +73,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.CircleShape
 
 private const val PAGES = 20_000
 private const val CENTER = PAGES / 2
@@ -276,20 +281,22 @@ private fun MonthCell(
     val bg by animateColorAsState(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "cellBg")
     val count = events.size + taskCount
     val a11y = Fmt.fullDate(d, p) + (if (isToday) ", " + stringResource(R.string.today_suffix) else "") + ", " + pluralStringResource(R.plurals.n_items, count, count)
+    // The whole cell stays the touch target, but its press/focus feedback is drawn only on the date
+    // circle (see DateCircle). The cell used the default bounded ripple, which filled its rectangle
+    // and showed as a grey square around the circle on every tap.
+    val interaction = remember { MutableInteractionSource() }
     Column(
         modifier
             .heightIn(min = 52.dp)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .selectable(selected = selected, interactionSource = interaction, indication = null, role = Role.Tab, onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = a11y }
             .padding(vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             Modifier
-                .defaultMinSize(36.dp, 36.dp)
-                .clip(Radii.pill)
-                .background(bg)
-                .then(if (isToday && !selected) Modifier.border(1.5.dp, c.accentFill, Radii.pill) else Modifier),
+                .dateCircle(interaction, bg)
+                .then(if (isToday && !selected) Modifier.border(1.5.dp, c.accentFill, CircleShape) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -311,6 +318,16 @@ private fun MonthCell(
         }
     }
 }
+
+/**
+ * The round date marker shared by month cells and the week header: selection fill, plus the press
+ * and keyboard-focus feedback of the surrounding cell ([interaction]), all clipped to the same circle.
+ */
+private fun Modifier.dateCircle(interaction: MutableInteractionSource, fill: Color, size: Dp = 38.dp): Modifier = this
+    .defaultMinSize(size, size)
+    .clip(CircleShape)
+    .background(fill)
+    .indication(interaction, ripple(bounded = false, radius = size / 2))
 
 @Composable
 private fun GridMode(
@@ -348,22 +365,18 @@ private fun GridMode(
                             val selFg by androidx.compose.animation.animateColorAsState(
                                 if (sel) c.onInverse else if (d == state.today) c.accent else c.textPrimary, DsTheme.motion.indicator(), label = "weekSelText",
                             )
+                            val interaction = remember { MutableInteractionSource() }
                             Column(
-                                Modifier.weight(1f).selectable(sel, role = Role.Tab) { vm.select(d) }.padding(vertical = Space.xs),
+                                Modifier
+                                    .weight(1f)
+                                    .selectable(sel, interactionSource = interaction, indication = null, role = Role.Tab) { vm.select(d) }
+                                    .padding(vertical = Space.xs),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Text(Fmt.weekdayNarrow(d.dayOfWeek, p), style = DsTheme.type.caps, color = if (d == state.today) c.accent else c.textTertiary)
-                                Text(
-                                    d.dayOfMonth.toString(), style = DsTheme.type.bodyStrong,
-                                    color = selFg,
-                                    modifier = Modifier
-                                        .defaultMinSize(30.dp, 30.dp)
-                                        .clip(Radii.pill)
-                                        .background(selBg)
-                                        .wrapContentSize(Alignment.Center)
-                                        .padding(horizontal = 4.dp, vertical = 2.dp),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                )
+                                Box(Modifier.padding(top = 2.dp).dateCircle(interaction, selBg, size = 32.dp), contentAlignment = Alignment.Center) {
+                                    Text(d.dayOfMonth.toString(), style = DsTheme.type.bodyStrong, color = selFg)
+                                }
                             }
                         }
                     }
