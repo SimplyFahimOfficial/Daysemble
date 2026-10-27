@@ -332,6 +332,8 @@ private fun AppContent(
                 Tab.TODAY -> TodayScreenRoute(
                     bottomPadding, onOpenEvent = openEvent, onOpenTask = openTask,
                     onFocusedDate = { todayFocus = it.toEpochDay() },
+                    onAddEvent = { d -> nav.openFromMain(EventEditorRoute(dateEpochDay = d.toEpochDay())) },
+                    onAddTask = { d -> nav.openFromMain(TaskEditorRoute(dueEpochDay = d.toEpochDay())) },
                 )
                 Tab.CALENDAR -> CalendarScreenRoute(
                     bottomPadding, onOpenEvent = openEvent, onOpenTask = openTask,

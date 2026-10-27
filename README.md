@@ -19,10 +19,10 @@ taken with [`scripts/capture_screenshots.sh`](scripts/capture_screenshots.sh) an
 ## Features
 
 **Today**
-- Large weekday headline and a plain-language summary built from your data ("You have 3 events and 2 tasks. You're free after 13:30.").
+- A compact date line with the day's counts; swipe down (or tap the handle) for the full overview: the weekday with the orange date dot, a greeting with your name, and a briefing built from your data ("Good morning, Sam. You have 3 events, 2 tasks and 1 overdue task today. You're mostly free after 16:00."). Free and booked time come from the day's timed events between 08:00 and 22:00; all-day events and tasks don't count as busy.
 - A timeline of all-day events, timed events and tasks, with a live countdown for the next event.
 - Overdue tasks, and a collapsible list of tasks completed today.
-- A swipeable day strip to look at other days.
+- An agenda panel with a week strip (swipe for other weeks); the selected day is a filled circle, today is orange.
 
 **Calendar**
 - Month, Week, Day and Agenda views with swipe navigation and a *Today* jump.

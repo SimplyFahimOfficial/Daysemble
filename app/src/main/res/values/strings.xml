@@ -91,14 +91,46 @@
     <string name="default_task_list_name">My tasks</string>
 
     <!-- Today -->
-    <string name="summary_today_prefix">You have</string>
-    <string name="summary_day_prefix">There are</string>
     <string name="summary_and">and</string>
-    <string name="summary_free_after_prefix">You’re free after</string>
-    <string name="summary_nothing_today">Nothing planned today. Enjoy the space.</string>
-    <string name="summary_nothing_day">Nothing planned for this day.</string>
     <string name="today_empty_title">A clear day</string>
-    <string name="today_empty_body">Tap + to add a task or an event.</string>
+
+    <!-- Today: daily overview and agenda panel -->
+    <string name="greeting_morning">Good morning</string>
+    <string name="greeting_afternoon">Good afternoon</string>
+    <string name="greeting_evening">Good evening</string>
+    <string name="greeting_night">Hello</string>
+    <string name="briefing_today">You have</string>
+    <string name="briefing_today_suffix">today.</string>
+    <string name="briefing_tomorrow">Tomorrow you have</string>
+    <string name="briefing_yesterday">Yesterday you had</string>
+    <string name="briefing_future_day">On %1$s you have</string>
+    <string name="briefing_past_day">On %1$s you had</string>
+    <string name="briefing_nothing_today">Nothing is scheduled today.</string>
+    <string name="briefing_nothing_tomorrow">Nothing is scheduled for tomorrow.</string>
+    <string name="briefing_nothing_day">Nothing is scheduled for %1$s.</string>
+    <string name="briefing_nothing_past">Nothing was scheduled on %1$s.</string>
+    <string name="avail_free_rest">You’re free for the rest of the day.</string>
+    <string name="avail_free_all">You’re free all day.</string>
+    <string name="avail_free_after">You’re free after %1$s.</string>
+    <string name="avail_mostly_free_after">You’re mostly free after %1$s.</string>
+    <string name="avail_longest_break">Your longest break is %1$s – %2$s.</string>
+    <string name="avail_booked_rest">The rest of your day is booked.</string>
+    <string name="avail_booked">Your day is fully booked.</string>
+    <string name="metric_free">%1$s free</string>
+    <string name="metric_booked">%1$s in events</string>
+    <string name="metric_next">Next: %1$s, %2$s</string>
+    <string name="metric_window_note">Counted %1$s – %2$s · all-day events excluded</string>
+    <string name="compact_nothing">Nothing scheduled</string>
+    <string name="compact_free_now">free now</string>
+    <string name="compact_free_all">free all day</string>
+    <string name="compact_free_after">free after %1$s</string>
+    <string name="compact_mostly_free_after">mostly free after %1$s</string>
+    <string name="overview_label">Daily overview</string>
+    <string name="overview_expanded">Expanded</string>
+    <string name="overview_collapsed">Collapsed</string>
+    <string name="overview_expand">Expand overview</string>
+    <string name="overview_collapse">Collapse overview</string>
+    <string name="today_agenda_empty_body">Nothing is scheduled. Add something, or enjoy the space.</string>
     <string name="section_overdue">Overdue</string>
     <string name="section_today">Today</string>
     <string name="section_upcoming">Upcoming</string>
@@ -305,6 +337,14 @@
     <plurals name="n_tasks">
         <item quantity="one">%d task</item>
         <item quantity="other">%d tasks</item>
+    </plurals>
+    <plurals name="n_overdue">
+        <item quantity="one">%d overdue task</item>
+        <item quantity="other">%d overdue tasks</item>
+    </plurals>
+    <plurals name="n_overdue_short">
+        <item quantity="one">%d overdue</item>
+        <item quantity="other">%d overdue</item>
     </plurals>
     <plurals name="n_items">
         <item quantity="one">%d item</item>

@@ -123,6 +123,8 @@ class ScreenSmokeTest {
         waitText("Lunch with Sam")
         waitText("Send invoice to Northwind")
         waitText("OVERDUE")
+        // The briefing lives in the daily overview, which opens from the handle.
+        compose.onNodeWithContentDescription("Daily overview").performClick(); settle()
         waitText("You have", substring = true)
     }
 
@@ -245,7 +247,8 @@ class LargeFontSmokeTest {
             }
         }
         repeat(40) { compose.mainClock.advanceTimeBy(100); Thread.sleep(15) }
-        // At 2x font the timeline is below the fold; the header, summary and actions must still be present.
+        // At 2x font the timeline is below the fold; the header, briefing and actions must still be present.
+        compose.onNodeWithContentDescription("Daily overview").performClick()
         repeat(80) {
             if (compose.onAllNodesWithText("You have", substring = true).fetchSemanticsNodes().isNotEmpty()) return@repeat
             compose.mainClock.advanceTimeBy(100); Thread.sleep(25)

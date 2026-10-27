@@ -153,6 +153,12 @@ open class VisualAuditRender {
         app(theme, onboarded = true)
         val t = theme.name.lowercase()
         capture("main-today-$t")
+        compose.onNodeWithContentDescription("Daily overview").performClick(); settle(); capture("main-today-expanded-$t")
+        // Mid-gesture: the handle row dragged halfway back up, finger still down.
+        compose.onNodeWithContentDescription("Daily overview").performTouchInput { down(center); moveBy(androidx.compose.ui.geometry.Offset(0f, -40f)); moveBy(androidx.compose.ui.geometry.Offset(0f, -120f)) }
+        compose.mainClock.advanceTimeBy(32); shadowOf(Looper.getMainLooper()).idle(); capture("main-today-drag-$t")
+        compose.onNodeWithContentDescription("Daily overview").performTouchInput { up() }
+        settle(); capture("main-today-collapsed-again-$t")
         tab("Calendar").performClick(); settle(); capture("main-calendar-$t")
         tab("Tasks").performClick(); settle(); capture("main-tasks-$t")
         compose.onNodeWithContentDescription("Settings").performClick(); settle(); capture("settings-$t")
