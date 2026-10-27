@@ -16,6 +16,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +57,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -69,6 +71,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -83,6 +87,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -286,6 +291,14 @@ private fun AppContent(
     var mainShown by remember { mutableIntStateOf(0) }
     val onMainShown = remember { { shown: Boolean -> mainShown += if (shown) 1 else -1 } }
 
+    // The main screen stays composed under pages, so it would keep keyboard focus (and the keyboard)
+    // if a field on it was focused when a page opened. Focus is cleared from it as a page opens, and
+    // it can't take focus again (e.g. Tab key traversal) until it is the top screen once more.
+    val focusManager = LocalFocusManager.current
+    var mainHasFocus by remember { mutableStateOf(false) }
+    val onMainNow by rememberUpdatedState(onMain)
+    LaunchedEffect(onMain) { if (!onMain && mainHasFocus) focusManager.clearFocus(force = true) }
+
     val bottomPadding = remember { PaddingValues(bottom = Sizes.bottomBar + Space.xl + 24.dp) }
     Box(Modifier.fillMaxSize().background(c.background)) {
         MainScreen(
@@ -306,6 +319,9 @@ private fun AppContent(
                 // Recorded, not drawn here: the NavHost placeholder draws it (see AppContent's doc).
                 .drawWithContent { mainLayer.record { this@drawWithContent.drawContent() } }
                 .graphicsLayer()
+                .onFocusChanged { mainHasFocus = it.hasFocus }
+                .focusProperties { onEnter = { if (!onMainNow) cancelFocusChange() } }
+                .focusGroup()
                 // While a page covers it completely, it is invisible and must not be read out or focused.
                 .then(if (mainShown == 0) Modifier.clearAndSetSemantics { } else Modifier),
         ) { t ->
@@ -626,6 +642,14 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
     }
     val currentTab by rememberUpdatedState(current)
     val shift = with(LocalDensity.current) { m.tabShift.toPx() }
+    // A hidden tab stays composed, so it must not keep keyboard focus (typing would go on editing
+    // it, e.g. the Tasks search) or take focus while hidden. Focus held by the tab you leave is
+    // cleared as you switch; hidden tabs refuse focus moving into them.
+    val focusManager = LocalFocusManager.current
+    val tabHasFocus = remember { mutableStateMapOf<Tab, Boolean>() }
+    LaunchedEffect(current) {
+        if (Tab.entries.any { it != current && tabHasFocus[it] == true }) focusManager.clearFocus(force = true)
+    }
 
     Layout(
         modifier = modifier,
@@ -641,7 +665,10 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                                 val dir = if (rtl) -direction else direction
                                 translationX = if (t == currentTab) dir * shift * (1f - a) else 0f
                             }
-                            .then(if (t != current) Modifier.clearAndSetSemantics { } else Modifier),
+                            .then(if (t != current) Modifier.clearAndSetSemantics { } else Modifier)
+                            .onFocusChanged { tabHasFocus[t] = it.hasFocus }
+                            .focusProperties { onEnter = { if (t != currentTab) cancelFocusChange() } }
+                            .focusGroup(),
                     ) { holder.SaveableStateProvider(t.name) { content(t) } }
                 }
             }

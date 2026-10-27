@@ -7,6 +7,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -68,7 +71,18 @@ class FirstUseAndNavigationTest {
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
     }
 
-    private fun back() { compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }; settle() }
+    /**
+     * System back. The handler writes state outside composition; the change is sent explicitly,
+     * because in a long Robolectric run Compose's global snapshot notifier (shared by every test in
+     * the JVM) doesn't always pick up such writes, and the screen then never recomposes.
+     */
+    private fun back() {
+        compose.runOnUiThread {
+            compose.activity.onBackPressedDispatcher.onBackPressed()
+            androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
+        }
+        settle()
+    }
 
     /** A bottom-bar tab (the Tasks filters also have a "Today" chip with the Tab role, outside a selectable group). */
     private fun tab(label: String) = compose.onNode(
@@ -221,6 +235,56 @@ class FirstUseAndNavigationTest {
         back()
         tab("Today").assertIsSelected()
         gone("Month")
+    }
+
+    private fun taskSearch() = compose.onNode(hasSetTextAction() and hasContentDescription("Search tasks"))
+
+    private fun softInputVisible(): Boolean {
+        val imm = compose.activity.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+        return org.robolectric.Shadows.shadowOf(imm).isSoftInputVisible
+    }
+
+    /**
+     * Tabs stay composed when hidden, so a focused field in one of them must not keep focus (and the
+     * keyboard) after switching away, or typing would go on changing the hidden tab.
+     */
+    @Test fun switchingTabs_clearsFocusFromTheHiddenTab() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        tab("Tasks").performClick(); settle()
+        taskSearch().performClick(); settle()
+        taskSearch().performTextInput("invoice"); settle()
+        taskSearch().assertIsFocused()
+
+        tab("Calendar").performClick(); settle()
+        assertThat(softInputVisible()).isFalse()
+        tab("Tasks").performClick(); settle()
+        taskSearch().assertIsNotFocused()
+        taskSearch().assert(hasText("invoice")) // the query itself is kept
+    }
+
+    /** The same for a page opened over the main screen (it stays composed underneath). */
+    @Test fun openingAPage_clearsFocusFromTheMainScreen() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        tab("Tasks").performClick(); settle()
+        taskSearch().performClick(); settle()
+        taskSearch().assertIsFocused()
+
+        compose.onNodeWithContentDescription("Settings").performClick(); settle()
+        assertThat(softInputVisible()).isFalse()
+        back()
+        taskSearch().assertIsNotFocused()
+    }
+
+    /** Clearing the main screen's focus must not take focus away from the page that just opened. */
+    @Test fun openingSearch_fromAFocusedTaskSearch_focusesTheSearchPage() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        tab("Tasks").performClick(); settle()
+        taskSearch().performClick(); settle()
+        compose.onNodeWithContentDescription("Search").performClick(); settle()
+        compose.onNode(hasSetTextAction() and hasContentDescription("Events, tasks, places")).assertIsFocused()
     }
 
     /** Selecting days, including rapid taps, and moving between months keeps one selected day. */
