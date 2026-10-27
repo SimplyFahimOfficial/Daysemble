@@ -7,9 +7,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -133,7 +130,7 @@ fun SyncBadge(state: SyncIndicator, label: String, modifier: Modifier = Modifier
     val m = DsTheme.motion
     AnimatedContent(
         targetState = state to label,
-        transitionSpec = { fadeIn(m.enter(m.medium)) togetherWith fadeOut(m.exit()) },
+        transitionSpec = { m.fadeThrough(size = m.contentSize()) },
         label = "sync",
         modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
     ) { (s, text) ->

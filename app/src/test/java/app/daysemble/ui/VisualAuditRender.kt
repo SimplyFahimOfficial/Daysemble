@@ -72,8 +72,8 @@ class VisualAuditRender {
 
     private fun enabled() = assumeTrue(System.getProperty("daysemble.visualAudit") == "true")
 
-    @Test fun todayLight() { enabled(); render("today-light", ThemeMode.LIGHT) { TodayRoute(PaddingValues(), { _, _ -> }, {}, {}, {}) } }
-    @Test fun todayDark() { enabled(); render("today-dark", ThemeMode.DARK) { TodayRoute(PaddingValues(), { _, _ -> }, {}, {}, {}) } }
+    @Test fun todayLight() { enabled(); render("today-light", ThemeMode.LIGHT) { TodayRoute(PaddingValues(), { _, _ -> }, {}) } }
+    @Test fun todayDark() { enabled(); render("today-dark", ThemeMode.DARK) { TodayRoute(PaddingValues(), { _, _ -> }, {}) } }
     @Test fun calendarLight() { enabled(); render("calendar-light", ThemeMode.LIGHT) { CalendarRoute(PaddingValues(), { _, _ -> }, {}, { _, _ -> }) } }
     @Test fun tasksDark() { enabled(); render("tasks-dark", ThemeMode.DARK) { TasksRoute(PaddingValues(), {}) } }
     @Test fun appearanceLight() { enabled(); render("appearance-light", ThemeMode.LIGHT) { AppearanceRoute(onBack = {}) } }

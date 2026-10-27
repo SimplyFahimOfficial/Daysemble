@@ -28,8 +28,9 @@ import org.robolectric.annotation.Config
 import java.time.ZoneId
 
 /**
- * The name beside the logo on Today, at the narrowest supported width with 200% text: a long name
- * must end with "…" before the Search and Settings buttons, never overlap or push them away.
+ * The name beside the logo in the shared header (Today, Calendar, Tasks), at the narrowest
+ * supported width with 200% text: a long name must end with "…" before the Search and Settings
+ * buttons, never overlap or push them away.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h640dp-mdpi", fontScale = 2.0f)
@@ -46,7 +47,12 @@ class HeaderLayoutTest {
                     LocalTimePrefs provides prefs, LocalAppClock provides c.clock,
                     LocalSnackbar provides remember { SnackbarHostState() },
                     LocalAppSettings provides AppSettings(onboardingDone = true, displayName = name),
-                ) { TodayRoute(PaddingValues(), { _, _ -> }, {}, {}, {}) }
+                ) {
+                    androidx.compose.foundation.layout.Column {
+                        MainHeader(name, null, {}, {}, {})
+                        TodayRoute(PaddingValues(), { _, _ -> }, {})
+                    }
+                }
             }
         }
         repeat(10) { compose.mainClock.advanceTimeBy(100); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle() }

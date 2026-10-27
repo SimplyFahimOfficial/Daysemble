@@ -4,13 +4,6 @@ import app.daysemble.ui.components.itemMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,16 +18,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.WbTwilight
 import androidx.compose.material3.Icon
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,7 +49,6 @@ import app.daysemble.R
 import app.daysemble.ui.components.DashedDivider
 import app.daysemble.ui.components.DateStrip
 import app.daysemble.ui.components.DsChip
-import app.daysemble.ui.components.DsIconButton
 import app.daysemble.ui.components.EventRow
 import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.StateMessage
@@ -80,18 +68,8 @@ fun TodayRoute(
     contentPadding: PaddingValues,
     onOpenEvent: (eventId: String, key: String) -> Unit,
     onOpenTask: (String) -> Unit,
-    onSearch: () -> Unit,
-    onSettings: () -> Unit,
     onFocusedDate: (java.time.LocalDate) -> Unit = {},
-    onOpenSync: () -> Unit = {},
 ) {
-    val prefs = LocalTimePrefs.current
-    val container = (androidx.compose.ui.platform.LocalContext.current.applicationContext as app.daysemble.DaysembleApp).container
-    val rootSync = app.daysemble.ui.LocalSyncStatus.current
-    val sync = if (rootSync != null) rootSync.value else {
-        val syncFlow = androidx.compose.runtime.remember(container) { container.sync.status }
-        syncFlow.collectAsStateWithLifecycle(initialValue = null).value
-    }
     val vm = daysembleViewModel { c, h -> TodayViewModel(c.events, c.tasks, c.settings, c.clock, c.timeContext, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()
@@ -101,9 +79,6 @@ fun TodayRoute(
         state = state, now = now, contentPadding = contentPadding,
         onSelectDate = vm::select, onToday = vm::goToToday,
         onToggleTask = vm::setCompleted, onOpenEvent = onOpenEvent, onOpenTask = onOpenTask,
-        onSearch = onSearch, onSettings = onSettings,
-        syncStatus = sync?.takeIf { it.account.isConnected }, onOpenSync = onOpenSync,
-        displayName = app.daysemble.ui.LocalAppSettings.current?.displayName,
     )
 }
 
@@ -117,17 +92,12 @@ fun TodayScreen(
     onToggleTask: (String, Boolean) -> Unit,
     onOpenEvent: (String, String) -> Unit,
     onOpenTask: (String) -> Unit,
-    onSearch: () -> Unit,
-    onSettings: () -> Unit,
-    syncStatus: app.daysemble.data.google.sync.SyncStatus? = null,
-    onOpenSync: () -> Unit = {},
-    /** Shown beside the logo; null shows the app name. */
-    displayName: String? = null,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     val p = LocalTimePrefs.current
     var showCompleted by rememberSaveable { mutableStateOf(false) }
+    val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
 
     LazyColumn(
         Modifier
@@ -135,47 +105,17 @@ fun TodayScreen(
             .background(c.background),
         contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + Space.xxl),
     ) {
-        item(key = "top") {
-            Column(Modifier.statusBarsPadding()) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = Space.gutter, end = Space.xs, top = Space.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // Logo and name take the free space and truncate first; the actions keep their size.
-                    // With a sync badge, the two share the free space equally.
-                    app.daysemble.ui.brand.BrandNameplate(displayName, Modifier.weight(1f).padding(end = Space.s))
-                    if (syncStatus != null) {
-                        app.daysemble.ui.components.SyncBadge(
-                            app.daysemble.ui.settings.syncIndicator(syncStatus),
-                            app.daysemble.ui.settings.syncLabel(syncStatus, p),
-                            Modifier
-                                .weight(1f, fill = false)
-                                .minimumInteractiveComponentSize()
-                                .clip(Radii.pill)
-                                .clickable(role = Role.Button, onClick = onOpenSync),
-                        )
-                    }
-                    DsIconButton(Icons.Rounded.Search, stringResource(R.string.cd_search), onSearch)
-                    DsIconButton(Icons.Rounded.Settings, stringResource(R.string.cd_settings), onSettings)
-                }
-                Header(state, p)
-            }
-        }
+        item(key = "top") { Header(state, p) }
         item(key = "strip") {
             DateStrip(selected = state.date, today = state.today, onSelect = onSelectDate, modifier = Modifier.padding(top = Space.l))
         }
         item(key = "summary") {
+            // Another day: the summary fades through in the direction of travel. The list below
+            // changes item by item (itemMotion), so the screen itself never swaps as a whole.
             AnimatedContent(
                 targetState = state,
                 contentKey = { it.date },
-                transitionSpec = {
-                    val dir = if (targetState.date > initialState.date) 1 else -1
-                    if (m.reduced) fadeIn(m.enter(m.short)) togetherWith fadeOut(m.exit())
-                    else (fadeIn(m.enter()) + slideInHorizontally(m.enter()) { dir * it / 8 }) togetherWith
-                        (fadeOut(m.exit()) + slideOutHorizontally(m.exit()) { -dir * it / 8 })
-                },
+                transitionSpec = { m.fadeThrough(if (targetState.date > initialState.date) 1 else -1, rtl, m.contentSize()) },
                 label = "summary",
             ) { s -> Summary(s, p) }
         }
@@ -248,11 +188,7 @@ fun TodayScreen(
                 CompletedHeader(state.completed.size, showCompleted, { showCompleted = !showCompleted }, Modifier.then(itemMotion()))
             }
             item(key = "completedList") {
-                AnimatedVisibility(
-                    visible = showCompleted,
-                    enter = fadeIn(m.enter()) + expandVertically(m.enter()),
-                    exit = fadeOut(m.exit()) + shrinkVertically(m.exit()),
-                ) {
+                AnimatedVisibility(visible = showCompleted, enter = m.expandIn(), exit = m.collapseOut()) {
                     Column {
                         state.completed.forEach { t ->
                             TaskRow(t, now, onToggle = { onToggleTask(t.id, it) }, onClick = { onOpenTask(t.id) }, showDue = false)

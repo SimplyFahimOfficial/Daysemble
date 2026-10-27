@@ -118,7 +118,7 @@ class ScreenSmokeTest {
     }
 
     @Test fun today_showsTimelineOverdueAndCountdown() {
-        show { TodayRoute(PaddingValues(), { _, _ -> }, {}, {}, {}) }
+        show { TodayRoute(PaddingValues(), { _, _ -> }, {}) }
         waitText("Maya’s birthday")
         waitText("Lunch with Sam")
         waitText("Send invoice to Northwind")
@@ -127,7 +127,7 @@ class ScreenSmokeTest {
     }
 
     @Test fun today_dark_completingTaskUpdatesState() {
-        show(ThemeMode.DARK) { TodayRoute(PaddingValues(), { _, _ -> }, {}, {}, {}) }
+        show(ThemeMode.DARK) { TodayRoute(PaddingValues(), { _, _ -> }, {}) }
         waitText("Buy groceries")
         compose.onNodeWithContentDescription("Mark Buy groceries complete").performClick()
         repeat(40) {
@@ -238,7 +238,8 @@ class LargeFontSmokeTest {
                 val prefs = rememberTimePrefs(ClockFormat.H12, null, ZoneId.systemDefault())
                 CompositionLocalProvider(LocalTimePrefs provides prefs, LocalAppClock provides c.clock) {
                     androidx.compose.foundation.layout.Column {
-                        TodayRoute(PaddingValues(), { _, _ -> }, {}, {}, {})
+                        MainHeader(null, null, {}, {}, {})
+                        TodayRoute(PaddingValues(), { _, _ -> }, {})
                     }
                 }
             }

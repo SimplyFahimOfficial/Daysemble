@@ -3,7 +3,6 @@ package app.daysemble.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -131,42 +130,54 @@ private fun DayChip(
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
-    val bg by animateColorAsState(if (selected) c.surface else Color.Transparent, m.standard(m.medium), label = "dayBg")
-    val border by animateColorAsState(if (selected) c.outline else Color.Transparent, m.standard(m.medium), label = "dayBorder")
+    // Same selection language as the calendar: the selected day is the inverted (ink) fill, today is
+    // coral. Only colours change, so the strip never shifts while you tap through days.
+    val bg by animateColorAsState(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "dayBg")
+    val number by animateColorAsState(
+        when {
+            selected -> c.onInverse
+            isToday -> c.accent
+            else -> c.textPrimary
+        },
+        m.indicator(), label = "dayNumber",
+    )
+    val caption by animateColorAsState(
+        when {
+            selected -> c.onInverse.copy(alpha = 0.78f)
+            isToday -> c.accent
+            else -> c.textTertiary
+        },
+        m.indicator(), label = "dayCaption",
+    )
     Column(
         Modifier
             .widthIn(min = 48.dp)
-            .clip(Radii.control)
+            .clip(DayChipShape)
             .background(bg)
-            .border(Sizes.hairline, border, Radii.control)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = a11y }
-            .padding(vertical = Space.s),
+            .padding(top = Space.s + Space.xxs, bottom = Space.s),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            date.dayOfMonth.toString(),
-            style = DsTheme.type.title,
-            color = if (selected || isToday) c.textPrimary else c.textSecondary,
-        )
-        Text(
-            weekday.uppercase().take(3),
-            style = DsTheme.type.caps,
-            color = when {
-                isToday -> c.accent
-                selected -> c.textPrimary
-                else -> c.textTertiary
-            },
-        )
+        Text(date.dayOfMonth.toString(), style = DsTheme.type.title, color = number)
+        Text(weekday.uppercase().take(3), style = DsTheme.type.caps, color = caption)
         Spacer(Modifier.height(Space.xs))
         Box(
             Modifier
                 .size(4.dp)
                 .clip(Radii.pill)
-                .background(if (hasItems && !selected) c.outlineStrong else Color.Transparent),
+                .background(
+                    when {
+                        !hasItems -> Color.Transparent
+                        selected -> c.onInverse
+                        else -> c.outlineStrong
+                    },
+                ),
         )
     }
 }
+
+private val DayChipShape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
 
 /** Brand marker: the rounded square from the logo, in the calendar colour. */
 @Composable

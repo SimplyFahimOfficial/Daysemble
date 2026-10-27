@@ -41,7 +41,7 @@ fun Modifier.pressScale(interaction: MutableInteractionSource): Modifier {
     val motion = DsTheme.motion
     val scale by animateFloatAsState(
         if (pressed && !motion.reduced) 0.97f else 1f,
-        motion.standard(motion.short),
+        motion.feedback(),
         label = "press",
     )
     return graphicsLayer { scaleX = scale; scaleY = scale }

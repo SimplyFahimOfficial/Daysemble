@@ -3,9 +3,6 @@ package app.daysemble.ui.calendar
 import app.daysemble.ui.components.itemMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -22,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -95,16 +91,22 @@ fun CalendarRoute(
     val c = DsTheme.colors
     val m = DsTheme.motion
 
-    Column(Modifier.fillMaxSize().background(c.background).statusBarsPadding()) {
+    val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    Column(Modifier.fillMaxSize().background(c.background)) {
         Row(
-            Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.xs, top = Space.l),
+            Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.xs, top = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // The title changes only when the month (or, in Day view, the day) changes, and fades
+            // through in the direction of travel instead of cross-fading two titles over each other.
+            val mode = state.mode
             AnimatedContent(
-                titleFor(state.mode, state.selected),
-                transitionSpec = { fadeIn(m.enter()) togetherWith fadeOut(m.exit()) },
+                state.selected,
+                contentKey = { if (mode == CalendarMode.DAY) it else YearMonth.from(it) },
+                transitionSpec = { m.fadeThrough(targetState.compareTo(initialState).coerceIn(-1, 1), rtl) },
                 label = "calTitle", modifier = Modifier.weight(1f),
-            ) { t ->
+            ) { d ->
+                val t = titleFor(mode, d)
                 Text(
                     t, style = if (t.length > 12) DsTheme.type.titleLarge else DsTheme.type.headline, color = c.textPrimary,
                     maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -120,9 +122,10 @@ fun CalendarRoute(
             label = { stringResource(modeLabel(it)) }, onSelect = vm::setMode,
             modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
         )
+        // Changing the view swaps the area below the switcher only; header and switcher stay put.
         AnimatedContent(
             state.mode,
-            transitionSpec = { fadeIn(m.enter(m.long)) togetherWith fadeOut(m.exit()) },
+            transitionSpec = { m.fadeThrough(Integer.signum(targetState.ordinal - initialState.ordinal), rtl) },
             label = "calMode",
             modifier = Modifier.weight(1f),
         ) { mode ->
