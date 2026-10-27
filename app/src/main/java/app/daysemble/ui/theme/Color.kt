@@ -42,9 +42,18 @@ data class DsColors(
     val textTertiary: Color,
     /** Orange used for text and icons (deeper/lighter than [accentFill] so it meets 4.5:1). */
     val accent: Color,
-    /** The Daysemble orange ([Brand.Orange]): date dot, today ring, add button. Pair with [onAccent]. */
+    /**
+     * The Daysemble orange ([Brand.Orange]) for markers and glyph-only fills: the date dot, today's
+     * ring, the add button. [onAccent] on it is 3.46:1, enough for icons (WCAG 1.4.11) but not for
+     * text: orange surfaces that carry text use [accentStrong].
+     */
     val accentFill: Color,
+    /** Deep orange for orange surfaces with text on them (live countdown chip, accent button). */
+    val accentStrong: Color,
+    /** Text and icons on [accentFill] (glyphs only) and [accentStrong] (text, 4.5:1). */
     val onAccent: Color,
+    /** Orange text on the [inverse] surface (snackbar action). */
+    val inverseAccent: Color,
     val accentContainer: Color,
     val violet: Color,
     val violetContainer: Color,
@@ -73,7 +82,9 @@ val LightDsColors = DsColors(
     textTertiary = Color(0xFF6B6B71),
     accent = Color(0xFFBF3A12),
     accentFill = Brand.Orange,
+    accentStrong = Color(0xFFBF3A12),
     onAccent = Color(0xFFFFFFFF),
+    inverseAccent = Color(0xFFFF8A63),
     accentContainer = Color(0xFFFFEDE6),
     violet = Brand.Violet,
     violetContainer = Color(0xFFECE8FF),
@@ -100,7 +111,9 @@ val DarkDsColors = DsColors(
     textTertiary = Color(0xFF909097),
     accent = Color(0xFFFF8A63),
     accentFill = Brand.Orange,
+    accentStrong = Color(0xFFBF3A12),
     onAccent = Color(0xFFFFFFFF),
+    inverseAccent = Color(0xFFBF3A12),
     accentContainer = Color(0xFF3A1A10),
     violet = Brand.VioletLight,
     violetContainer = Color(0xFF231C47),

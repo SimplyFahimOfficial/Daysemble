@@ -113,7 +113,9 @@ private fun animatedColors(target: DsColors, motion: DsMotion): DsColors {
         textTertiary = a(target.textTertiary, "textTertiary"),
         accent = a(target.accent, "accent"),
         accentFill = a(target.accentFill, "accentFill"),
+        accentStrong = a(target.accentStrong, "accentStrong"),
         onAccent = a(target.onAccent, "onAccent"),
+        inverseAccent = a(target.inverseAccent, "inverseAccent"),
         accentContainer = a(target.accentContainer, "accentContainer"),
         violet = a(target.violet, "violet"),
         violetContainer = a(target.violetContainer, "violetContainer"),
@@ -130,8 +132,11 @@ private fun animatedColors(target: DsColors, motion: DsMotion): DsColors {
 private fun DsColors.toMaterial(): ColorScheme {
     val base = if (isDark) darkColorScheme() else lightColorScheme()
     return base.copy(
-        primary = accentFill,
-        onPrimary = onAccent,
+        // Material components use primary for text too, so it is the text-safe orange; onPrimary is
+        // the colour that reads on it in this theme (white on the deep light-theme orange, near-black
+        // on the light dark-theme orange). Checked in ColorContrastTest.
+        primary = accent,
+        onPrimary = onInverse,
         primaryContainer = accentContainer,
         onPrimaryContainer = textPrimary,
         secondary = violet,
@@ -160,7 +165,7 @@ private fun DsColors.toMaterial(): ColorScheme {
         onErrorContainer = textPrimary,
         inverseSurface = inverse,
         inverseOnSurface = onInverse,
-        inversePrimary = accent,
+        inversePrimary = inverseAccent,
         scrim = scrim,
     )
 }

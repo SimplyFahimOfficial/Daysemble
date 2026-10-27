@@ -109,6 +109,8 @@ fun DsTimePickerDialog(
                     colors = TimePickerDefaults.colors(
                         clockDialColor = c.surfaceVariant,
                         selectorColor = c.inverse,
+                        // The number under the selector; Material's default (onPrimary) assumes a primary selector.
+                        clockDialSelectedContentColor = c.onInverse,
                         timeSelectorSelectedContainerColor = c.inverse,
                         timeSelectorSelectedContentColor = c.onInverse,
                         timeSelectorUnselectedContainerColor = c.surfaceVariant,

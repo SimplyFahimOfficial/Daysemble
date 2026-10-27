@@ -375,7 +375,7 @@ private fun AppContent(
         ) { data ->
             Snackbar(
                 data, shape = Radii.control,
-                containerColor = c.inverse, contentColor = c.onInverse, actionColor = c.accentFill,
+                containerColor = c.inverse, contentColor = c.onInverse, actionColor = c.inverseAccent,
             )
         }
     }
