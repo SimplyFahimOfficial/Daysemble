@@ -30,10 +30,32 @@ data class DayAvailability(
      */
     val freeAfter: Instant?,
     val mostly: Boolean,
-    /** Longest gap between events in the window, when there is no [freeAfter]. */
+    /** Longest gap between events in the window (at least 30 min), when there is no [freeAfter]. */
     val longestBreak: ClosedRange<Instant>?,
 ) {
     val isFree: Boolean get() = busy.isZero
+
+    /** The one statement the briefing makes about this day's free time. */
+    fun summary(): AvailabilitySummary = when {
+        isFree -> AvailabilitySummary.FreeAllDay
+        freeAfter != null -> AvailabilitySummary.FreeAfter(freeAfter, mostly)
+        longestBreak != null -> AvailabilitySummary.LongestBreak(longestBreak)
+        // No long break doesn't mean no free time: short gaps can add up to hours.
+        free >= Duration.ofMinutes(1) -> AvailabilitySummary.ShortBreaks(free)
+        else -> AvailabilitySummary.Booked
+    }
+}
+
+/** What can truthfully be said about a day's free time, in order of preference. */
+sealed interface AvailabilitySummary {
+    /** No timed events in the (rest of the) window. */
+    data object FreeAllDay : AvailabilitySummary
+    data class FreeAfter(val at: Instant, val mostly: Boolean) : AvailabilitySummary
+    data class LongestBreak(val range: ClosedRange<Instant>) : AvailabilitySummary
+    /** Free time exists, but only in gaps shorter than 30 min. */
+    data class ShortBreaks(val total: Duration) : AvailabilitySummary
+    /** Under a minute free in the (rest of the) window. */
+    data object Booked : AvailabilitySummary
 }
 
 object Availability {

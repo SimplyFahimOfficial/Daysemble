@@ -62,6 +62,29 @@ class AvailabilityTest {
         assertThat(a.freeAfter).isEqualTo(at(16))
     }
 
+    /** Only short gaps between events is not the same as no free time. */
+    @Test fun shortGapsOnly_isNotBooked() {
+        // 08:00–22:00: 14 cycles of a 35 min event followed by a 25 min gap.
+        val events = (0 until 14).map { i -> Busy(at(8).plusSeconds(i * 3600L), at(8).plusSeconds(i * 3600L + 35 * 60)) }
+        val a = Availability.of(day, events, earlyMorning, zone)!!
+        assertThat(a.freeAfter).isNull()
+        assertThat(a.longestBreak).isNull()
+        assertThat(a.free).isEqualTo(Duration.ofMinutes(350)) // 5 h 50 min
+        assertThat(a.summary()).isEqualTo(AvailabilitySummary.ShortBreaks(Duration.ofMinutes(350)))
+    }
+
+    @Test fun summary_pickRulesInOrder() {
+        assertThat(Availability.of(day, emptyList(), earlyMorning, zone)!!.summary()).isEqualTo(AvailabilitySummary.FreeAllDay)
+        assertThat(Availability.of(day, listOf(ev(9, 0, 10, 0)), earlyMorning, zone)!!.summary())
+            .isEqualTo(AvailabilitySummary.FreeAfter(at(10), mostly = false))
+        assertThat(Availability.of(day, listOf(ev(8, 0, 12, 0), ev(13, 0, 21, 0)), earlyMorning, zone)!!.summary())
+            .isEqualTo(AvailabilitySummary.LongestBreak(at(12)..at(13)))
+        // Booked means no free time at all (under a minute), not just no long break.
+        assertThat(Availability.of(day, listOf(ev(7, 0, 23, 0)), earlyMorning, zone)!!.summary()).isEqualTo(AvailabilitySummary.Booked)
+        assertThat(Availability.of(day, listOf(ev(7, 0, 21, 45)), earlyMorning, zone)!!.summary())
+            .isEqualTo(AvailabilitySummary.ShortBreaks(Duration.ofMinutes(15)))
+    }
+
     @Test fun pastWindow_isNull() {
         assertThat(Availability.of(day, emptyList(), at(22, 30), zone)).isNull()
         assertThat(Availability.of(day.minusDays(1), emptyList(), at(9), zone)).isNull()

@@ -103,6 +103,7 @@ import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.R
 import app.daysemble.core.time.Availability
+import app.daysemble.core.time.AvailabilitySummary
 import app.daysemble.ui.components.DashedDivider
 import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
@@ -417,12 +418,15 @@ private fun briefing(s: TodayUiState, now: Instant, name: String?, p: TimePrefs)
         else -> stringResource(R.string.briefing_nothing_day, dayName)
     }
     val a = s.availability
-    val availability: Pair<String, List<String>>? = when {
-        a == null || parts.isEmpty() -> null
-        a.isFree -> stringResource(if (isToday) R.string.avail_free_rest else R.string.avail_free_all) to emptyList()
-        a.freeAfter != null -> stringResource(if (a.mostly) R.string.avail_mostly_free_after else R.string.avail_free_after) to listOf(Fmt.time(a.freeAfter, p))
-        a.longestBreak != null -> stringResource(R.string.avail_longest_break) to listOf(Fmt.time(a.longestBreak.start, p), Fmt.time(a.longestBreak.endInclusive, p))
-        else -> stringResource(if (isToday) R.string.avail_booked_rest else R.string.avail_booked) to emptyList()
+    val availability: Pair<String, List<String>>? = if (a == null || parts.isEmpty()) null else when (val sum = a.summary()) {
+        AvailabilitySummary.FreeAllDay -> stringResource(if (isToday) R.string.avail_free_rest else R.string.avail_free_all) to emptyList()
+        is AvailabilitySummary.FreeAfter ->
+            stringResource(if (sum.mostly) R.string.avail_mostly_free_after else R.string.avail_free_after) to listOf(Fmt.time(sum.at, p))
+        is AvailabilitySummary.LongestBreak ->
+            stringResource(R.string.avail_longest_break) to listOf(Fmt.time(sum.range.start, p), Fmt.time(sum.range.endInclusive, p))
+        is AvailabilitySummary.ShortBreaks ->
+            stringResource(R.string.avail_short_breaks) to listOf(durationText(sum.total.roundToMinutes()))
+        AvailabilitySummary.Booked -> stringResource(if (isToday) R.string.avail_booked_rest else R.string.avail_booked) to emptyList()
     }
 
     val text = buildAnnotatedString {

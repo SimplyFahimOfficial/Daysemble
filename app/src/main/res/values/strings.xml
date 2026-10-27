@@ -114,6 +114,7 @@
     <string name="avail_free_after">You’re free after %1$s.</string>
     <string name="avail_mostly_free_after">You’re mostly free after %1$s.</string>
     <string name="avail_longest_break">Your longest break is %1$s – %2$s.</string>
+    <string name="avail_short_breaks">You have %1$s free, in short breaks between events.</string>
     <string name="avail_booked_rest">The rest of your day is booked.</string>
     <string name="avail_booked">Your day is fully booked.</string>
     <string name="metric_free">%1$s free</string>
