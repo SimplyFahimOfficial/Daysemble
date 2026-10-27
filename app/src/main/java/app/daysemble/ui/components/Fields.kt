@@ -147,8 +147,8 @@ fun DsTextField(
         AnimatedVisibility(
             error != null,
             // Reduced motion: fade only, no size change pushing the content below.
-            enter = if (m.reduced) fadeIn(m.enter()) else fadeIn(m.enter()) + androidx.compose.animation.expandVertically(m.enter()),
-            exit = if (m.reduced) fadeOut(m.exit()) else fadeOut(m.exit()) + androidx.compose.animation.shrinkVertically(m.exit()),
+            enter = m.expandIn(),
+            exit = m.collapseOut(),
         ) {
             Text(error.orEmpty(), style = DsTheme.type.label, color = c.error, modifier = Modifier.padding(top = Space.xs))
         }

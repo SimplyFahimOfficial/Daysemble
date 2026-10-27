@@ -7,6 +7,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -23,6 +26,7 @@ import androidx.datastore.preferences.core.edit
 import app.daysemble.DaysembleApp
 import app.daysemble.data.SampleData
 import app.daysemble.data.prefs.settingsDataStore
+import app.daysemble.ui.onboarding.OnboardingScreen
 import app.daysemble.ui.theme.DaysembleTheme
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.runBlocking
@@ -67,10 +71,25 @@ class FirstUseAndNavigationTest {
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
     }
 
-    private fun back() { compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }; settle() }
+    /**
+     * System back. The handler writes state outside composition; the change is sent explicitly,
+     * because in a long Robolectric run Compose's global snapshot notifier (shared by every test in
+     * the JVM) doesn't always pick up such writes, and the screen then never recomposes.
+     */
+    private fun back() {
+        compose.runOnUiThread {
+            compose.activity.onBackPressedDispatcher.onBackPressed()
+            androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
+        }
+        settle()
+    }
 
-    private fun tab(label: String) =
-        compose.onNode(hasText(label) and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab) and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected))
+    /** A bottom-bar tab (the Tasks filters also have a "Today" chip with the Tab role, outside a selectable group). */
+    private fun tab(label: String) = compose.onNode(
+        hasText(label) and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab) and
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected) and
+            androidx.compose.ui.test.hasParent(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup)),
+    )
 
     private fun gone(text: String) = assertThat(compose.onAllNodesWithText(text).fetchSemanticsNodes()).isEmpty()
 
@@ -166,6 +185,124 @@ class FirstUseAndNavigationTest {
         settle()
         compose.onNodeWithText("Appearance").assertIsDisplayed() // still on Settings, not back at Today
         gone("APP LOGO")
+    }
+
+    private fun monthCell(day: java.time.LocalDate) = compose.onNode(
+        hasContentDescription(java.time.format.DateTimeFormatter.ofPattern("MMMM d,", java.util.Locale.US).format(day), substring = true) and
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab),
+    )
+
+    /**
+     * The main screen is no longer a NavHost destination that is disposed under Settings: what you
+     * left on Calendar and Tasks (view, selected day, filter) is exactly there when you come back,
+     * and while Settings is open the hidden main screen isn't readable (no duplicate nodes).
+     */
+    @Test fun mainScreenState_survivesSettingsRoundTrip() {
+        runBlocking { c.settings.completeOnboarding("Sam") }
+        showApp(); settle()
+        tab("Tasks").performClick(); settle()
+        compose.onNodeWithText("Overdue").performClick(); settle()
+        tab("Calendar").performClick(); settle()
+        val today = java.time.LocalDate.now()
+        val day = today.withDayOfMonth(if (today.dayOfMonth == 13) 14 else 13)
+        monthCell(day).performClick(); settle()
+        monthCell(day).assertIsSelected()
+
+        compose.onNodeWithContentDescription("Settings").performClick(); settle()
+        compose.onNodeWithText("Your name").assertIsDisplayed()
+        assertThat(compose.onAllNodesWithText("Sam").fetchSemanticsNodes()).hasSize(1) // only the Settings row
+        gone("Month")
+
+        back()
+        tab("Calendar").assertIsSelected()
+        monthCell(day).assertIsSelected()
+        tab("Tasks").performClick(); settle()
+        compose.onNodeWithText("Overdue").assertIsSelected()
+    }
+
+    /** Taps that land before the previous switch finished still end on the last tab, with only its content readable. */
+    @Test fun rapidTabSwitches_endOnTheLastTab() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        tab("Calendar").performClick(); compose.mainClock.advanceTimeBy(30)
+        tab("Tasks").performClick(); compose.mainClock.advanceTimeBy(30)
+        tab("Today").performClick(); compose.mainClock.advanceTimeBy(30)
+        tab("Calendar").performClick(); compose.mainClock.advanceTimeBy(30)
+        settle()
+        tab("Calendar").assertIsSelected()
+        compose.onNodeWithText("Month").assertIsDisplayed()
+        gone("Search tasks") // Tasks stays composed in the background but isn't exposed
+        back()
+        tab("Today").assertIsSelected()
+        gone("Month")
+    }
+
+    private fun taskSearch() = compose.onNode(hasSetTextAction() and hasContentDescription("Search tasks"))
+
+    private fun softInputVisible(): Boolean {
+        val imm = compose.activity.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+        return org.robolectric.Shadows.shadowOf(imm).isSoftInputVisible
+    }
+
+    /**
+     * Tabs stay composed when hidden, so a focused field in one of them must not keep focus (and the
+     * keyboard) after switching away, or typing would go on changing the hidden tab.
+     */
+    @Test fun switchingTabs_clearsFocusFromTheHiddenTab() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        tab("Tasks").performClick(); settle()
+        taskSearch().performClick(); settle()
+        taskSearch().performTextInput("invoice"); settle()
+        taskSearch().assertIsFocused()
+
+        tab("Calendar").performClick(); settle()
+        assertThat(softInputVisible()).isFalse()
+        tab("Tasks").performClick(); settle()
+        taskSearch().assertIsNotFocused()
+        taskSearch().assert(hasText("invoice")) // the query itself is kept
+    }
+
+    /** The same for a page opened over the main screen (it stays composed underneath). */
+    @Test fun openingAPage_clearsFocusFromTheMainScreen() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        tab("Tasks").performClick(); settle()
+        taskSearch().performClick(); settle()
+        taskSearch().assertIsFocused()
+
+        compose.onNodeWithContentDescription("Settings").performClick(); settle()
+        assertThat(softInputVisible()).isFalse()
+        back()
+        taskSearch().assertIsNotFocused()
+    }
+
+    /** Clearing the main screen's focus must not take focus away from the page that just opened. */
+    @Test fun openingSearch_fromAFocusedTaskSearch_focusesTheSearchPage() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        tab("Tasks").performClick(); settle()
+        taskSearch().performClick(); settle()
+        compose.onNodeWithContentDescription("Search").performClick(); settle()
+        compose.onNode(hasSetTextAction() and hasContentDescription("Events, tasks, places")).assertIsFocused()
+    }
+
+    /** Selecting days, including rapid taps, and moving between months keeps one selected day. */
+    @Test fun calendar_dateSelection_andMonthNavigation() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        tab("Calendar").performClick(); settle()
+        val first = java.time.LocalDate.now().withDayOfMonth(12)
+        listOf(0L, 1L, 2L).forEach { monthCell(first.plusDays(it)).performClick(); compose.mainClock.advanceTimeBy(16) }
+        settle()
+        monthCell(first.plusDays(2)).assertIsSelected()
+
+        compose.onNodeWithContentDescription("Next").performClick(); settle()
+        val next = first.plusMonths(1).withDayOfMonth(1)
+        compose.onNodeWithText(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.US).format(next)).assertIsDisplayed()
+        monthCell(next).assertIsSelected()
+        compose.onNodeWithContentDescription("Previous").performClick(); settle()
+        compose.onNodeWithText(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.US).format(first)).assertIsDisplayed()
     }
 
     /**

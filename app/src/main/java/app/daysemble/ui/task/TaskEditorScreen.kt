@@ -3,8 +3,6 @@ package app.daysemble.ui.task
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -234,7 +232,7 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                         androidx.compose.runtime.key(s.id) {
                             val shown = remember { androidx.compose.animation.core.MutableTransitionState(s.id in loadedIds) }
                             androidx.compose.runtime.LaunchedEffect(Unit) { shown.targetState = true }
-                            androidx.compose.animation.AnimatedVisibility(shown, enter = if (m.reduced) fadeIn(m.enter()) else fadeIn(m.enter()) + expandVertically(m.enter())) {
+                            androidx.compose.animation.AnimatedVisibility(shown, enter = m.expandIn()) {
                                 Column {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         TaskRow(s, now, onToggle = { vm.toggleSubtask(s.id, it) }, onClick = { vm.toggleSubtask(s.id, !s.isCompleted) }, showDue = false, modifier = Modifier.weight(1f))

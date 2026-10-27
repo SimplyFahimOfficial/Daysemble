@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -127,9 +126,8 @@ fun TasksScreen(
         item(key = "header") {
             Row(
                 Modifier
-                    .statusBarsPadding()
                     .fillMaxWidth()
-                    .padding(start = Space.gutter, end = Space.xs, top = Space.l),
+                    .padding(start = Space.gutter, end = Space.xs, top = Space.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(stringResource(R.string.tab_tasks), style = DsTheme.type.headline, color = c.textPrimary, modifier = Modifier.weight(1f).semantics { heading() })

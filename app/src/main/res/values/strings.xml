@@ -476,7 +476,8 @@
     <string name="onboarding_start">Start using Daysemble</string>
     <string name="onboarding_step">Step %1$d of %2$d</string>
     <string name="onboarding_name_title">What should we call you?</string>
-    <string name="onboarding_name_body">Your name sits next to the logo at the top of Today. It stays on this phone, and you can change it any time in Settings.</string>
+    <string name="onboarding_name_body">Your name sits next to the logo at the top of the app. It stays on this phone, and you can change it any time in Settings.</string>
+    <string name="onboarding_name_preview">Preview</string>
     <string name="onboarding_name_hint">Your name (optional)</string>
     <string name="onboarding_setup_title">A couple of optional extras</string>
     <string name="onboarding_setup_body">You can change both later in Settings.</string>
@@ -486,10 +487,11 @@
     <string name="onboarding_google_title">Google Calendar &amp; Tasks</string>
     <string name="onboarding_google_body">Bring in your Google events and tasks and keep them in sync. Without it, everything stays on this device.</string>
     <!-- Onboarding preview card: sample content only, never the user's data. -->
-    <string name="onboarding_preview_cd">Example of a day in Daysemble: an event, a finished task and two tasks to do</string>
-    <string name="onboarding_preview_day">Today</string>
+    <string name="onboarding_preview_cd">Example of a day in Daysemble: this week, two events, a finished task and two tasks to do</string>
     <string name="onboarding_preview_event">Design review</string>
     <string name="onboarding_preview_event_time">09:30 – 10:15</string>
+    <string name="onboarding_preview_event_2">Lunch with Sam</string>
+    <string name="onboarding_preview_event_2_time">12:30 – 13:30</string>
     <string name="onboarding_preview_in">in 25 min</string>
     <string name="onboarding_preview_task_1">Send the agenda</string>
     <string name="onboarding_preview_task_2">Book the dentist</string>

@@ -1,9 +1,6 @@
 package app.daysemble.ui.add
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -176,7 +173,8 @@ fun QuickAddSheet(
             val motion = DsTheme.motion
             AnimatedContent(
                 kind,
-                transitionSpec = { fadeIn(motion.enter()) togetherWith fadeOut(motion.exit()) },
+                // The options for the other kind fade through; the sheet's height follows smoothly.
+                transitionSpec = { motion.fadeThrough(size = motion.contentSize()) },
                 label = "addKind",
             ) { k ->
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalArrangement = Arrangement.spacedBy(Space.xs)) {

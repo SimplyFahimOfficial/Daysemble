@@ -16,12 +16,15 @@ What it does. The artwork itself is never recoloured or redrawn:
      edge alpha rebuilt from the black background (no dark fringe), placed on a transparent square
      with a small --app-margin so the edge never touches the image bounds, resized to --app-size px
      (default 512), saved as res/drawable-nodpi/logo_<variant>.png.
-  4. Launcher icons: the artwork from the tile's centre (a soft-edged circle that drops the tile's
-     own border and drop shadow), scaled to --launcher-scale of the 108dp adaptive canvas (default
-     0.63, so the outer dots stay inside the 66dp safe zone of round masks), on the tile's own
-     sampled background colour, for every density.
+  4. Launcher icons: the artwork from the tile's centre (a circle that stays inside the tile, so it
+     drops the tile's own border and shadow without cutting through its straight edges), scaled to
+     --launcher-scale of the 108dp adaptive canvas (default 0.63, so the outer dots stay inside the
+     66dp safe zone of round masks), on the tile's own sampled background colour, for every density.
   4b. Themed-icon monochrome layer: a white silhouette of the same artwork shapes (Android 13+
      launchers tint it), written as ic_launcher_mono_<variant> and referenced from the XML.
+  4c. Launch splash (classic only): the whole tile, exactly as in the app, with a soft shadow, sized
+     so its corners stay inside the circle Android's splash screen shows (192dp of the 288dp icon),
+     saved as res/drawable-nodpi/splash_logo.png and referenced by drawable/splash_icon.xml.
   5. Wordmark: trimmed of surrounding empty margin, resized to --wordmark-width px.
   6. Flips <bool name="logo_*_supplied"> flags to true.
 
@@ -201,9 +204,12 @@ def import_variant(name: str, src: pathlib.Path, a, mono_src: pathlib.Path | Non
     app_img.save(RES / "drawable-nodpi" / f"logo_{name}.png", optimize=True)
     (RES / "drawable" / f"logo_{name}.xml").unlink(missing_ok=True)
 
-    # Launcher foregrounds: centre disc of the artwork (no tile border/shadow), safe-zone sized.
+    # Launcher foregrounds: centre disc of the artwork (no tile border/shadow), safe-zone sized. Cut
+    # from the cleaned tile (no outer glow), so the disc radius is relative to the tile itself and the
+    # circle stays inside its border instead of cutting through its straight edges.
     bg = tile_colour(square)
-    disc = centre_disc(square, a.disc_radius, 0.01)
+    clean = padded_square(clean_tile(Image.open(src), a.tolerance, a.halo, 3), 0)
+    disc = centre_disc(clean, a.disc_radius, 0.004)
     (RES / "drawable" / f"ic_launcher_fg_{name}.xml").unlink(missing_ok=True)
     # The silhouette needs artwork that separates cleanly from its background. Classic's cream glass
     # square and soft shadows sit too close to its cream tile, so it uses the same composition from
@@ -241,6 +247,45 @@ def import_variant(name: str, src: pathlib.Path, a, mono_src: pathlib.Path | Non
     set_colour(f"launcher_bg_{name}", bg)
     set_flag(f"logo_{name}_supplied")
     print(f"  {name}: tile {square.size}, background {bg}" + (f", silhouette from {mono_src.name}" if mono_src else ""))
+
+
+def splash_logo(src: pathlib.Path, a):
+    """
+    Launch-splash artwork: the complete tile (same clean cut-out as the in-app logo), never cropped.
+    Android draws the splash icon at 288dp and shows only a centred 192dp circle of it, so the tile is
+    sized (--splash-tile dp) to keep its rounded corners and its soft shadow inside that circle.
+    """
+    scale = 4  # px per dp (xxxhdpi); the file is nodpi and scaled down by the system
+    canvas = 288 * scale
+    tile = clean_tile(Image.open(src), a.tolerance, a.halo, 3)
+    side = round(a.splash_tile * scale)
+    tile = tile.resize((side, round(side * tile.height / tile.width)), Image.LANCZOS)
+    out = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+    x, y = (canvas - tile.width) // 2, (canvas - tile.height) // 2
+    # Soft, low shadow (ink, 14 %): gives the light tile an edge on the cream splash; invisible on dark.
+    shadow = Image.new("RGBA", (canvas, canvas), (14, 14, 16, 0))
+    alpha = Image.new("L", (canvas, canvas), 0)
+    alpha.paste(tile.getchannel("A"), (x, y + 2 * scale))
+    alpha = alpha.filter(ImageFilter.GaussianBlur(3 * scale)).point(lambda v: round(v * 0.14))
+    shadow.putalpha(alpha)
+    out.alpha_composite(shadow)
+    out.alpha_composite(tile, (x, y))
+    # Check: corners and shadow must stay inside the visible 192dp circle.
+    box = out.getchannel("A").point(lambda v: 255 if v > 2 else 0)
+    cx = cy = canvas / 2
+    px = box.load()
+    far = max(((i - cx) ** 2 + (j - cy) ** 2) ** 0.5 for j in range(0, canvas, 4) for i in range(0, canvas, 4) if px[i, j])
+    if far > 96 * scale:
+        sys.exit(f"splash logo reaches {far / scale:.1f}dp from the centre; the splash shows only 96dp")
+    (RES / "drawable-nodpi").mkdir(parents=True, exist_ok=True)
+    out.save(RES / "drawable-nodpi" / "splash_logo.png", optimize=True)
+    (RES / "drawable" / "splash_icon.xml").write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<!-- Generated by scripts/import_logos.py: the complete Classic tile, sized for the splash mask. -->\n'
+        '<inset xmlns:android="http://schemas.android.com/apk/res/android"\n'
+        '    android:drawable="@drawable/splash_logo" android:inset="0dp" />\n'
+    )
+    print(f"  splash: tile {a.splash_tile:.0f}dp, reaches {far / scale:.1f}dp of the 96dp visible radius")
 
 
 def unblend(im: Image.Image, bg: tuple, noise: int = 3) -> Image.Image:
@@ -312,8 +357,10 @@ def main():
                     help="colour distance of the faint glow ring around the supplied tiles (removed in-app)")
     ap.add_argument("--launcher-scale", type=float, default=0.63,
                     help="tile size as a fraction of the 108dp canvas (0.63 keeps the artwork in the 66dp safe zone)")
-    ap.add_argument("--disc-radius", type=float, default=0.49,
-                    help="radius of the kept artwork disc, as a fraction of the tile side")
+    ap.add_argument("--disc-radius", type=float, default=0.482,
+                    help="radius of the kept artwork disc, as a fraction of the tile side (inside the border at ~0.487)")
+    ap.add_argument("--splash-tile", type=float, default=128,
+                    help="side of the tile on the launch splash, in dp of the 288dp splash icon")
     ap.add_argument("--mono-low", type=int, default=28, help="colour distance below which a pixel is background (themed icon)")
     ap.add_argument("--mono-high", type=int, default=72, help="colour distance above which a pixel is fully artwork (themed icon)")
     ap.add_argument("--mono-radius", type=float, default=0.482,
@@ -329,11 +376,7 @@ def main():
     if a.wordmark:
         import_wordmark(a.wordmark, a.wordmark_width)
     if a.classic:
-        (RES / "drawable" / "splash_icon.xml").write_text(
-            '<?xml version="1.0" encoding="utf-8"?>\n'
-            '<inset xmlns:android="http://schemas.android.com/apk/res/android"\n'
-            '    android:drawable="@mipmap/ic_launcher_fg_classic" android:inset="0dp" />\n'
-        )
+        splash_logo(a.classic, a)
     print("Done. Review brand/ and the generated icons, then build.")
 
 

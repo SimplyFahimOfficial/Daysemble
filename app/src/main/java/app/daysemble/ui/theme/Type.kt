@@ -25,6 +25,8 @@ private fun style(size: Int, line: Int, weight: FontWeight, tracking: Double = 0
 @Immutable
 data class DsTypography(
     val display: TextStyle = style(44, 50, FontWeight.Bold, -0.02),
+    /** Onboarding headline: large, tight leading, editorial. */
+    val hero: TextStyle = style(36, 42, FontWeight.Bold, -0.025),
     val headline: TextStyle = style(28, 34, FontWeight.Bold, -0.01),
     val summary: TextStyle = style(22, 30, FontWeight.SemiBold, -0.01),
     val titleLarge: TextStyle = style(20, 26, FontWeight.SemiBold),

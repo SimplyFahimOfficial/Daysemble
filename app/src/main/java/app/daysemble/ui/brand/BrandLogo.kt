@@ -77,10 +77,10 @@ fun BrandLogo(
  * text uses the theme's line height, so tall scripts and large font sizes aren't clipped.
  */
 @Composable
-fun BrandNameplate(displayName: String?, modifier: Modifier = Modifier, logoSize: Dp = 30.dp) {
+fun BrandNameplate(displayName: String?, modifier: Modifier = Modifier, logoSize: Dp = 32.dp) {
     androidx.compose.foundation.layout.Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         BrandLogo(size = logoSize)
-        androidx.compose.foundation.layout.Spacer(Modifier.size(10.dp))
+        androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
         Text(
             text = displayName ?: stringResource(R.string.app_name),
             style = DsTheme.type.title,
