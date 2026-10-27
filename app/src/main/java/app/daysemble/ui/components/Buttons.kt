@@ -32,7 +32,8 @@ import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 
-enum class DsButtonStyle { Primary, Accent, Secondary, Ghost, Destructive }
+/** Primary: ink pill. Accent: coral. Secondary: tonal. Ghost: outlined. Text: no container (lowest emphasis). */
+enum class DsButtonStyle { Primary, Accent, Secondary, Ghost, Text, Destructive }
 
 /** Subtle press feedback: 3% scale-down, no shadow changes. */
 @Composable
@@ -63,6 +64,7 @@ fun DsButton(
         DsButtonStyle.Accent -> Triple(c.accentFill, c.onAccent, Color.Transparent)
         DsButtonStyle.Secondary -> Triple(c.surfaceVariant, c.textPrimary, Color.Transparent)
         DsButtonStyle.Ghost -> Triple(Color.Transparent, c.textPrimary, c.outline)
+        DsButtonStyle.Text -> Triple(Color.Transparent, c.textSecondary, Color.Transparent)
         DsButtonStyle.Destructive -> Triple(c.errorContainer, c.error, Color.Transparent)
     }
     val interaction = remember { MutableInteractionSource() }
