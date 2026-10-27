@@ -125,7 +125,11 @@ fun WeekStrip(
             if (m.reduced) pager.scrollToPage(target) else pager.animateScrollToPage(target, animationSpec = m.enter(m.long))
         }
     }
+    // Read through rememberUpdatedState, not captured: a midnight in the middle of the week changes
+    // today without changing the week (so neither pager nor base restarts this collector), and
+    // paging back to this week must then select the new today.
     val currentSelected by rememberUpdatedState(selected)
+    val currentToday by rememberUpdatedState(today)
     val select by rememberUpdatedState(onSelect)
     LaunchedEffect(pager, base) {
         snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { page ->
@@ -133,7 +137,7 @@ fun WeekStrip(
             val cur = currentSelected
             val curStart = Fmt.weekStart(cur, p)
             if (curStart != start) {
-                select(if (start == base) today else start.plusDays(ChronoUnit.DAYS.between(curStart, cur)))
+                select(if (start == base) currentToday else start.plusDays(ChronoUnit.DAYS.between(curStart, cur)))
             }
         }
     }
