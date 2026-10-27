@@ -25,11 +25,12 @@ val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
 
+/** Light (white) is the default; Dark is near-black; System follows the phone. */
 enum class ThemeMode(val key: String) {
     SYSTEM("system"), LIGHT("light"), DARK("dark");
 
     companion object {
-        fun fromKey(key: String?) = entries.firstOrNull { it.key == key } ?: SYSTEM
+        fun fromKey(key: String?) = entries.firstOrNull { it.key == key } ?: LIGHT
     }
 }
 
@@ -50,7 +51,7 @@ enum class TaskSort(val key: String) {
 }
 
 data class AppSettings(
-    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val themeMode: ThemeMode = ThemeMode.LIGHT,
     val logo: LogoVariant = LogoVariant.DEFAULT,
     /** null = follow the system animator scale. */
     val reducedMotionOverride: Boolean? = null,

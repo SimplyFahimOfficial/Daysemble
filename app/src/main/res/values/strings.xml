@@ -30,6 +30,9 @@
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+    <string name="theme_light_sub">Clean white</string>
+    <string name="theme_dark_sub">Deep black</string>
+    <string name="theme_system_sub">Follows your phone</string>
     <string name="settings_logo">App logo</string>
     <string name="settings_motion">Motion</string>
     <string name="motion_system">System</string>

@@ -198,6 +198,7 @@ fun DaysembleRoot(
     var openAccountsAfterOnboarding by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { container.defaults() }
+    app.daysemble.ui.theme.SyncSystemNightMode(settings.themeMode)
     LaunchedEffect(prefs.zone, prefs.firstDayOfWeek) {
         container.timeContext.value = app.daysemble.core.time.TimeContext(prefs.zone, prefs.firstDayOfWeek)
     }

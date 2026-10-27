@@ -65,8 +65,8 @@ taken with [`scripts/capture_screenshots.sh`](scripts/capture_screenshots.sh) an
 - Choose which calendars and task lists to sync. Disconnecting revokes access and removes local copies; it never deletes anything from Google.
 
 **Design**
-- Warm editorial look derived from the logo: cream and ink, with coral and violet accents.
-- Light, dark and system themes. One motion system with reduced-motion support.
+- Clean white by default, with an optional near-black Dark theme, or System to follow the phone (Settings → Appearance). One orange accent for dates and the add button. The launch splash follows the chosen theme on Android 12+.
+- One motion system with reduced-motion support.
 - Three selectable app logos with matching launcher icons. *Classic* (supplied logo #1) is the default.
 
 ## Build

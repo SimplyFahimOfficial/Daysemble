@@ -4,15 +4,17 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-/** Raw brand palette, sampled from the supplied Daysemble logos. Feature code must use [DsColors]. */
+/** Raw brand palette. Feature code must use [DsColors]. */
 object Brand {
+    /** The logo tile's cream (artwork only; the app canvas is white). */
     val Cream = Color(0xFFFBF8F3)
-    val CreamDeep = Color(0xFFF2EEE7)
     val Ink = Color(0xFF0E0E10)
-    val InkSoft = Color(0xFF16161A)
-    val Coral = Color(0xFFFF6B4A)
-    val CoralDeep = Color(0xFFD9442A)
-    val CoralLight = Color(0xFFFF7A5C)
+    /**
+     * The one Daysemble orange: the date dot, today markers and the add button, identical in both
+     * themes so the dot always reads as the same mark. Orange text uses [DsColors.accent] instead,
+     * a deeper (light) or lighter (dark) tone of the same hue that meets 4.5:1.
+     */
+    val Orange = Color(0xFFF2541F)
     val Violet = Color(0xFF5B3FE0)
     val VioletLight = Color(0xFF9B87FF)
 }
@@ -24,18 +26,23 @@ object Brand {
 @Immutable
 data class DsColors(
     val isDark: Boolean,
+    /** The canvas behind every screen. */
     val background: Color,
+    /** Content surfaces on the canvas: the agenda panel, cards. */
     val surface: Color,
+    /** Floating layers: dialogs, sheets, the bottom bar. */
     val surfaceRaised: Color,
+    /** Quiet fills for controls on a surface: chips, search fields, segmented tracks. */
     val surfaceVariant: Color,
+    /** Hairline separators and borders. */
     val outline: Color,
     val outlineStrong: Color,
     val textPrimary: Color,
     val textSecondary: Color,
     val textTertiary: Color,
-    /** Coral used for text/icons on background. */
+    /** Orange used for text and icons (deeper/lighter than [accentFill] so it meets 4.5:1). */
     val accent: Color,
-    /** Coral fill (FAB, today marker, brand dot). Pair with [onAccent]. */
+    /** The Daysemble orange ([Brand.Orange]): date dot, today ring, add button. Pair with [onAccent]. */
     val accentFill: Color,
     val onAccent: Color,
     val accentContainer: Color,
@@ -45,61 +52,64 @@ data class DsColors(
     val warning: Color,
     val error: Color,
     val errorContainer: Color,
-    /** Inverted high-emphasis surface (e.g. selected date pill, primary button). */
+    /** Inverted high-emphasis surface (selected date circle, primary button, selected tab). */
     val inverse: Color,
     val onInverse: Color,
+    /** Dialog scrims, and the colour of the few soft shadows. */
     val scrim: Color,
 )
 
+/** Light: a white canvas, near-black type, light neutral fills and hairline separators. */
 val LightDsColors = DsColors(
     isDark = false,
-    background = Brand.Cream,
+    background = Color(0xFFFFFFFF),
     surface = Color(0xFFFFFFFF),
     surfaceRaised = Color(0xFFFFFFFF),
-    surfaceVariant = Brand.CreamDeep,
-    outline = Color(0xFFE4DED4),
-    outlineStrong = Color(0xFF8A847A),
-    textPrimary = Brand.InkSoft,
-    textSecondary = Color(0xFF6B6760),
-    textTertiary = Color(0xFF706B63),
-    accent = Color(0xFFB8381F),
-    accentFill = Brand.CoralDeep,
+    surfaceVariant = Color(0xFFF4F4F2),
+    outline = Color(0xFFEBEBE8),
+    outlineStrong = Color(0xFF8A8A86),
+    textPrimary = Color(0xFF121214),
+    textSecondary = Color(0xFF5E5E64),
+    textTertiary = Color(0xFF6B6B71),
+    accent = Color(0xFFBF3A12),
+    accentFill = Brand.Orange,
     onAccent = Color(0xFFFFFFFF),
-    accentContainer = Color(0xFFFFE6DF),
+    accentContainer = Color(0xFFFFEDE6),
     violet = Brand.Violet,
     violetContainer = Color(0xFFECE8FF),
     success = Color(0xFF1F7A50),
     warning = Color(0xFF8F5400),
     error = Color(0xFFB3261E),
     errorContainer = Color(0xFFFCE4E2),
-    inverse = Brand.InkSoft,
-    onInverse = Brand.Cream,
+    inverse = Color(0xFF121214),
+    onInverse = Color(0xFFFFFFFF),
     scrim = Color(0x66000000),
 )
 
+/** Dark: a near-black canvas with stepped surfaces, so the agenda panel and sheets stay distinct. */
 val DarkDsColors = DsColors(
     isDark = true,
-    background = Brand.Ink,
-    surface = Color(0xFF17171A),
-    surfaceRaised = Color(0xFF1E1E22),
-    surfaceVariant = Color(0xFF222226),
-    outline = Color(0xFF2E2E33),
-    outlineStrong = Color(0xFF74747C),
-    textPrimary = Color(0xFFF5F1EA),
-    textSecondary = Color(0xFFA19D96),
-    textTertiary = Color(0xFF908C85),
-    accent = Brand.CoralLight,
-    accentFill = Brand.CoralLight,
-    onAccent = Brand.Ink,
-    accentContainer = Color(0xFF3A1D16),
+    background = Color(0xFF050506),
+    surface = Color(0xFF131315),
+    surfaceRaised = Color(0xFF1A1A1D),
+    surfaceVariant = Color(0xFF1F1F22),
+    outline = Color(0xFF2A2A2E),
+    outlineStrong = Color(0xFF6E6E76),
+    textPrimary = Color(0xFFF4F4F3),
+    textSecondary = Color(0xFFA3A3A9),
+    textTertiary = Color(0xFF909097),
+    accent = Color(0xFFFF8A63),
+    accentFill = Brand.Orange,
+    onAccent = Color(0xFFFFFFFF),
+    accentContainer = Color(0xFF3A1A10),
     violet = Brand.VioletLight,
     violetContainer = Color(0xFF231C47),
     success = Color(0xFF5BD69B),
     warning = Color(0xFFF2B44B),
     error = Color(0xFFFF8A80),
     errorContainer = Color(0xFF3B1715),
-    inverse = Color(0xFFF5F1EA),
-    onInverse = Brand.Ink,
+    inverse = Color(0xFFF4F4F3),
+    onInverse = Color(0xFF050506),
     scrim = Color(0x99000000),
 )
 
