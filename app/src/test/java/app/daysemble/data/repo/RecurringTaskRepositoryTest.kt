@@ -206,6 +206,103 @@ class RecurringTaskRepositoryTest {
         assertThat(all().filter { it.seriesId == sid }.map { it.occurrenceDate }.toSet()).hasSize(all().count { it.seriesId == sid })
     }
 
+    /** Review issue: moving a counted series onto a completed date dropped one of the remaining repeats. */
+    @Test fun movingACountedSeriesOntoACompletedDate_keepsEveryRemainingOccurrence() = runTest {
+        var id = repeating("FREQ=DAILY;COUNT=5", "2026-10-27")
+        val sid = repo.get(id)!!.seriesId!!
+        repo.setCompleted(id, true) // the 27th
+        id = open(sid).single().id
+        repo.setCompleted(id, true) // the 28th
+        val third = open(sid).single() // the 29th: occurrence 3 of 5, so 3 are left
+        assertThat(third.dueDate).isEqualTo(d("2026-10-29"))
+        // This and future, onto the 28th, which already has a completed occurrence.
+        repo.update(third.id, TaskDraft(title = third.title, dueDate = d("2026-10-28"), repeat = third.repeat), SeriesScope.FUTURE)
+        assertThat(repo.get(third.id)!!.repeat!!.count).isEqualTo(3)
+        repeat(10) { open(sid).singleOrNull()?.let { repo.setCompleted(it.id, true) } }
+        val rows = all().filter { it.seriesId == sid }
+        assertThat(rows.count { it.isCompleted }).isEqualTo(5)
+        // The three left continue daily from the 28th: the moved one, then the 29th and 30th.
+        assertThat(rows.map { it.dueDate.toString() }).containsExactly("2026-10-27", "2026-10-28", "2026-10-28", "2026-10-29", "2026-10-30")
+        assertThat(open(sid)).isEmpty()
+    }
+
+    /** Review issue: moving with "This occurrence" moved the series too, so the next ones changed list. */
+    @Test fun movingToAnotherList_followsTheScope() = runTest {
+        val other = repo.createList("Home")
+        val id = repeating("FREQ=DAILY", "2026-10-27")
+        val sid = repo.get(id)!!.seriesId!!
+        repo.moveToList(id, other, SeriesScope.THIS)
+        assertThat(repo.get(id)!!.listId).isEqualTo(other)
+        repo.setCompleted(id, true)
+        val second = open(sid).single()
+        assertThat(second.listId).isEqualTo(list) // the series stayed: the next one is in the old list
+
+        repo.moveToList(second.id, other, SeriesScope.FUTURE)
+        repo.setCompleted(second.id, true)
+        assertThat(open(sid).single().listId).isEqualTo(other) // now the series moved with it
+    }
+
+    /**
+     * Review issue: undoing a series delete brought the other occurrences back without scheduling
+     * their reminders again. Every open task a delete removes or an undo restores is reported.
+     */
+    @Test fun deleteAndUndoOfASeries_reportEveryOpenTask_forItsReminders() = runTest {
+        val id = repeating("FREQ=DAILY", "2026-10-27")
+        repo.create(TaskDraft(title = "Step", parentId = id), list)
+        repo.setCompleted(id, true)
+        val sid = repo.get(id)!!.seriesId!!
+        val current = open(sid).single()
+        val currentSub = "${current.id}/0"
+        changed.clear()
+        repo.delete(id, SeriesScope.ALL) // from the completed occurrence
+        assertThat(changed).containsAtLeast(id, current.id, currentSub) // their alarms are cancelled
+        changed.clear()
+        repo.restore(id)
+        assertThat(changed).containsAtLeast(id, current.id, currentSub) // and scheduled again
+        assertThat(repo.get(current.id)).isNotNull()
+    }
+
+    /** The earlier occurrence on that date is history: reopening it leaves the current one alone. */
+    @Test fun reopeningTheEarlierOccurrenceOnAMovedOntoDate_leavesTheCurrentOneAlone() = runTest {
+        val id = repeating("FREQ=DAILY", "2026-10-27")
+        val sid = repo.get(id)!!.seriesId!!
+        repo.setCompleted(id, true)
+        val second = open(sid).single() // the 28th
+        repo.setCompleted(second.id, true)
+        val third = open(sid).single() // the 29th
+        repo.update(third.id, TaskDraft(title = third.title, dueDate = d("2026-10-28"), repeat = third.repeat), SeriesScope.FUTURE)
+        repo.setCompleted(third.id, true)
+        val current = open(sid).single()
+        assertThat(current.dueDate).isEqualTo(d("2026-10-29"))
+        repo.setCompleted(second.id, false) // the earlier occurrence on the 28th
+        assertThat(open(sid).map { it.id }).containsExactly(second.id, current.id)
+    }
+
+    /** Review issue: completing again while the next occurrence is open isn't "the last one". */
+    @Test fun completion_reportsTheOpenNextOccurrence_orThatTheSeriesEnded() = runTest {
+        val id = repeating("FREQ=DAILY", "2026-10-27")
+        val sid = repo.get(id)!!.seriesId!!
+        val first = repo.setCompleted(id, true)!!
+        assertThat(first.nextDue).isEqualTo(d("2026-10-28"))
+        assertThat(first.seriesEnded).isFalse()
+        // Edit the next one (so reopening keeps it), reopen the first and complete it again: nothing
+        // new is created, and the snackbar must point at the next one that is still open.
+        val next = open(sid).single()
+        clock.instant = clock.instant.plusSeconds(60)
+        repo.update(next.id, TaskDraft(title = "Water plants (balcony)", dueDate = next.dueDate, repeat = next.repeat))
+        repo.setCompleted(id, false)
+        val again = repo.setCompleted(id, true)!!
+        assertThat(again.repeating).isTrue()
+        assertThat(again.nextDue).isEqualTo(d("2026-10-28"))
+        assertThat(again.seriesEnded).isFalse()
+        assertThat(open(sid).map { it.id }).containsExactly(next.id)
+
+        val last = repeating("FREQ=DAILY;COUNT=1", "2026-10-27", title = "Once more")
+        val end = repo.setCompleted(last, true)!!
+        assertThat(end.nextDue).isNull()
+        assertThat(end.seriesEnded).isTrue()
+    }
+
     @Test fun reopeningAnOlderOccurrence_andCompletingIt_doesNotAddASecondOpenOne() = runTest {
         val id = repeating("FREQ=DAILY", "2026-10-27")
         repo.setCompleted(id, true)

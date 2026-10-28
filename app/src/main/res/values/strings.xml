@@ -203,6 +203,7 @@
     <string name="repeat_task_note">When you complete it, the next one appears with its subtasks unticked. On the 29th to 31st, monthly and yearly repeats use the last day of shorter months.</string>
     <string name="task_done_next">Done · next one %1$s</string>
     <string name="task_done_series_ended">Done · that was the last one</string>
+    <string name="task_done">Done</string>
     <string name="repeat_past_occurrence">This occurrence is done, so changes here apply to it alone. To change how the task repeats, open its current occurrence.</string>
     <string name="scope_this_delete_done_desc">Removes this one from the history. The repeat goes on.</string>
     <string name="repeat_needs_due">A repeating task needs a due date. Without one, saving stops the repeat.</string>

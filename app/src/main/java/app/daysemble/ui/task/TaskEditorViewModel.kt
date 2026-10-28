@@ -172,9 +172,11 @@ class TaskEditorViewModel(
             // Google list: save first, so a repeat turned off here has ended before the move.
             val newList = f.listId?.takeIf { it != original.value?.listId }
             val toGoogle = newList != null && state.value.lists.firstOrNull { it.id == newList }?.isGoogle == true
-            if (newList != null && !toGoogle) repo.moveToList(taskId, newList)
+            // The move follows the chosen scope like the other changes: "this occurrence" leaves the
+            // series (and so the next occurrences) in its list.
+            if (newList != null && !toGoogle) repo.moveToList(taskId, newList, scope)
             repo.update(taskId, f.toDraft(null), scope)
-            if (newList != null && toGoogle) repo.moveToList(taskId, newList)
+            if (newList != null && toGoogle) repo.moveToList(taskId, newList, scope)
         }
         original.value = form.value
         persist()

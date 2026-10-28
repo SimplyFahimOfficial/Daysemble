@@ -234,13 +234,18 @@ fun DaysembleRoot(
     }
     val nextMsg = stringResource(R.string.task_done_next)
     val endedMsg = stringResource(R.string.task_done_series_ended)
-    val onTaskCompleted: (String, app.daysemble.data.repo.TaskRepository.Completion) -> Unit = remember(container, nextMsg, endedMsg, undoLabel, prefs) {
+    val doneMsg = stringResource(R.string.task_done)
+    val onTaskCompleted: (String, app.daysemble.data.repo.TaskRepository.Completion) -> Unit = remember(container, nextMsg, endedMsg, doneMsg, undoLabel, prefs) {
         { id, r ->
             if (r.repeating) rootScope.launch {
                 val today = container.clock.today()
-                val msg = r.nextDue?.let { d ->
-                    nextMsg.format(app.daysemble.ui.format.Fmt.smartDate(d, today, prefs))
-                } ?: endedMsg
+                // "The last one" only when the series really has nothing left; an open next
+                // occurrence without a due date gets a plain "Done".
+                val msg = when {
+                    r.nextDue != null -> nextMsg.format(app.daysemble.ui.format.Fmt.smartDate(r.nextDue, today, prefs))
+                    r.seriesEnded -> endedMsg
+                    else -> doneMsg
+                }
                 val res = snackbar.showSnackbar(msg, undoLabel, duration = SnackbarDuration.Short)
                 if (res == SnackbarResult.ActionPerformed) container.tasks.setCompleted(id, false)
             }

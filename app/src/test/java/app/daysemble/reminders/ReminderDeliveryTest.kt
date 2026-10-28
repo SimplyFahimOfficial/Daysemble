@@ -12,8 +12,11 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import app.daysemble.DaysembleApp
 import app.daysemble.data.db.OwnerType
 import app.daysemble.data.google.sync.SyncWorker
+import app.daysemble.core.recurrence.RRule
+import app.daysemble.domain.model.SeriesScope
 import app.daysemble.domain.model.TaskDraft
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Test
@@ -60,6 +63,38 @@ class ReminderDeliveryTest {
         )
         c.reminders.rescheduleFor(OwnerType.TASK, id)
         id
+    }
+
+    private fun alarmsFor(id: String) = runBlocking { c.database.alarms().forOwner(id) }
+
+    /**
+     * Review issue: delete a repeating task's whole series from a completed occurrence, let a full
+     * reschedule run while it's deleted (as after a Google sync), then Undo. The current occurrence
+     * comes back and must get its reminder again.
+     */
+    @Test fun `undoing a series delete schedules the restored occurrence's reminder again`() {
+        val due = LocalDateTime.now().plusHours(1).withSecond(0).withNano(0)
+        val first = runBlocking {
+            c.tasks.create(
+                TaskDraft(
+                    title = "Take medicine", dueDate = due.toLocalDate().minusDays(1), dueTime = due.toLocalTime(),
+                    reminderMinutesBefore = listOf(30), repeat = RRule.parse("FREQ=DAILY"),
+                ),
+                c.defaults().taskListId,
+            )
+        }
+        runBlocking { c.tasks.setCompleted(first, true) } // the next one is due in an hour
+        val current = runBlocking { c.tasks.allTasks.first() }.single { !it.isCompleted }.id
+        waitFor { alarmsFor(current).isNotEmpty() }
+
+        runBlocking { c.tasks.delete(first, SeriesScope.ALL) }
+        waitFor { alarmsFor(current).isEmpty() } // cancelled with the series
+        runBlocking { c.reminders.rescheduleAll() } // e.g. after a sync, while it's deleted
+        assertThat(alarmsFor(current)).isEmpty()
+
+        runBlocking { c.tasks.restore(first) } // Undo
+        waitFor { alarmsFor(current).isNotEmpty() }
+        assertThat(shadowOf(am).scheduledAlarms).isNotEmpty()
     }
 
     @Test fun `alarm is registered and firing it posts one notification with actions`() {

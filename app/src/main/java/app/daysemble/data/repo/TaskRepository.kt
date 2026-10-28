@@ -206,8 +206,14 @@ class TaskRepository(
                         }
                         anchor = a.toEpochDay()
                         if (r.count != null && earlier > 0) r = r.copy(count = r.count + earlier)
+                        // This occurrence is occurrence 0 of the restarted schedule: its identity is the
+                        // new anchor, so the remaining COUNT and the dates after it line up. A row of the
+                        // old schedule already on that date (one done, or skipped, before the move) is
+                        // history: it leaves the schedule (no occurrence date) instead of keeping this one
+                        // on its old date, where it would take the second slot and drop a repeat.
                         val clash = tasks.bySeriesDate(active.id, due)
-                        if (clash == null || clash.id == id) tasks.get(id)?.let { tasks.upsert(it.copy(occurrenceDate = due)) }
+                        if (clash != null && clash.id != id) tasks.upsert(clash.copy(occurrenceDate = null))
+                        tasks.get(id)?.let { tasks.upsert(it.copy(occurrenceDate = due)) }
                     }
                     series.upsert(active.withTemplate(draft).copy(rrule = r.format(), anchorDate = anchor, updatedAt = now))
                     if (scope == SeriesScope.ALL) {
@@ -235,6 +241,7 @@ class TaskRepository(
         var changed: List<String> = emptyList()
         var nextDue: LocalDate? = null
         var repeating = false
+        var seriesEnded = false
         val google = db.withTransaction {
             val row = tasks.get(id)?.takeIf { !it.isDeleted } ?: return@withTransaction null
             if (row.isCompleted == completed) return@withTransaction null
@@ -243,21 +250,29 @@ class TaskRepository(
             if (s != null && !g) {
                 repeating = s.activeRule() != null
                 changed = if (completed) generateNext(s, row, now) else removeUntouchedSuccessors(s, row)
-                if (completed) nextDue = changed.firstOrNull()?.let { tasks.get(it) }?.dueDate?.let(LocalDate::ofEpochDay)
+                if (completed && repeating) {
+                    // The series' current occurrence after this one: the one just created, or one that
+                    // was already open (kept when an older occurrence was reopened), in which case
+                    // nothing was created but the series hasn't ended.
+                    val open = tasks.inSeries(s.id).filter { it.id != id && !it.isDeleted && !it.isCompleted }
+                    seriesEnded = open.isEmpty()
+                    nextDue = open.mapNotNull { it.dueDate }.minOrNull()?.let(LocalDate::ofEpochDay)
+                }
             }
             g
         } ?: return null
         notify(id, google)
         changed.forEach(listener::onTaskChanged)
-        return Completion(repeating, nextDue)
+        return Completion(repeating, nextDue, seriesEnded)
     }
 
     /**
-     * What [setCompleted] changed: whether the task repeats, and the due date of the occurrence that
-     * completing it created (null when it made none: not repeating, the series ended, or an open
-     * occurrence already existed).
+     * What [setCompleted] changed, for its confirmation. [repeating]: the task is an occurrence of an
+     * active series. [nextDue]: when the series' next open occurrence is due, whether completing
+     * created it or it was already open. [seriesEnded]: completing it left the series with no open
+     * occurrence (its COUNT or UNTIL is reached), so this was the last one.
      */
-    data class Completion(val repeating: Boolean, val nextDue: LocalDate?)
+    data class Completion(val repeating: Boolean, val nextDue: LocalDate?, val seriesEnded: Boolean = false)
 
     suspend fun setPriority(id: String, priority: Priority) {
         // Priority is local-only for Google tasks, so no push is needed.
@@ -275,7 +290,7 @@ class TaskRepository(
      * Moves a top-level task (and its subtasks) to another list. For Google lists the old remote copy
      * is deleted and a new one created in the destination (the Tasks API has no cross-list move).
      */
-    suspend fun moveToList(id: String, newListId: String) {
+    suspend fun moveToList(id: String, newListId: String, scope: SeriesScope = SeriesScope.THIS) {
         val row = tasks.get(id)?.takeIf { !it.isDeleted && it.parentId == null } ?: return
         if (row.listId == newListId) return
         val from = lists.get(row.listId) ?: return
@@ -284,9 +299,14 @@ class TaskRepository(
         // Google Tasks can't store a repeat rule: a repeating task stays in on-device lists.
         val active = row.seriesId?.let { series.get(it) }?.takeIf { it.endedAt == null }
         if (active != null && toGoogle) return
-        // Moving the current occurrence moves the series (the next ones appear there too); moving a
-        // completed one only files that one away.
-        if (!row.isCompleted) active?.let { series.upsert(it.copy(listId = newListId, updatedAt = clock.now().toEpochMilli())) }
+        // For an occurrence of a repeating task, [scope] says whether the series moves too:
+        // "this occurrence" moves only this one (the next ones still appear in the series' list),
+        // "this and future" / "the entire series" move the series, so the next ones appear in the
+        // new list. Completed occurrences stay where they are. Moving a completed occurrence only
+        // files that one away, whatever the scope (the editor offers no scope for it).
+        if (!row.isCompleted && scope != SeriesScope.THIS) {
+            active?.let { series.upsert(it.copy(listId = newListId, updatedAt = clock.now().toEpochMilli())) }
+        }
         val now = clock.now().toEpochMilli()
         db.withTransaction {
             var sort = tasks.maxSortKey(newListId)
@@ -334,6 +354,9 @@ class TaskRepository(
         val google = lists.get(row.listId)?.kind == SourceKind.GOOGLE
         val s = row.seriesId?.let { series.get(it) }?.takeIf { it.endedAt == null && !google }
         var generated: List<String> = emptyList()
+        // Open tasks this delete removes, besides [id]: their alarms are cancelled at once (deleting
+        // the series from a completed occurrence takes the current one with it).
+        val deleted = mutableListOf<String>()
         db.withTransaction {
             if (s != null) when (scope) {
                 SeriesScope.THIS -> if (!row.isCompleted) generated = generateNext(s, row, now)
@@ -343,12 +366,14 @@ class TaskRepository(
                         // With its subtasks, stamped alike so undo brings them back together.
                         for (t in listOf(it) + tasks.subtasks(it.id).filter { sub -> !sub.isDeleted }) {
                             tasks.upsert(t.copy(isDeleted = true, deletedAt = now))
+                            if (!t.isCompleted) deleted += t.id
                         }
                     }
                 }
             }
             val family = listOf(row) + tasks.subtasks(id)
             for (t in family) {
+                if (t.id != id && !t.isDeleted && !t.isCompleted) deleted += t.id
                 if (google) {
                     when (outbox.recordDelete(OwnerType.TASK, t.id, t.remoteId != null)) {
                         Outbox.DeleteResult.HARD_DELETE_LOCALLY ->
@@ -362,15 +387,23 @@ class TaskRepository(
             }
         }
         listener.onTaskChanged(id)
+        deleted.forEach(listener::onTaskChanged)
         generated.forEach(listener::onTaskChanged)
         if (google) listener.onPendingSync()
     }
 
+    /**
+     * Undo of [delete]. Brings back what that delete removed (for a repeating task, the other
+     * occurrences and subtasks deleted with it) and reports every open task it restores, so their
+     * reminders are scheduled again: while they were deleted, a full reschedule (after a sync, a
+     * reboot or a time change) dropped their alarms.
+     */
     suspend fun restore(id: String) {
         val row = tasks.get(id) ?: return
         if (!row.isDeleted) return
         val google = lists.get(row.listId)?.kind == SourceKind.GOOGLE
         var removed: List<String> = emptyList()
+        val restored = mutableListOf<String>()
         db.withTransaction {
             row.seriesId?.let { series.get(it) }?.let { s ->
                 if (s.endedAt != null && s.endedAt == row.deletedAt) {
@@ -379,6 +412,7 @@ class TaskRepository(
                     tasks.inSeries(s.id).filter { it.isDeleted && it.deletedAt == row.deletedAt && it.id != id }.forEach {
                         for (t in listOf(it) + tasks.subtasks(it.id).filter { sub -> sub.deletedAt == row.deletedAt }) {
                             tasks.upsert(t.copy(isDeleted = false, deletedAt = null))
+                            if (!t.isCompleted) restored += t.id
                         }
                     }
                 } else if (s.endedAt == null && !row.isCompleted) {
@@ -388,6 +422,7 @@ class TaskRepository(
                 }
             }
             for (t in listOf(row) + tasks.subtasks(id).filter { it.deletedAt == row.deletedAt }) {
+                if (t.id != id && !t.isCompleted) restored += t.id
                 if (google) {
                     outbox.cancelDelete(OwnerType.TASK, t.id, t.remoteId != null)
                     tasks.upsert(
@@ -402,6 +437,7 @@ class TaskRepository(
             }
         }
         notify(id, google)
+        restored.forEach(listener::onTaskChanged)
         removed.forEach(listener::onTaskChanged)
     }
 
