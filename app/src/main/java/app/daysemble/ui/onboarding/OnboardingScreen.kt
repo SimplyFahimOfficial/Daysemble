@@ -465,7 +465,7 @@ private fun StepDots(page: Int) {
     Row(Modifier.semantics { contentDescription = desc }, horizontalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs)) {
         repeat(STEPS) { i ->
             val w by animateDpAsState(if (i == page) 22.dp else 6.dp, if (m.reduced) snap() else m.indicator(), label = "stepDot")
-            val color by androidx.compose.animation.animateColorAsState(if (i == page) c.inverse else c.outlineStrong.copy(alpha = 0.5f), m.indicator(), label = "stepDotColor")
+            val color = app.daysemble.ui.components.animateStateColor(if (i == page) c.inverse else c.outlineStrong.copy(alpha = 0.5f), m.indicator(), label = "stepDotColor")
             Box(Modifier.size(width = w, height = 6.dp).clip(Radii.pill).background(color))
         }
     }

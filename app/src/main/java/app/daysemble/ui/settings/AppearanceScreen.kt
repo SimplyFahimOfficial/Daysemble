@@ -1,6 +1,5 @@
 package app.daysemble.ui.settings
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -192,7 +191,7 @@ private fun threeFit(width: androidx.compose.ui.unit.Dp): Boolean {
 private fun ThemeOption(mode: ThemeMode, selected: Boolean, onClick: () -> Unit, modifier: Modifier, stacked: Boolean) {
     val c = DsTheme.colors
     val m = DsTheme.motion
-    val ring by animateColorAsState(if (selected) c.accent else c.outline, m.standard(m.medium), label = "themeRing")
+    val ring = app.daysemble.ui.components.animateStateColor(if (selected) c.accent else c.outline, m.standard(m.medium), label = "themeRing")
     val ringWidth by animateDpAsState(if (selected) 2.dp else 1.dp, m.standard(m.medium), label = "themeRingW")
     val name = stringResource(
         when (mode) {
@@ -291,7 +290,7 @@ fun LogoPicker(selected: LogoVariant, onSelect: (LogoVariant) -> Unit, modifier:
 private fun LogoOption(variant: LogoVariant, selected: Boolean, onClick: () -> Unit, modifier: Modifier, stacked: Boolean) {
     val c = DsTheme.colors
     val m = DsTheme.motion
-    val ring by animateColorAsState(if (selected) c.accent else c.outline, m.standard(m.medium), label = "ring")
+    val ring = app.daysemble.ui.components.animateStateColor(if (selected) c.accent else c.outline, m.standard(m.medium), label = "ring")
     val ringWidth by animateDpAsState(if (selected) 2.dp else 1.dp, m.standard(m.medium), label = "ringW")
     val name = stringResource(variant.label)
     val selectedText = stringResource(R.string.state_selected)

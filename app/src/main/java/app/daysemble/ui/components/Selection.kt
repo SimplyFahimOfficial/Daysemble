@@ -1,6 +1,5 @@
 package app.daysemble.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -57,8 +56,8 @@ fun DsChip(
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
-    val bg by animateColorAsState(if (selected) c.inverse else c.surfaceVariant, m.standard(m.medium), label = "chipBg")
-    val fg by animateColorAsState(if (selected) c.onInverse else c.textPrimary, m.standard(m.medium), label = "chipFg")
+    val bg = app.daysemble.ui.components.animateStateColor(if (selected) c.inverse else c.surfaceVariant, m.standard(m.medium), label = "chipBg")
+    val fg = app.daysemble.ui.components.animateStateColor(if (selected) c.onInverse else c.textPrimary, m.standard(m.medium), label = "chipFg")
     Row(
         modifier
             .heightIn(min = Sizes.touch)

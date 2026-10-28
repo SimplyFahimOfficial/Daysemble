@@ -7,7 +7,6 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.ui.unit.Density
 import androidx.navigation.NavBackStackEntry
@@ -16,21 +15,26 @@ import androidx.navigation.NavDestination.Companion.hasRoute
 import app.daysemble.ui.theme.DsMotion
 
 /**
- * Transitions for screens pushed over the main screen (details, Search, Settings and its pages,
- * editors) and popped back. Primary tabs don't use these: they switch inside the main screen
+ * Transitions for pages opened over the main screen (details, Search, Settings and its pages,
+ * editors) and closed again. Primary tabs don't use these: they switch inside the main screen
  * (TabHost in DaysembleRoot).
  *
- * - Forward and back use Material's shared axis: the page that leaves fades out in 90 ms while it
- *   drifts 30 dp, the page that arrives fades in right after while it settles from 30 dp. The two
- *   are never both half-transparent over each other, and no page edge slides across the screen.
- * - Editors and the event detail rise from just below and sink back down; the page underneath
- *   only fades.
- * - Predictive back (Android 14+ back gesture) has its own pair, scrubbed by the gesture: the page
- *   underneath is fully visible from the first frame (only a slight parallax), the leaving page
- *   shrinks a little and moves with the finger, and only fades near the end. Without these,
- *   Navigation's defaults apply (the leaving page shrinks to 70 % over a page that fades in from
- *   nothing), which showed a blank screen under the gesture.
- * - Offsets are mirrored in right-to-left layouts. Reduced motion: fades only.
+ * One rule for every page: it opens over the page it came from and closes off it, and the page
+ * underneath stays still and fully drawn the whole time.
+ * - Forward: the new page fades in over the old one in 150 ms while sliding 30 dp in from the end
+ *   edge (editors and the event detail: from below). The old page doesn't move or fade.
+ * - Back: the page underneath is fully there from the first frame; the top page fades out while
+ *   drifting back toward the edge it came from.
+ * - Predictive back (Android 14+ gesture) follows the same rule, scrubbed by the finger: the page
+ *   underneath is static and complete, the leaving page shrinks a little and follows the gesture.
+ *   (Navigation's defaults would show the leaving page shrinking over a page fading in from
+ *   nothing, i.e. a blank screen under the gesture.)
+ *
+ * This replaces a shared-axis fade-through in which the old page faded out before the new one
+ * faded in: both were nearly transparent at the same moment, so every open and close (Settings
+ * included) flashed the bare background for a frame or two, and the page underneath moved too.
+ *
+ * Offsets are mirrored in right-to-left layouts. Reduced motion: short fades only.
  */
 internal object NavMotion {
 
@@ -46,33 +50,25 @@ internal object NavMotion {
     fun AnimatedContentTransitionScope<NavBackStackEntry>.enter(m: DsMotion, rtl: Boolean, d: Density): EnterTransition =
         when (targetState.destination.kind()) {
             Kind.EDITOR -> m.riseIn(d)
-            else -> m.axisIn(fromEnd = true, rtl = rtl, density = d)
+            else -> m.pushIn(rtl, d)
         }
 
-    fun AnimatedContentTransitionScope<NavBackStackEntry>.exit(m: DsMotion, rtl: Boolean, d: Density): ExitTransition =
-        when (targetState.destination.kind()) {
-            Kind.EDITOR -> m.underlayOut()
-            else -> m.axisOut(toStart = true, rtl = rtl, density = d)
-        }
+    /** The page being covered keeps still underneath. */
+    @Suppress("UnusedReceiverParameter")
+    fun AnimatedContentTransitionScope<NavBackStackEntry>.exit(m: DsMotion): ExitTransition = m.holdUnderneath()
 
-    fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(m: DsMotion, rtl: Boolean, d: Density): EnterTransition =
-        when (initialState.destination.kind()) {
-            Kind.EDITOR -> m.underlayIn()
-            else -> m.axisIn(fromEnd = false, rtl = rtl, density = d)
-        }
+    /** The page being uncovered is already complete underneath. */
+    @Suppress("UnusedReceiverParameter")
+    fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(): EnterTransition = EnterTransition.None
 
     fun AnimatedContentTransitionScope<NavBackStackEntry>.popExit(m: DsMotion, rtl: Boolean, d: Density): ExitTransition =
         when (initialState.destination.kind()) {
             Kind.EDITOR -> m.sinkOut(d)
-            else -> m.axisOut(toStart = false, rtl = rtl, density = d)
+            else -> m.pushOut(rtl, d)
         }
 
-    /** The page being revealed by the back gesture: visible at once, with a slight parallax. */
-    fun predictivePopEnter(m: DsMotion, rtl: Boolean, d: Density): EnterTransition {
-        if (m.reduced) return EnterTransition.None
-        val shift = with(d) { (m.axisDistance / 2).roundToPx() } * if (rtl) 1 else -1
-        return slideInHorizontally(tween(m.long, easing = DsMotion.Standard)) { shift }
-    }
+    /** The page being revealed by the back gesture: complete and still from the first frame. */
+    fun predictivePopEnter(): EnterTransition = EnterTransition.None
 
     /**
      * The page leaving under the back gesture: shrinks to 92 % and moves away from the edge the

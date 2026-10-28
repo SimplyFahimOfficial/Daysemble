@@ -1,6 +1,5 @@
 package app.daysemble.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -134,8 +133,8 @@ private fun DayChip(
     val m = DsTheme.motion
     // Same selection language as the calendar: the selected day is the inverted (ink) fill, today is
     // coral. Only colours change, so the strip never shifts while you tap through days.
-    val bg by animateColorAsState(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "dayBg")
-    val number by animateColorAsState(
+    val bg = app.daysemble.ui.components.animateStateColor(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "dayBg")
+    val number = app.daysemble.ui.components.animateStateColor(
         when {
             selected -> c.onInverse
             isToday -> c.accent
@@ -143,7 +142,7 @@ private fun DayChip(
         },
         m.indicator(), label = "dayNumber",
     )
-    val caption by animateColorAsState(
+    val caption = app.daysemble.ui.components.animateStateColor(
         when {
             selected -> c.onInverse.copy(alpha = 0.78f)
             isToday -> c.accent
@@ -346,7 +345,7 @@ fun TaskRow(
     val p = LocalTimePrefs.current
     val today = now.atZone(p.zone).toLocalDate()
     val overdue = TaskRules.isOverdue(task, now, p.zone)
-    val textColor by animateColorAsState(if (task.isCompleted) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskText")
+    val textColor = app.daysemble.ui.components.animateStateColor(if (task.isCompleted) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskText")
     // Reduced motion: the line appears in full at once (only the text colour fades).
     val strike by animateFloatAsState(
         if (task.isCompleted) 1f else 0f,

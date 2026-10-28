@@ -1,6 +1,5 @@
 package app.daysemble.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.indication
@@ -161,8 +160,8 @@ private fun DateCell(date: LocalDate, selected: Boolean, isToday: Boolean, onCli
     val m = DsTheme.motion
     val p = LocalTimePrefs.current
     val interaction = remember { MutableInteractionSource() }
-    val fill by animateColorAsState(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "dateFill")
-    val number by animateColorAsState(
+    val fill = app.daysemble.ui.components.animateStateColor(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "dateFill")
+    val number = app.daysemble.ui.components.animateStateColor(
         when {
             selected -> c.onInverse
             isToday -> c.accent

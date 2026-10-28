@@ -1,6 +1,5 @@
 package app.daysemble.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
@@ -93,7 +92,7 @@ fun AgendaEventCard(
     val m = DsTheme.motion
     val p = LocalTimePrefs.current
     val ended = !event.isAllDay && now >= event.end && event.end > event.start
-    val bg by animateColorAsState(if (focused) c.accentStrong else c.surfaceVariant, m.indicator(), label = "eventCardBg")
+    val bg = app.daysemble.ui.components.animateStateColor(if (focused) c.accentStrong else c.surfaceVariant, m.indicator(), label = "eventCardBg")
     val primary = if (focused) c.onAccent else if (ended) c.textSecondary else c.textPrimary
     val secondary = if (focused) c.onAccent else c.textSecondary
     val pillBg = if (focused) OnAccentPillTint else c.surface
@@ -182,7 +181,7 @@ fun AgendaTaskCard(
     val p = LocalTimePrefs.current
     val today = now.atZone(p.zone).toLocalDate()
     val overdue = TaskRules.isOverdue(task, now, p.zone)
-    val textColor by animateColorAsState(if (task.isCompleted) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskCardText")
+    val textColor = app.daysemble.ui.components.animateStateColor(if (task.isCompleted) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskCardText")
     val strike by animateFloatAsState(if (task.isCompleted) 1f else 0f, if (m.reduced) snap() else m.standard(m.medium), label = "taskCardStrike")
     Row(
         modifier

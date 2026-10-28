@@ -1,6 +1,5 @@
 package app.daysemble.ui.calendar
 
-import androidx.compose.animation.animateColorAsState
 import app.daysemble.ui.components.itemMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
@@ -270,7 +269,7 @@ private fun MonthCell(
     val c = DsTheme.colors
     val m = DsTheme.motion
     val p = LocalTimePrefs.current
-    val bg by animateColorAsState(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "cellBg")
+    val bg = app.daysemble.ui.components.animateStateColor(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "cellBg")
     val count = events.size + taskCount
     val a11y = Fmt.fullDate(d, p) + (if (isToday) ", " + stringResource(R.string.today_suffix) else "") + ", " + pluralStringResource(R.plurals.n_items, count, count)
     // The whole cell stays the touch target, but its press/focus feedback is drawn only on the date
@@ -338,8 +337,8 @@ private fun GridMode(
                     Row(Modifier.fillMaxWidth().padding(start = 52.dp)) {
                         days.forEach { d ->
                             val sel = d == state.selected
-                            val selBg by animateColorAsState(if (sel) c.inverse else Color.Transparent, DsTheme.motion.indicator(), label = "weekSel")
-                            val selFg by animateColorAsState(
+                            val selBg = app.daysemble.ui.components.animateStateColor(if (sel) c.inverse else Color.Transparent, DsTheme.motion.indicator(), label = "weekSel")
+                            val selFg = app.daysemble.ui.components.animateStateColor(
                                 if (sel) c.onInverse else if (d == state.today) c.accent else c.textPrimary, DsTheme.motion.indicator(), label = "weekSelText",
                             )
                             val interaction = remember { MutableInteractionSource() }

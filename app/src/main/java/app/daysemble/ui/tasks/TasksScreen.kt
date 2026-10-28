@@ -1,6 +1,5 @@
 package app.daysemble.ui.tasks
 
-import androidx.compose.animation.animateColorAsState
 import app.daysemble.ui.components.itemMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -309,7 +308,7 @@ private fun SwipeableTaskRow(
         },
         backgroundContent = {
             val dir = state.dismissDirection
-            val bg by animateColorAsState(
+            val bg = app.daysemble.ui.components.animateStateColor(
                 when (dir) {
                     SwipeToDismissBoxValue.StartToEnd -> c.success.copy(alpha = 0.16f)
                     SwipeToDismissBoxValue.EndToStart -> c.errorContainer
