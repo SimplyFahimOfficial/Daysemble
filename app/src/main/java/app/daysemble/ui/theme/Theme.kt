@@ -1,7 +1,7 @@
 package app.daysemble.ui.theme
 
 import android.provider.Settings
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
@@ -15,6 +15,19 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.platform.LocalContext
 import app.daysemble.data.prefs.ThemeMode
 import app.daysemble.ui.brand.LocalLogoVariant
@@ -69,65 +82,85 @@ fun DaysembleTheme(
     reducedMotionOverride: Boolean? = null,
     content: @Composable () -> Unit,
 ) {
-    val dark = when (themeMode) {
+    val targetDark = when (themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
     val reduced = reducedMotionOverride ?: isSystemReducedMotion()
     val motion = remember(reduced) { DsMotion(reduced) }
-    val target = if (dark) DarkDsColors else LightDsColors
-    val colors = animatedColors(target, motion)
+    val crossfade = rememberThemeCrossfade(targetDark, motion)
+    // The palette changes once, in one recomposition. (It used to animate every colour for 300 ms,
+    // handing a new palette through a static composition local on each frame, so the whole app,
+    // including the tabs kept composed under Settings, recomposed about 18 times per theme change.)
+    val colors = if (crossfade.dark) DarkDsColors else LightDsColors
+    val scheme = remember(colors) { colors.toMaterial() }
+    val type = remember { DsTypography() }
+    val materialType = remember(type) { materialTypography(type) }
 
     CompositionLocalProvider(
         LocalDsColors provides colors,
-        LocalDsTypography provides DsTypography(),
+        LocalDsTypography provides type,
         LocalDsMotion provides motion,
         LocalLogoVariant provides logo,
     ) {
-        MaterialTheme(
-            colorScheme = colors.toMaterial(),
-            typography = materialTypography(DsTypography()),
-            content = content,
-        )
+        MaterialTheme(colorScheme = scheme, typography = materialType) {
+            Box(propagateMinConstraints = true) {
+                Box(crossfade.content, propagateMinConstraints = true) { content() }
+                // The old frame, on its own layer: each frame of the fade changes only this layer's
+                // alpha (no re-recording of the app, no recomposition). Draws nothing at rest.
+                Box(Modifier.matchParentSize().then(crossfade.overlay))
+            }
+        }
     }
 }
 
 /**
- * Cross-fades every theme colour together on theme change, so switching modes is one smooth change
- * (previously only six surfaces/text colours animated and accents, pills and inverse surfaces cut).
+ * Theme switches as one cross-fade: the frame showing the old theme is captured, the palette is
+ * swapped, and the capture fades out over the re-themed app. Only an image's alpha animates, in
+ * the draw phase, so nothing recomposes per frame. Reduced motion, or a capture that fails, swaps
+ * at once.
  */
-@Composable
-private fun animatedColors(target: DsColors, motion: DsMotion): DsColors {
-    val spec = tween<androidx.compose.ui.graphics.Color>(motion.long, easing = DsMotion.Standard)
-    @Composable fun a(c: androidx.compose.ui.graphics.Color, label: String) = animateColorAsState(c, spec, label = label).value
-    return target.copy(
-        background = a(target.background, "background"),
-        surface = a(target.surface, "surface"),
-        surfaceRaised = a(target.surfaceRaised, "surfaceRaised"),
-        surfaceVariant = a(target.surfaceVariant, "surfaceVariant"),
-        outline = a(target.outline, "outline"),
-        outlineStrong = a(target.outlineStrong, "outlineStrong"),
-        textPrimary = a(target.textPrimary, "textPrimary"),
-        textSecondary = a(target.textSecondary, "textSecondary"),
-        textTertiary = a(target.textTertiary, "textTertiary"),
-        accent = a(target.accent, "accent"),
-        accentFill = a(target.accentFill, "accentFill"),
-        accentStrong = a(target.accentStrong, "accentStrong"),
-        onAccent = a(target.onAccent, "onAccent"),
-        inverseAccent = a(target.inverseAccent, "inverseAccent"),
-        accentContainer = a(target.accentContainer, "accentContainer"),
-        violet = a(target.violet, "violet"),
-        violetContainer = a(target.violetContainer, "violetContainer"),
-        success = a(target.success, "success"),
-        warning = a(target.warning, "warning"),
-        error = a(target.error, "error"),
-        errorContainer = a(target.errorContainer, "errorContainer"),
-        inverse = a(target.inverse, "inverse"),
-        onInverse = a(target.onInverse, "onInverse"),
-        scrim = a(target.scrim, "scrim"),
-    )
+@Stable
+private class ThemeCrossfade(initialDark: Boolean) {
+    var dark by mutableStateOf(initialDark)
+    var snapshot by mutableStateOf<ImageBitmap?>(null)
+    val fade = Animatable(0f)
+    lateinit var layer: GraphicsLayer
+    /** Records the app into [layer] (to capture it) and draws it. */
+    val content: Modifier = Modifier.drawWithContent {
+        layer.record { this@drawWithContent.drawContent() }
+        drawLayer(layer)
+    }
+    val overlay: Modifier = Modifier
+        .graphicsLayer { alpha = fade.value }
+        .drawBehind { snapshot?.let { drawImage(it) } }
 }
+
+@Composable
+private fun rememberThemeCrossfade(targetDark: Boolean, motion: DsMotion): ThemeCrossfade {
+    val layer = rememberGraphicsLayer()
+    val state = remember { ThemeCrossfade(targetDark) }
+    state.layer = layer
+    LaunchedEffect(targetDark) {
+        if (state.dark == targetDark) return@LaunchedEffect
+        val shot = if (motion.reduced || layer.size.width == 0) null
+        else withTimeoutOrNull(CAPTURE_TIMEOUT_MS) { runCatching { layer.toImageBitmap() }.getOrNull() }
+        state.snapshot = shot
+        state.fade.snapTo(1f)
+        state.dark = targetDark
+        if (shot != null) {
+            try {
+                state.fade.animateTo(0f, tween(motion.medium + 30, easing = DsMotion.Standard))
+            } finally {
+                state.snapshot = null
+            }
+        }
+    }
+    return state
+}
+
+private const val CAPTURE_TIMEOUT_MS = 120L
 
 private fun DsColors.toMaterial(): ColorScheme {
     val base = if (isDark) darkColorScheme() else lightColorScheme()
