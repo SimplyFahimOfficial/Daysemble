@@ -5,6 +5,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.daysemble.core.time.AppClock
+import app.daysemble.core.time.Availability
+import app.daysemble.core.time.DayAvailability
 import app.daysemble.data.prefs.SettingsRepository
 import app.daysemble.data.repo.EventRepository
 import app.daysemble.data.repo.TaskRepository
@@ -46,10 +48,16 @@ data class TodayUiState(
     val timeline: List<TimelineItem> = emptyList(),
     val overdue: List<Task> = emptyList(),
     val completed: List<Task> = emptyList(),
+    /** Events on the date, all-day ones included. */
     val eventCount: Int = 0,
-    val openTaskCount: Int = 0,
-    /** End of the last timed event, when the rest of the day is free after it. */
-    val freeAfter: Instant? = null,
+    /** Open top-level tasks due on the date. */
+    val taskCount: Int = 0,
+    /** Open top-level tasks due before today (only when the date is today). */
+    val overdueCount: Int = 0,
+    /** Free and busy time from the date's timed events; null for past dates or after the day window. */
+    val availability: DayAvailability? = null,
+    /** The next timed event that hasn't started yet (today only). */
+    val nextEvent: EventOccurrence? = null,
     /** The event whose countdown is highlighted (next upcoming or in progress). */
     val focusEventKey: String? = null,
     val isLoading: Boolean = true,
@@ -127,9 +135,8 @@ class TodayViewModel(
             .sortedBy { it.second }.map { it.first }
 
         val focus = if (date == today) timed.firstOrNull { it.end > now }?.stableKey else null
-        val lastEnd = timed.maxOfOrNull { it.end }
-        val endOfDay = date.plusDays(1).atStartOfDay(z).toInstant()
-        val freeAfter = lastEnd?.takeIf { date == today && it > now && it < endOfDay.minusSeconds(3 * 3600) }
+        val availability = Availability.of(date, timed.map { Availability.Busy(it.start, it.end) }, now, z)
+        val next = if (date == today) timed.firstOrNull { it.start > now } else null
 
         return TodayUiState(
             date = date, today = today,
@@ -138,8 +145,10 @@ class TodayViewModel(
             overdue = overdue,
             completed = completed,
             eventCount = occ.size,
-            openTaskCount = dayTasks.size + overdue.size,
-            freeAfter = freeAfter,
+            taskCount = dayTasks.size,
+            overdueCount = overdue.size,
+            availability = availability,
+            nextEvent = next,
             focusEventKey = focus,
             isLoading = false,
         )

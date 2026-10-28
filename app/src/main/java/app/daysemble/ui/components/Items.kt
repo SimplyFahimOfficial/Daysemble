@@ -201,7 +201,7 @@ fun CountdownChip(rel: Relative, modifier: Modifier = Modifier) {
         maxLines = 1,
         modifier = modifier
             .clip(Radii.pill)
-            .background(if (live) c.accentFill else c.accentContainer)
+            .background(if (live) c.accentStrong else c.accentContainer)
             .padding(horizontal = Space.s + Space.xxs, vertical = Space.xxs),
     )
 }

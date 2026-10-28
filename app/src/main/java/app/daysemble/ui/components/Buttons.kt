@@ -61,7 +61,7 @@ fun DsButton(
     val c = DsTheme.colors
     val (bg, fg, border) = when (style) {
         DsButtonStyle.Primary -> Triple(c.inverse, c.onInverse, Color.Transparent)
-        DsButtonStyle.Accent -> Triple(c.accentFill, c.onAccent, Color.Transparent)
+        DsButtonStyle.Accent -> Triple(c.accentStrong, c.onAccent, Color.Transparent)
         DsButtonStyle.Secondary -> Triple(c.surfaceVariant, c.textPrimary, Color.Transparent)
         DsButtonStyle.Ghost -> Triple(Color.Transparent, c.textPrimary, c.outline)
         DsButtonStyle.Text -> Triple(Color.Transparent, c.textSecondary, Color.Transparent)

@@ -41,9 +41,30 @@ fun isSystemReducedMotion(): Boolean {
     return reduced
 }
 
+/**
+ * Hands the chosen theme to the system (Android 12+), which draws the launch splash before the
+ * app runs and otherwise follows the phone: with this, the next launch's splash is white for
+ * Light and black for Dark (System = no override). Changing it is a uiMode configuration change,
+ * which MainActivity handles in place (configChanges="uiMode"), so nothing is recreated; Compose
+ * picks up the new configuration itself.
+ */
+@Composable
+fun SyncSystemNightMode(mode: ThemeMode) {
+    val ctx = LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(mode) {
+        if (android.os.Build.VERSION.SDK_INT < 31) return@LaunchedEffect
+        val target = when (mode) {
+            ThemeMode.LIGHT -> android.app.UiModeManager.MODE_NIGHT_NO
+            ThemeMode.DARK -> android.app.UiModeManager.MODE_NIGHT_YES
+            ThemeMode.SYSTEM -> android.app.UiModeManager.MODE_NIGHT_AUTO
+        }
+        runCatching { ctx.getSystemService(android.app.UiModeManager::class.java)?.setApplicationNightMode(target) }
+    }
+}
+
 @Composable
 fun DaysembleTheme(
-    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    themeMode: ThemeMode = ThemeMode.LIGHT,
     logo: LogoVariant = LogoVariant.DEFAULT,
     reducedMotionOverride: Boolean? = null,
     content: @Composable () -> Unit,
@@ -92,7 +113,9 @@ private fun animatedColors(target: DsColors, motion: DsMotion): DsColors {
         textTertiary = a(target.textTertiary, "textTertiary"),
         accent = a(target.accent, "accent"),
         accentFill = a(target.accentFill, "accentFill"),
+        accentStrong = a(target.accentStrong, "accentStrong"),
         onAccent = a(target.onAccent, "onAccent"),
+        inverseAccent = a(target.inverseAccent, "inverseAccent"),
         accentContainer = a(target.accentContainer, "accentContainer"),
         violet = a(target.violet, "violet"),
         violetContainer = a(target.violetContainer, "violetContainer"),
@@ -109,8 +132,11 @@ private fun animatedColors(target: DsColors, motion: DsMotion): DsColors {
 private fun DsColors.toMaterial(): ColorScheme {
     val base = if (isDark) darkColorScheme() else lightColorScheme()
     return base.copy(
-        primary = accentFill,
-        onPrimary = onAccent,
+        // Material components use primary for text too, so it is the text-safe orange; onPrimary is
+        // the colour that reads on it in this theme (white on the deep light-theme orange, near-black
+        // on the light dark-theme orange). Checked in ColorContrastTest.
+        primary = accent,
+        onPrimary = onInverse,
         primaryContainer = accentContainer,
         onPrimaryContainer = textPrimary,
         secondary = violet,
@@ -139,7 +165,7 @@ private fun DsColors.toMaterial(): ColorScheme {
         onErrorContainer = textPrimary,
         inverseSurface = inverse,
         inverseOnSurface = onInverse,
-        inversePrimary = accent,
+        inversePrimary = inverseAccent,
         scrim = scrim,
     )
 }

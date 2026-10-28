@@ -36,8 +36,13 @@ class ColorContrastTest {
             check("$label outlineStrong/$bgName (non-text)", c.outlineStrong, bg, 3.0)
         }
         check("$label onInverse/inverse", c.onInverse, c.inverse, 4.5)
-        // onAccent is used for icons and bold labels on the coral fill (3:1 for UI glyphs/large text).
-        check("$label onAccent/accentFill", c.onAccent, c.accentFill, 3.0)
+        // Text on orange: the live countdown chip and accent button (13-14sp) need 4.5:1.
+        check("$label onAccent/accentStrong (text)", c.onAccent, c.accentStrong, 4.5)
+        // The bright orange carries glyphs only (the add button's +): 3:1 for non-text UI (WCAG 1.4.11).
+        check("$label onAccent/accentFill (glyphs only)", c.onAccent, c.accentFill, 3.0)
+        check("$label inverseAccent/inverse (snackbar action)", c.inverseAccent, c.inverse, 4.5)
+        // Material's primary/onPrimary as mapped in Theme.kt (primary = accent, onPrimary = onInverse).
+        check("$label onInverse/accent (Material onPrimary/primary)", c.onInverse, c.accent, 4.5)
         check("$label error/errorContainer", c.error, c.errorContainer, 4.5)
         check("$label textPrimary/accentContainer", c.textPrimary, c.accentContainer, 4.5)
         check("$label accentFill/background (non-text)", c.accentFill, c.background, 3.0)

@@ -48,6 +48,12 @@ import app.daysemble.ui.daysembleViewModel
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Space
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import app.daysemble.ui.theme.Sizes
 
 @Composable
 fun AppearanceRoute(onBack: (() -> Unit)?) {
@@ -92,21 +98,7 @@ fun AppearanceScreen(
                 .padding(bottom = Space.x3),
         ) {
             SectionHeader(stringResource(R.string.settings_theme))
-            DsSegmented(
-                options = ThemeMode.entries,
-                selected = theme,
-                label = {
-                    stringResource(
-                        when (it) {
-                            ThemeMode.SYSTEM -> R.string.theme_system
-                            ThemeMode.LIGHT -> R.string.theme_light
-                            ThemeMode.DARK -> R.string.theme_dark
-                        },
-                    )
-                },
-                onSelect = onTheme,
-                modifier = Modifier.padding(horizontal = Space.gutter),
-            )
+            ThemePicker(selected = theme, onSelect = onTheme, modifier = Modifier.padding(horizontal = Space.gutter))
 
             Spacer(Modifier.height(Space.xxl))
             SectionHeader(stringResource(R.string.settings_logo))
@@ -155,6 +147,92 @@ fun AppearanceScreen(
                 color = c.textSecondary,
                 modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
             )
+        }
+    }
+}
+
+/**
+ * Light, Dark and System as small previews drawn from the real theme tokens (canvas, panel,
+ * text, the orange date dot), so each option shows what it will look like. The choice is saved
+ * in settings and applied at once; System follows the phone's dark-theme setting.
+ */
+@Composable
+fun ThemePicker(selected: ThemeMode, onSelect: (ThemeMode) -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(Space.m)) {
+        listOf(ThemeMode.LIGHT, ThemeMode.DARK, ThemeMode.SYSTEM).forEach { mode ->
+            ThemeOption(mode, mode == selected, { onSelect(mode) }, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun ThemeOption(mode: ThemeMode, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    val c = DsTheme.colors
+    val m = DsTheme.motion
+    val ring by animateColorAsState(if (selected) c.accent else c.outline, m.standard(m.medium), label = "themeRing")
+    val ringWidth by animateDpAsState(if (selected) 2.dp else 1.dp, m.standard(m.medium), label = "themeRingW")
+    val name = stringResource(
+        when (mode) {
+            ThemeMode.LIGHT -> R.string.theme_light
+            ThemeMode.DARK -> R.string.theme_dark
+            ThemeMode.SYSTEM -> R.string.theme_system
+        },
+    )
+    val sub = stringResource(
+        when (mode) {
+            ThemeMode.LIGHT -> R.string.theme_light_sub
+            ThemeMode.DARK -> R.string.theme_dark_sub
+            ThemeMode.SYSTEM -> R.string.theme_system_sub
+        },
+    )
+    val selectedText = stringResource(R.string.state_selected)
+    Column(
+        modifier
+            .clip(Radii.card)
+            .border(ringWidth, ring, Radii.card)
+            .background(c.surface)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "$name, $sub"
+                stateDescription = if (selected) selectedText else ""
+            }
+            .padding(Space.s),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        ThemePreview(mode, Modifier.fillMaxWidth().height(72.dp))
+        Spacer(Modifier.height(Space.s))
+        Text(name, style = DsTheme.type.label, color = c.textPrimary, maxLines = 1)
+        Text(sub, style = DsTheme.type.caps, color = c.textSecondary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        Spacer(Modifier.height(Space.xxs))
+    }
+}
+
+/** A miniature Today: canvas with a weekday bar and the orange dot, and the agenda panel below. */
+@Composable
+private fun ThemePreview(mode: ThemeMode, modifier: Modifier) {
+    val border = DsTheme.colors.outline
+    androidx.compose.foundation.Canvas(modifier.clip(Radii.control).border(Sizes.hairline, border, Radii.control)) {
+        fun scene(p: app.daysemble.ui.theme.DsColors, left: Float, right: Float) {
+            clipRect(left = left, right = right) {
+                drawRect(p.background)
+                val u = size.height / 12f
+                drawRoundRect(p.textPrimary, topLeft = Offset(u * 1.6f, u * 1.6f), size = Size(u * 5f, u * 1.6f), cornerRadius = CornerRadius(u))
+                drawCircle(p.accentFill, radius = u * 0.6f, center = Offset(u * 7.6f, u * 2.5f))
+                drawRoundRect(p.textSecondary.copy(alpha = 0.5f), topLeft = Offset(u * 1.6f, u * 4.2f), size = Size(size.width * 0.55f, u * 0.9f), cornerRadius = CornerRadius(u))
+                val top = u * 6.4f
+                drawRoundRect(p.surface, topLeft = Offset(u * 0.8f, top), size = Size(size.width - u * 1.6f, size.height), cornerRadius = CornerRadius(u * 2f))
+                drawRoundRect(p.outline, topLeft = Offset(u * 0.8f, top), size = Size(size.width - u * 1.6f, size.height), cornerRadius = CornerRadius(u * 2f), style = Stroke(1.dp.toPx()))
+                drawCircle(p.inverse, radius = u * 0.95f, center = Offset(u * 3f, top + u * 2.2f))
+                drawRoundRect(p.textSecondary.copy(alpha = 0.35f), topLeft = Offset(u * 5f, top + u * 1.7f), size = Size(size.width * 0.4f, u * 0.9f), cornerRadius = CornerRadius(u))
+            }
+        }
+        when (mode) {
+            ThemeMode.LIGHT -> scene(app.daysemble.ui.theme.LightDsColors, 0f, size.width)
+            ThemeMode.DARK -> scene(app.daysemble.ui.theme.DarkDsColors, 0f, size.width)
+            ThemeMode.SYSTEM -> {
+                scene(app.daysemble.ui.theme.LightDsColors, 0f, size.width / 2)
+                scene(app.daysemble.ui.theme.DarkDsColors, size.width / 2, size.width)
+            }
         }
     }
 }

@@ -27,7 +27,7 @@ class SettingsRepositoryTest {
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
         val s = repo(File(tmp.root, "a.preferences_pb"), scope).current()
         assertThat(s.logo).isEqualTo(LogoVariant.CLASSIC)
-        assertThat(s.themeMode).isEqualTo(ThemeMode.SYSTEM)
+        assertThat(s.themeMode).isEqualTo(ThemeMode.LIGHT)
         assertThat(s.reducedMotionOverride).isNull()
         assertThat(s.defaultEventReminderMinutes).isEqualTo(10)
         assertThat(s.firstDayOfWeek).isNull()

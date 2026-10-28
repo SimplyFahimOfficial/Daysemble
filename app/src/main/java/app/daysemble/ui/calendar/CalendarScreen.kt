@@ -4,8 +4,6 @@ import app.daysemble.ui.components.itemMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.indication
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -30,7 +27,6 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,7 +43,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.R
 import app.daysemble.domain.model.EventOccurrence
@@ -55,6 +50,7 @@ import app.daysemble.ui.components.DsChip
 import app.daysemble.ui.components.DsIconButton
 import app.daysemble.ui.components.DsSegmented
 import app.daysemble.ui.components.DashedDivider
+import app.daysemble.ui.components.DateDisc
 import app.daysemble.ui.components.EventRow
 import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.StateMessage
@@ -74,7 +70,6 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.shape.CircleShape
 
 private const val PAGES = 20_000
 private const val CENTER = PAGES / 2
@@ -282,7 +277,7 @@ private fun MonthCell(
     val count = events.size + taskCount
     val a11y = Fmt.fullDate(d, p) + (if (isToday) ", " + stringResource(R.string.today_suffix) else "") + ", " + pluralStringResource(R.plurals.n_items, count, count)
     // The whole cell stays the touch target, but its press/focus feedback is drawn only on the date
-    // circle (see DateCircle). The cell used the default bounded ripple, which filled its rectangle
+    // circle (see DateDisc). The cell used the default bounded ripple, which filled its rectangle
     // and showed as a grey square around the circle on every tap.
     val interaction = remember { MutableInteractionSource() }
     Column(
@@ -293,12 +288,7 @@ private fun MonthCell(
             .padding(vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            Modifier
-                .dateCircle(interaction, bg)
-                .then(if (isToday && !selected) Modifier.border(1.5.dp, c.accentFill, CircleShape) else Modifier),
-            contentAlignment = Alignment.Center,
-        ) {
+        DateDisc(interaction, bg, ring = if (isToday && !selected) c.accentFill else Color.Transparent) {
             Text(
                 d.dayOfMonth.toString(),
                 style = DsTheme.type.bodyStrong,
@@ -318,16 +308,6 @@ private fun MonthCell(
         }
     }
 }
-
-/**
- * The round date marker shared by month cells and the week header: selection fill, plus the press
- * and keyboard-focus feedback of the surrounding cell ([interaction]), all clipped to the same circle.
- */
-private fun Modifier.dateCircle(interaction: MutableInteractionSource, fill: Color, size: Dp = 38.dp): Modifier = this
-    .defaultMinSize(size, size)
-    .clip(CircleShape)
-    .background(fill)
-    .indication(interaction, ripple(bounded = false, radius = size / 2))
 
 @Composable
 private fun GridMode(
@@ -374,7 +354,7 @@ private fun GridMode(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Text(Fmt.weekdayNarrow(d.dayOfWeek, p), style = DsTheme.type.caps, color = if (d == state.today) c.accent else c.textTertiary)
-                                Box(Modifier.padding(top = 2.dp).dateCircle(interaction, selBg, size = 32.dp), contentAlignment = Alignment.Center) {
+                                DateDisc(interaction, selBg, Modifier.padding(top = 2.dp), size = 32.dp) {
                                     Text(d.dayOfMonth.toString(), style = DsTheme.type.bodyStrong, color = selFg)
                                 }
                             }

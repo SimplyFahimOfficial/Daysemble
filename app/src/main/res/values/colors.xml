@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ds_cream">#FFFBF8F3</color>
-    <color name="ds_ink">#FF0E0E10</color>
-    <color name="window_background">@color/ds_cream</color>
+    <!-- Window and launch-splash canvas; matches DsColors.background of each theme. -->
+    <color name="ds_white">#FFFFFFFF</color>
+    <color name="ds_black">#FF050506</color>
+    <color name="window_background">@color/ds_white</color>
 </resources>
