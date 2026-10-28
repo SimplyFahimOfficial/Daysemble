@@ -1,5 +1,6 @@
 package app.daysemble.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -134,6 +135,8 @@ data class TaskListEntity(
         Index("dueDate"),
         Index("isCompleted"),
         Index(value = ["listId", "remoteId"], unique = true),
+        // One row per series date: a second "next occurrence" for the same date can't be inserted.
+        Index(value = ["seriesId", "occurrenceDate"], unique = true),
     ],
 )
 data class TaskEntity(
@@ -160,6 +163,53 @@ data class TaskEntity(
     val syncState: SyncState,
     val isDeleted: Boolean = false,
     val deletedAt: Long? = null,
+    /** Show a live countdown to the due moment. Local only (not a Google Tasks field). */
+    @ColumnInfo(defaultValue = "0") val countdownEnabled: Boolean = false,
+    /** The [TaskSeriesEntity] this row is an occurrence of, or null for a one-off task. */
+    val seriesId: String? = null,
+    /**
+     * Epoch day the series scheduled this occurrence for: its identity within the series. [dueDate]
+     * starts equal to it and can be moved for this occurrence alone; the next one is still counted
+     * from here.
+     */
+    val occurrenceDate: Long? = null,
+)
+
+/**
+ * A repeating task's rule and template. Only the current occurrence (and completed history) exist
+ * as [TaskEntity] rows; the next row is created when the current one is completed or skipped, so
+ * a series never fans out into unbounded future rows. Fields here are what new occurrences copy.
+ * On-device lists only: the Google Tasks API has no repeat rules.
+ */
+@Entity(
+    tableName = "task_series",
+    foreignKeys = [
+        ForeignKey(
+            entity = TaskListEntity::class,
+            parentColumns = ["id"], childColumns = ["listId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("listId")],
+)
+data class TaskSeriesEntity(
+    @PrimaryKey val id: String,
+    val listId: String,
+    /** RRULE subset, interpreted by [app.daysemble.core.recurrence.TaskRecurrence]. */
+    val rrule: String,
+    /** Epoch day of occurrence 0. Counting (COUNT, intervals) starts here. */
+    val anchorDate: Long,
+    val title: String,
+    val notes: String = "",
+    val dueTimeMinutes: Int? = null,
+    val priority: Int = 0,
+    @ColumnInfo(defaultValue = "0") val countdownEnabled: Boolean = false,
+    /** Reminder offsets (minutes before) for new occurrences, comma-separated. */
+    @ColumnInfo(defaultValue = "''") val reminders: String = "",
+    /** Set when the series stops repeating (deleted from here on, or repeat turned off). */
+    val endedAt: Long? = null,
+    val createdAt: Long,
+    val updatedAt: Long,
 )
 
 /**

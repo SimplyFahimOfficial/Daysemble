@@ -271,6 +271,10 @@ class TasksSyncer(
                 updatedAt = dto.updated?.let(::millis) ?: now,
                 remoteUpdatedAt = dto.updated?.let(::millis),
                 syncState = SyncState.SYNCED,
+                // Local-only fields (Google Tasks has no countdown or repeat rule) survive remote edits.
+                countdownEnabled = local?.countdownEnabled ?: false,
+                seriesId = local?.seriesId,
+                occurrenceDate = local?.occurrenceDate,
             ),
         )
     }

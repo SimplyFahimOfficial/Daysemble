@@ -31,11 +31,24 @@ object SampleData {
         c.events.create(ev("Dentist", LocalTime.of(15, 0), LocalTime.of(15, 30), "Main St 12", day = 3, rem = listOf(60)), d.calendarId)
         c.tasks.create(TaskDraft(title = "Send invoice to Northwind", dueDate = today.minusDays(1), priority = Priority.HIGH), d.taskListId)
         c.tasks.create(TaskDraft(title = "Buy groceries", notes = "Oat milk, lemons, basil", dueDate = today), d.taskListId)
-        val trip = c.tasks.create(TaskDraft(title = "Book train tickets", dueDate = today, dueTime = LocalTime.of(16, 0), priority = Priority.MEDIUM), d.taskListId)
+        val trip = c.tasks.create(
+            TaskDraft(title = "Book train tickets", dueDate = today, dueTime = LocalTime.of(16, 0), priority = Priority.MEDIUM, countdown = true),
+            d.taskListId,
+        )
         c.tasks.create(TaskDraft(title = "Check seat reservations", parentId = trip), d.taskListId)
         val passport = c.tasks.create(TaskDraft(title = "Find passport", parentId = trip), d.taskListId)
         c.tasks.setCompleted(passport, true)
         c.tasks.create(TaskDraft(title = "Call the plumber", dueDate = today.plusDays(2)), d.taskListId)
+        val reviewDay = today.plusDays(3)
+        val review = c.tasks.create(
+            TaskDraft(
+                title = "Weekly review", notes = "Inbox, calendar, next week’s plan", dueDate = reviewDay, dueTime = LocalTime.of(17, 0),
+                repeat = RRule.parse("FREQ=WEEKLY;BYDAY=" + reviewDay.dayOfWeek.name.take(2)), countdown = true,
+            ),
+            d.taskListId,
+        )
+        c.tasks.create(TaskDraft(title = "Clear the inbox", parentId = review), d.taskListId)
+        c.tasks.create(TaskDraft(title = "Plan next week", parentId = review), d.taskListId)
         c.tasks.create(TaskDraft(title = "Read chapter 4"), d.taskListId)
         val done = c.tasks.create(TaskDraft(title = "Water the plants", dueDate = today), d.taskListId)
         c.tasks.setCompleted(done, true)

@@ -180,6 +180,37 @@ interface TaskDao {
 
     @Query("SELECT * FROM task WHERE listId = :listId AND syncState != 'SYNCED' AND syncState != 'LOCAL'")
     suspend fun pendingIn(listId: String): List<TaskEntity>
+
+    /** The row for one series date, deleted or not (deleted ones block regenerating that date). */
+    @Query("SELECT * FROM task WHERE seriesId = :seriesId AND occurrenceDate = :date")
+    suspend fun bySeriesDate(seriesId: String, date: Long): TaskEntity?
+
+    @Query("SELECT * FROM task WHERE seriesId = :seriesId")
+    suspend fun inSeries(seriesId: String): List<TaskEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(task: TaskEntity)
+}
+
+@Dao
+interface TaskSeriesDao {
+    @Query("SELECT * FROM task_series")
+    fun observeAll(): Flow<List<TaskSeriesEntity>>
+
+    @Query("SELECT * FROM task_series WHERE id = :id")
+    suspend fun get(id: String): TaskSeriesEntity?
+
+    @Query("SELECT * FROM task_series WHERE id = :id")
+    fun observe(id: String): Flow<TaskSeriesEntity?>
+
+    @Upsert suspend fun upsert(series: TaskSeriesEntity)
+
+    @Query("DELETE FROM task_series WHERE id = :id")
+    suspend fun delete(id: String)
+
+    /** Ended series none of whose occurrences are left (all purged or hard-deleted). */
+    @Query("DELETE FROM task_series WHERE endedAt IS NOT NULL AND endedAt < :before AND id NOT IN (SELECT seriesId FROM task WHERE seriesId IS NOT NULL)")
+    suspend fun purgeEnded(before: Long)
 }
 
 @Dao
