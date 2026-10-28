@@ -71,9 +71,11 @@ private sealed interface Editing {
 fun ListsCalendarsRoute(onBack: () -> Unit) {
     val c = (LocalContext.current.applicationContext as DaysembleApp).container
     val listsFlow = remember(c) { c.tasks.allLists }
-    val lists by listsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val loadedLists by listsFlow.collectAsStateWithLifecycle(initialValue = null)
+    val lists = loadedLists.orEmpty()
     val calsFlow = remember(c) { c.events.allCalendars }
-    val cals by calsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val loadedCals by calsFlow.collectAsStateWithLifecycle(initialValue = null)
+    val cals = loadedCals.orEmpty()
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Editing?>(null) }
     var confirmDelete by remember { mutableStateOf<Pair<String, Boolean>?>(null) } // id, isList
@@ -81,7 +83,7 @@ fun ListsCalendarsRoute(onBack: () -> Unit) {
 
     Column(Modifier.fillMaxSize().background(colors.background)) {
         DsTopBar(stringResource(R.string.settings_lists_calendars), onBack)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = Space.x3)) {
+        SettingsBody(loaded = loadedLists != null && loadedCals != null) {
             SectionHeader(stringResource(R.string.calendars_title))
             cals.forEach { cal ->
                 DsSwitchRow(
