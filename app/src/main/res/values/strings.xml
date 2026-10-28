@@ -79,6 +79,9 @@
     <string name="all_day">All day</string>
     <string name="hours_minutes_short">%1$d h %2$d min</string>
     <string name="date_range">%1$s – %2$s</string>
+    <string name="time_range">%1$s – %2$s</string>
+    <string name="card_repeats">Repeats</string>
+    <string name="action_close">Close</string>
     <string name="in_zone">%1$s in %2$s</string>
     <string name="rel_now">Now</string>
     <string name="rel_ended">Ended</string>
@@ -186,6 +189,79 @@
     <string name="google_task_badge">Synced with Google Tasks</string>
     <string name="google_task_time_local">Google Tasks only stores dates. The time is kept on this device.</string>
     <string name="google_task_priority_local">Google Tasks has no priority. It’s kept on this device.</string>
+    <string name="google_task_countdown_local">Google Tasks has no countdown. It’s shown on this device only.</string>
+
+    <!-- Repeating tasks -->
+    <string name="repeat_does_not">Doesn’t repeat</string>
+    <string name="repeat_weekdays">Weekdays</string>
+    <string name="repeat_biweekly">Every 2 weeks</string>
+    <string name="repeat_custom_short">Custom</string>
+    <string name="repeat_unit_days">Days</string>
+    <string name="repeat_unit_weeks">Weeks</string>
+    <string name="repeat_unit_months">Months</string>
+    <string name="repeat_unit_years">Years</string>
+    <string name="repeat_task_note">When you complete it, the next one appears with its subtasks unticked. On the 29th to 31st, monthly and yearly repeats use the last day of shorter months.</string>
+    <string name="task_done_next">Done · next one %1$s</string>
+    <string name="task_done_series_ended">Done · that was the last one</string>
+    <string name="repeat_past_occurrence">This occurrence is done, so changes here apply to it alone. To change how the task repeats, open its current occurrence.</string>
+    <string name="scope_this_delete_done_desc">Removes this one from the history. The repeat goes on.</string>
+    <string name="repeat_needs_due">A repeating task needs a due date. Without one, saving stops the repeat.</string>
+    <string name="repeat_google_unavailable">Google Tasks can’t store repeat rules, so tasks in Google lists don’t repeat. Choose a list on this device to repeat this task.</string>
+    <string name="repeat_local_lists_only">Repeating tasks stay in lists on this device. Google Tasks can’t store repeat rules.</string>
+    <string name="scope_save_title">Save changes to a repeating task</string>
+    <string name="scope_delete_title">Delete a repeating task</string>
+    <string name="scope_this">This occurrence</string>
+    <string name="scope_future">This and future occurrences</string>
+    <string name="scope_all">The entire series</string>
+    <string name="scope_this_desc">Only this one changes. The next one comes as planned.</string>
+    <string name="scope_future_desc">This one and the ones after it. Completed ones stay as they were.</string>
+    <string name="scope_all_desc">Also renames completed ones (title, notes and priority).</string>
+    <string name="scope_this_delete_desc">Skips this one. The next one still comes.</string>
+    <string name="scope_future_delete_desc">Stops the repeat. Completed ones are kept.</string>
+    <string name="scope_all_delete_desc">Deletes every occurrence, including completed ones.</string>
+
+    <!-- Countdown -->
+    <string name="field_countdown">Countdown</string>
+    <string name="countdown_show">Live countdown</string>
+    <string name="countdown_show_sub">Counts down to the due date here and on the task’s card.</string>
+    <string name="cd_needs_due">Add a due date to count down to.</string>
+    <string name="cd_completed">Completed</string>
+    <string name="cd_label_remaining">Time left</string>
+    <string name="cd_label_overdue">Overdue by</string>
+    <string name="cd_label_completed">Done</string>
+    <string name="cd_label_countdown">Countdown</string>
+    <string name="cd_until">Due %1$s</string>
+    <string name="cd_short_years">%d y</string>
+    <string name="cd_short_months">%d mo</string>
+    <string name="cd_short_days">%d d</string>
+    <string name="cd_short_hours">%d h</string>
+    <string name="cd_short_minutes">%d min</string>
+    <string name="cd_short_under_minute">&lt; 1 min</string>
+    <string name="cd_short_in">in %1$s</string>
+    <string name="cd_short_overdue">%1$s overdue</string>
+    <string name="cd_spoken_remaining">Due in %1$s</string>
+    <string name="cd_spoken_overdue">Overdue by %1$s</string>
+    <string name="cd_less_than_minute">less than a minute</string>
+    <plurals name="cd_years">
+        <item quantity="one">%d year</item>
+        <item quantity="other">%d years</item>
+    </plurals>
+    <plurals name="cd_months">
+        <item quantity="one">%d month</item>
+        <item quantity="other">%d months</item>
+    </plurals>
+    <plurals name="cd_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <plurals name="cd_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <plurals name="cd_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
 
     <!-- Quick add -->
     <string name="kind_task">Task</string>

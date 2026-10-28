@@ -1,7 +1,7 @@
 package app.daysemble.ui.tasks
 
-import app.daysemble.ui.components.itemMotion
 import androidx.compose.animation.animateColorAsState
+import app.daysemble.ui.components.itemMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,8 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.R
+import app.daysemble.domain.model.SeriesScope
+import app.daysemble.ui.task.SeriesScopeDialog
 import app.daysemble.data.prefs.TaskSort
 import app.daysemble.domain.TaskBucket
 import app.daysemble.domain.TaskFilter
@@ -85,11 +88,12 @@ fun TasksRoute(contentPadding: PaddingValues, onOpenTask: (String) -> Unit) {
     val now = rememberMinuteTicker()
     LaunchedEffect(now) { vm.onTick(now) }
     val onDeleted = app.daysemble.ui.LocalTaskDeleted.current
+    val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     TasksScreen(
         state = state, now = now, contentPadding = contentPadding,
         onQuery = vm::setQuery, onFilter = vm::setFilter, onList = vm::setList, onSort = vm::setSort,
-        onToggle = vm::setCompleted, onOpen = onOpenTask,
-        onDelete = { id -> vm.delete(id); onDeleted(id) },
+        onToggle = { id, done -> vm.setCompleted(id, done) { r -> if (done) onCompleted(id, r) } }, onOpen = onOpenTask,
+        onDelete = { id, scope -> vm.delete(id, scope); onDeleted(id) },
         onReorder = vm::reorder,
     )
 }
@@ -105,7 +109,8 @@ fun TasksScreen(
     onSort: (TaskSort) -> Unit,
     onToggle: (String, Boolean) -> Unit,
     onOpen: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    /** A repeating task's occurrence asks first which occurrences (see SeriesScopeDialog). */
+    onDelete: (String, SeriesScope) -> Unit,
     onReorder: (List<String>) -> Unit = {},
 ) {
     val c = DsTheme.colors
@@ -259,7 +264,7 @@ fun TasksScreen(
             items(section.tasks, key = { it.id }) { task ->
                 SwipeableTaskRow(
                     task, now,
-                    onToggle = { onToggle(task.id, it) }, onOpen = { onOpen(task.id) }, onDelete = { onDelete(task.id) },
+                    onToggle = { onToggle(task.id, it) }, onOpen = { onOpen(task.id) }, onDelete = { scope -> onDelete(task.id, scope) },
                     modifier = Modifier.then(itemMotion()),
                 )
             }
@@ -273,12 +278,23 @@ private fun SwipeableTaskRow(
     now: Instant,
     onToggle: (Boolean) -> Unit,
     onOpen: () -> Unit,
-    onDelete: () -> Unit,
+    onDelete: (SeriesScope) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = DsTheme.colors
     val state = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
+    // Deleting an occurrence of a repeating task asks which ones, as in the editor; cancelling puts
+    // the row back.
+    var askScope by rememberSaveable { mutableStateOf(false) }
+    val delete: () -> Unit = { if (task.isRecurring) askScope = true else onDelete(SeriesScope.THIS) }
+    if (askScope) {
+        SeriesScopeDialog(
+            forDelete = true, allowThis = true, pastOccurrence = task.isCompleted,
+            onPick = onDelete,
+            onDismiss = { askScope = false; scope.launch { state.reset() } },
+        )
+    }
     val completeLabel = stringResource(if (task.isCompleted) R.string.action_mark_incomplete else R.string.action_complete)
     val deleteLabel = stringResource(R.string.action_delete)
     SwipeToDismissBox(
@@ -287,7 +303,7 @@ private fun SwipeableTaskRow(
         onDismiss = { value ->
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> { onToggle(!task.isCompleted); scope.launch { state.reset() } }
-                SwipeToDismissBoxValue.EndToStart -> onDelete()
+                SwipeToDismissBoxValue.EndToStart -> delete()
                 SwipeToDismissBoxValue.Settled -> Unit
             }
         },
@@ -322,7 +338,7 @@ private fun SwipeableTaskRow(
                 task, now, onToggle = onToggle, onClick = onOpen,
                 actions = listOf(
                     CustomAccessibilityAction(completeLabel) { onToggle(!task.isCompleted); true },
-                    CustomAccessibilityAction(deleteLabel) { onDelete(); true },
+                    CustomAccessibilityAction(deleteLabel) { delete(); true },
                 ),
             )
             HairlineDivider(Modifier.align(Alignment.BottomCenter), inset = true)

@@ -2,7 +2,11 @@ package app.daysemble.ui
 
 import android.graphics.Bitmap
 import android.os.Looper
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -14,7 +18,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -24,6 +32,16 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ApplicationProvider
 import app.daysemble.DaysembleApp
+import app.daysemble.ui.today.TodayTags
+import app.daysemble.domain.model.EventOccurrence
+import app.daysemble.domain.model.Task
+import app.daysemble.domain.model.Priority
+import app.daysemble.data.db.SyncState
+import app.daysemble.core.recurrence.RRule
+import app.daysemble.ui.theme.DsTheme
+import app.daysemble.ui.components.AgendaEventCard
+import app.daysemble.ui.components.AgendaTaskCard
+import app.daysemble.ui.components.TaskRow
 import app.daysemble.data.SampleData
 import app.daysemble.data.prefs.ClockFormat
 import app.daysemble.data.prefs.ThemeMode
@@ -167,12 +185,79 @@ open class VisualAuditRender {
     @Test fun mainScreensLight() { enabled(); mainScreens(ThemeMode.LIGHT) }
     @Test fun mainScreensDark() { enabled(); mainScreens(ThemeMode.DARK) }
 
+    /** The redesigned cards, the event detail, a task's live countdown and its repeat options. */
+    private fun details(theme: ThemeMode) {
+        app(theme, onboarded = true)
+        val t = theme.name.lowercase()
+        compose.onNode(hasText("Design review") and hasClickAction()).performClick(); settle(); capture("event-detail-$t")
+        compose.onNodeWithContentDescription("Close").performClick(); settle()
+        // Scrolling animates: let the clock run for it (the renders otherwise step it by hand).
+        compose.mainClock.autoAdvance = true
+        compose.onNodeWithTag(TodayTags.AGENDA).performScrollToNode(hasText("Book train tickets"))
+        compose.mainClock.autoAdvance = false; settle()
+        capture("today-cards-scrolled-$t")
+        compose.onNode(hasText("Book train tickets") and hasClickAction()).performClick(); settle(); capture("task-countdown-$t")
+        compose.onNodeWithContentDescription("Back").performClick(); settle()
+        tab("Tasks").performClick(); settle(); capture("tasks-rows-$t")
+        compose.mainClock.autoAdvance = true
+        val scrollables = compose.onAllNodes(androidx.compose.ui.test.hasScrollToNodeAction())
+        for (i in scrollables.fetchSemanticsNodes().indices) {
+            if (runCatching { scrollables[i].performScrollToNode(hasText("Weekly review")) }.isSuccess) break
+        }
+        compose.mainClock.autoAdvance = false; settle()
+        compose.onNode(hasText("Weekly review") and hasClickAction()).performClick(); settle()
+        compose.mainClock.autoAdvance = true
+        compose.onNodeWithText("REPEAT").performScrollTo()
+        compose.mainClock.autoAdvance = false; settle(); capture("task-repeat-$t")
+        compose.onNodeWithText("Save").performClick() // nothing changed: disabled, stays
+        compose.onNodeWithContentDescription("Delete").performClick(); settle(); capture("task-scope-delete-$t")
+    }
+
+    /** The cards in every state at a fixed moment: the orange focus card, countdown pills, overdue. */
+    private fun cards(theme: ThemeMode) = render("cards-${theme.name.lowercase()}", theme) {
+        val now = remember { java.time.Instant.now() }
+        val zone = ZoneId.systemDefault()
+        val today = now.atZone(zone).toLocalDate()
+        fun ev(title: String, from: Long, to: Long, loc: String = "", recurring: Boolean = false) = EventOccurrence(
+            eventId = title, occurrenceKey = title, overrideId = null, calendarId = "c", title = title, description = "", location = loc,
+            isAllDay = false, start = now.plusSeconds(from * 60), end = now.plusSeconds(to * 60), startDate = today, endDate = today,
+            timeZone = zone, colorArgb = 0xFF5B3FE0.toInt(), isRecurring = recurring, isGoogle = false, isReadOnly = false,
+        )
+        fun task(title: String, dueDays: Long, time: java.time.LocalTime?, countdown: Boolean, rule: String? = null, notes: String = "", subs: Int = 0) = Task(
+            id = title, listId = "l", parentId = null, title = title, notes = notes, dueDate = today.plusDays(dueDays), dueTime = time,
+            priority = Priority.NONE, isCompleted = false, completedAt = null, createdAt = now, updatedAt = now,
+            sortKey = 0, isGoogle = false, syncState = SyncState.LOCAL, subtaskCount = subs, subtasksDone = if (subs > 0) 1 else 0,
+            countdownEnabled = countdown, repeat = rule?.let(RRule::parse),
+        )
+        androidx.compose.foundation.layout.Column(
+            androidx.compose.ui.Modifier.fillMaxSize().background(DsTheme.colors.surface).padding(top = 24.dp),
+        ) {
+            AgendaEventCard(ev("Design review", -20, 40, "Studio 3"), now, {}, focused = true)
+            AgendaEventCard(ev("Team standup", 90, 105, recurring = true), now, {}, showCountdown = true)
+            AgendaTaskCard(task("Weekly review", 3, java.time.LocalTime.of(17, 0), true, "FREQ=WEEKLY;BYDAY=FR", "Inbox, calendar, next week’s plan", subs = 2), now, {}, {})
+            AgendaTaskCard(task("Renew passport", 64, null, true, "FREQ=YEARLY"), now, {}, {})
+            AgendaTaskCard(task("Send invoice", -1, java.time.LocalTime.of(9, 0), true), now, {}, {}, showDate = true)
+            TaskRow(task("Water the plants", 0, java.time.LocalTime.of(23, 59), true, "FREQ=DAILY;INTERVAL=3"), now, {}, {})
+        }
+    }
+
+    @Test fun cardsLight() { enabled(); cards(ThemeMode.LIGHT) }
+    @Test fun cardsDark() { enabled(); cards(ThemeMode.DARK) }
+
+    @Test fun detailsLight() { enabled(); details(ThemeMode.LIGHT) }
+    @Test fun detailsDark() { enabled(); details(ThemeMode.DARK) }
+
     /** Frames from a tab switch, a push to Settings, and the way back. */
     @Test fun transitionFrames() {
         enabled()
         app(ThemeMode.LIGHT, onboarded = true)
         tab("Calendar").performClick()
         listOf(16L, 32L, 32L, 32L, 48L, 80L).forEachIndexed { i, ms -> frame("tab-$i", ms) }
+        settle()
+        // A two-tab jump: the pill passes over Calendar on its way from Today to Tasks.
+        tab("Today").performClick(); settle()
+        tab("Tasks").performClick()
+        listOf(16L, 48L, 48L, 48L, 64L, 96L).forEachIndexed { i, ms -> frame("jump-$i", ms) }
         settle()
         compose.onNodeWithContentDescription("Settings").performClick()
         listOf(16L, 48L, 48L, 64L, 128L).forEachIndexed { i, ms -> frame("push-$i", ms) }

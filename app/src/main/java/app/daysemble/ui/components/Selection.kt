@@ -163,6 +163,7 @@ fun DsCheck(
     Box(
         modifier
             .size(Sizes.touch)
+            .clip(androidx.compose.foundation.shape.CircleShape) // round press feedback, like the circle it is
             .semantics { this.contentDescription = contentDescription }
             .toggleable(value = checked, role = Role.Checkbox, onValueChange = onCheckedChange)
             .padding(13.dp),

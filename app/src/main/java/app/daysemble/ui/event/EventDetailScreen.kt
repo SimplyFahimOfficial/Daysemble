@@ -10,6 +10,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
+import app.daysemble.ui.theme.EventSwatch
+import app.daysemble.ui.theme.Radii
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -58,7 +63,6 @@ import app.daysemble.ui.components.DsConfirmDialog
 import app.daysemble.ui.components.DsIconButton
 import app.daysemble.ui.components.DsTopBar
 import app.daysemble.ui.components.EventMarker
-import app.daysemble.ui.components.HairlineDivider
 import app.daysemble.ui.components.StateMessage
 import app.daysemble.ui.components.eventColor
 import app.daysemble.ui.format.Fmt
@@ -121,9 +125,11 @@ private fun EventDetailScreen(
     val now = rememberMinuteTicker()
     var confirm by rememberSaveable { mutableStateOf(false) }
     var mapsError by rememberSaveable { mutableStateOf(false) }
+    val color = eventColor(event.colorArgb)
 
+    // Rises over the page it was opened from (like the editors), so it closes with an X.
     Column(Modifier.fillMaxSize().background(c.background)) {
-        DsTopBar("", onClose) {
+        DsTopBar("", onClose, close = true) {
             if (!event.isReadOnly) {
                 DsIconButton(Icons.Rounded.DeleteOutline, stringResource(R.string.action_delete), { confirm = true })
                 DsIconButton(Icons.Rounded.Edit, stringResource(R.string.action_edit), onEdit)
@@ -136,47 +142,69 @@ private fun EventDetailScreen(
                 .navigationBarsPadding()
                 .padding(bottom = Space.x3),
         ) {
-            Row(
-                Modifier.padding(horizontal = Space.gutter),
-                verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Space.m),
+            // Header, centred as in the reference: the time pill, the title, the date, and how
+            // soon it is.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Space.gutter),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                EventMarker(eventColor(event.colorArgb), event.isAllDay, Modifier.padding(top = 12.dp))
+                TimePill(event, p)
+                Spacer(Modifier.height(Space.l))
                 Text(
                     event.title.ifBlank { stringResource(R.string.untitled_event) },
-                    style = DsTheme.type.headline, color = c.textPrimary,
+                    style = DsTheme.type.headline, color = c.textPrimary, textAlign = TextAlign.Center,
                     modifier = Modifier.semantics { heading() },
                 )
-            }
-            val rel = RelativeTime.of(event.start, event.end, event.isAllDay, now, p.zone)
-            if (rel !is app.daysemble.core.time.Relative.Ended) {
-                Spacer(Modifier.height(Space.m))
-                CountdownChip(rel, Modifier.padding(start = Space.gutter + 24.dp))
+                Spacer(Modifier.height(Space.xs))
+                Text(whenText(event, p), style = DsTheme.type.body, color = c.textSecondary, textAlign = TextAlign.Center)
+                val rel = RelativeTime.of(event.start, event.end, event.isAllDay, now, p.zone)
+                if (rel !is app.daysemble.core.time.Relative.Ended) {
+                    Spacer(Modifier.height(Space.m))
+                    CountdownChip(rel)
+                }
             }
             Spacer(Modifier.height(Space.xl))
-            HairlineDivider()
-            DetailLine(Icons.Rounded.Schedule, whenText(event, p), whenSubText(event, p))
-            rrule?.let { RRule.parse(it) }?.let { DetailLine(Icons.Rounded.Repeat, repeatSummary(it), null) }
-            if (event.location.isNotBlank()) {
-                DetailLine(Icons.Rounded.Place, event.location, null)
-                Row(Modifier.padding(start = Space.gutter + 38.dp, bottom = Space.m)) {
-                    DsButton(
-                        stringResource(R.string.open_in_maps),
-                        onClick = {
-                            val uri = ("geo:0,0?q=" + Uri.encode(event.location)).toUri()
-                            try { ctx.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: ActivityNotFoundException) { mapsError = true }
-                        },
-                        style = DsButtonStyle.Secondary, icon = Icons.Rounded.Map,
-                    )
+            // Grouped tiles: only what the event has. No invented people, avatars or agenda.
+            Column(Modifier.padding(horizontal = Space.gutter - Space.xs), verticalArrangement = Arrangement.spacedBy(Space.s)) {
+                Tile {
+                    DetailLine(Icons.Rounded.Schedule, durationLine(event), zoneLine(event, p))
+                    rrule?.let { RRule.parse(it) }?.let { DetailLine(Icons.Rounded.Repeat, repeatSummary(it), null) }
                 }
-                if (mapsError) {
-                    Text(stringResource(R.string.no_maps_app), style = DsTheme.type.label, color = c.error, modifier = Modifier.padding(start = Space.gutter + 38.dp))
+                if (event.location.isNotBlank()) {
+                    Tile {
+                        DetailLine(Icons.Rounded.Place, event.location, null)
+                        Row(Modifier.padding(start = Space.l + 38.dp, bottom = Space.m)) {
+                            DsButton(
+                                stringResource(R.string.open_in_maps),
+                                onClick = {
+                                    val uri = ("geo:0,0?q=" + Uri.encode(event.location)).toUri()
+                                    try { ctx.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: ActivityNotFoundException) { mapsError = true }
+                                },
+                                style = DsButtonStyle.Secondary, icon = Icons.Rounded.Map,
+                            )
+                        }
+                        if (mapsError) {
+                            Text(
+                                stringResource(R.string.no_maps_app), style = DsTheme.type.label, color = c.error,
+                                modifier = Modifier.padding(start = Space.l + 38.dp, bottom = Space.m),
+                            )
+                        }
+                    }
+                }
+                if (event.description.isNotBlank()) {
+                    Tile { DetailLine(Icons.AutoMirrored.Rounded.Notes, event.description, null) }
+                }
+                if (calendarName != null || event.isReadOnly) {
+                    Tile {
+                        calendarName?.let {
+                            DetailLine(null, it, if (event.isGoogle) stringResource(R.string.google_calendar) else stringResource(R.string.on_this_device), marker = color)
+                        }
+                        if (event.isReadOnly) DetailLine(Icons.Rounded.Lock, stringResource(R.string.event_read_only), null)
+                    }
                 }
             }
-            if (event.description.isNotBlank()) DetailLine(Icons.AutoMirrored.Rounded.Notes, event.description, null)
-            calendarName?.let {
-                DetailLine(null, it, if (event.isGoogle) stringResource(R.string.google_calendar) else stringResource(R.string.on_this_device), marker = eventColor(event.colorArgb))
-            }
-            if (event.isReadOnly) DetailLine(Icons.Rounded.Lock, stringResource(R.string.event_read_only), null)
         }
     }
 
@@ -184,8 +212,9 @@ private fun EventDetailScreen(
         if (event.isRecurring) {
             AlertDialog(
                 onDismissRequest = { confirm = false },
+                shape = Radii.dialog,
                 containerColor = c.surfaceRaised,
-                title = { Text(stringResource(R.string.delete_recurring_title), style = DsTheme.type.titleLarge) },
+                title = { Text(stringResource(R.string.delete_recurring_title), style = DsTheme.type.titleLarge, color = c.textPrimary) },
                 text = { Text(stringResource(R.string.delete_recurring_body), style = DsTheme.type.body, color = c.textSecondary) },
                 confirmButton = {
                     Column(horizontalAlignment = Alignment.End) {
@@ -205,11 +234,49 @@ private fun EventDetailScreen(
     }
 }
 
+/**
+ * The inverted time pill at the top: "09:00 – 10:30" or "All day", with the calendar's colour
+ * marker. The marker uses the tone made for the opposite theme, as the pill is inverted.
+ */
+@Composable
+private fun TimePill(e: EventOccurrence, p: TimePrefs) {
+    val c = DsTheme.colors
+    val text = if (e.isAllDay) stringResource(R.string.all_day) else stringResource(R.string.time_range, Fmt.time(e.start, p), Fmt.time(e.end, p))
+    Row(
+        Modifier
+            // A fixed radius rather than 50 %: with very large text the times wrap, and a
+            // two-line pill keeps soft corners instead of turning into a lozenge.
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(22.dp))
+            .background(c.inverse)
+            .padding(horizontal = Space.l, vertical = Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+    ) {
+        EventMarker(EventSwatch.nearest(e.colorArgb).color(dark = !c.isDark), e.isAllDay)
+        Text(text, style = DsTheme.type.numeric, color = c.onInverse, textAlign = TextAlign.Center)
+    }
+}
+
+/** A rounded group of detail lines. */
+@Composable
+private fun Tile(content: @Composable () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(Radii.card)
+            .background(DsTheme.colors.surfaceVariant)
+            .padding(vertical = Space.xs),
+    ) { content() }
+}
+
 @Composable
 private fun DetailLine(icon: ImageVector?, text: String, sub: String?, marker: androidx.compose.ui.graphics.Color? = null) {
     val c = DsTheme.colors
     Row(
-        Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
+        Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {}
+            .padding(horizontal = Space.l, vertical = Space.m),
         horizontalArrangement = Arrangement.spacedBy(Space.l),
     ) {
         if (marker != null) EventMarker(marker, false, Modifier.padding(top = 5.dp, start = 5.dp, end = 5.dp))
@@ -219,6 +286,23 @@ private fun DetailLine(icon: ImageVector?, text: String, sub: String?, marker: a
             if (sub != null) Text(sub, style = DsTheme.type.bodySmall, color = c.textSecondary)
         }
     }
+}
+
+/** "1 h 30 min", "All day", "3 days". */
+@Composable
+private fun durationLine(e: EventOccurrence): String {
+    if (e.isAllDay) {
+        val days = (e.endDate.toEpochDay() - e.startDate.toEpochDay()).toInt().coerceAtLeast(1)
+        return if (days == 1) stringResource(R.string.all_day) else androidx.compose.ui.res.pluralStringResource(R.plurals.cd_days, days, days)
+    }
+    return durationText(Duration.between(e.start, e.end).toMinutes())
+}
+
+/** The start in the event's own zone, when that isn't the device's. */
+@Composable
+private fun zoneLine(e: EventOccurrence, p: TimePrefs): String? {
+    if (e.isAllDay || e.timeZone.id == p.zone.id) return null
+    return stringResource(R.string.in_zone, Fmt.time(e.start.atZone(e.timeZone).toLocalTime(), p), e.timeZone.id)
 }
 
 @Composable
@@ -232,19 +316,6 @@ private fun whenText(e: EventOccurrence, p: TimePrefs): String {
     val eDate = e.end.atZone(p.zone).toLocalDate()
     return if (sDate == eDate) Fmt.fullDate(sDate, p)
     else stringResource(R.string.date_range, Fmt.mediumDate(sDate, p) + " " + Fmt.time(e.start, p), Fmt.mediumDate(eDate, p) + " " + Fmt.time(e.end, p))
-}
-
-@Composable
-private fun whenSubText(e: EventOccurrence, p: TimePrefs): String? {
-    if (e.isAllDay) return stringResource(R.string.all_day)
-    val sDate = e.start.atZone(p.zone).toLocalDate()
-    val eDate = e.end.atZone(p.zone).toLocalDate()
-    val dur = durationText(Duration.between(e.start, e.end).toMinutes())
-    val base = if (sDate == eDate) "${Fmt.time(e.start, p)} – ${Fmt.time(e.end, p)} · $dur" else dur
-    return if (e.timeZone.id != p.zone.id) {
-        val other = e.start.atZone(e.timeZone)
-        base + "\n" + stringResource(R.string.in_zone, Fmt.time(other.toLocalTime(), p), e.timeZone.id)
-    } else base
 }
 
 @Composable

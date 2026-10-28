@@ -38,6 +38,8 @@ taken with [`scripts/capture_screenshots.sh`](scripts/capture_screenshots.sh) an
 
 **Tasks**
 - Due date, optional time, priority, notes, reminders and one level of subtasks.
+- Repeats: daily, weekdays, weekly on chosen days, every 2 weeks, monthly, yearly or every N days/weeks/months/years, ending never, after N times or on a date. Completing one creates the next (subtasks unticked; missed dates are skipped, not piled up), and the snackbar says when it's due, with Undo. Edits and deletes apply to this occurrence, this and future ones, or the whole series. Monthly and yearly repeats on the 29th–31st use the last day of shorter months.
+- An optional live countdown per task ("2 months · 4 days · 03:12:45" in the task, compact on its card), counted in calendar months and days.
 - Filters (All, Today, Upcoming, Overdue, Completed), sorting, search, and lists.
 - Swipe to complete or delete, with undo.
 - Move a task (with its subtasks) to another list, including between on-device and Google lists.
@@ -219,6 +221,7 @@ model, sync algorithm, conflict rules, reminders) and the task plan.
 - No travel time or distance, because that would need a Maps API key. *Open in Maps* is offered instead.
 - Reminders are planned 8 days ahead and refreshed automatically. Force-stopping the app cancels alarms until it's opened again (an Android rule).
 - Google Tasks has no cross-list move, so moving a Google task deletes it from the old list and re-creates it in the new one. Its Google id changes, and its manual order stays local.
+- Repeating tasks work in on-device lists only. The Google Tasks API has no repeat rules, so tasks in Google lists can't repeat and a repeating task can't be moved into one. The countdown option is also kept on this device.
 - Google Tasks can't recognise a repeated create request, so a create that may have succeeded but timed out is matched by title, notes and due date before retrying.
 - Screens are untested on tablets and foldables, though they should still be usable there.
 

@@ -106,7 +106,7 @@ class TodayViewModel(
         if (newToday != prevToday && selected.value == prevToday) select(newToday)
     }
 
-    fun setCompleted(id: String, done: Boolean) = viewModelScope.launch { tasks.setCompleted(id, done) }
+    fun setCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -> Unit = {}) = viewModelScope.launch { tasks.setCompleted(id, done)?.let(onResult) }
 
     fun delete(id: String) = viewModelScope.launch { tasks.delete(id) }
     fun restore(id: String) = viewModelScope.launch { tasks.restore(id) }

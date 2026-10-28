@@ -23,7 +23,8 @@ import app.daysemble.ui.theme.DsMotion
  * - Forward and back use Material's shared axis: the page that leaves fades out in 90 ms while it
  *   drifts 30 dp, the page that arrives fades in right after while it settles from 30 dp. The two
  *   are never both half-transparent over each other, and no page edge slides across the screen.
- * - Editors rise from just below and sink back down; the page underneath only fades.
+ * - Editors and the event detail rise from just below and sink back down; the page underneath
+ *   only fades.
  * - Predictive back (Android 14+ back gesture) has its own pair, scrubbed by the gesture: the page
  *   underneath is fully visible from the first frame (only a slight parallax), the leaving page
  *   shrinks a little and moves with the finger, and only fades near the end. Without these,
@@ -37,7 +38,8 @@ internal object NavMotion {
 
     private fun NavDestination.kind(): Kind = when {
         hasRoute<MainRoute>() -> Kind.MAIN
-        hasRoute<TaskEditorRoute>() || hasRoute<EventEditorRoute>() -> Kind.EDITOR
+        // The event detail is a sheet-like view of one item (closed with an X), so it rises like the editors.
+        hasRoute<TaskEditorRoute>() || hasRoute<EventEditorRoute>() || hasRoute<EventDetailRoute>() -> Kind.EDITOR
         else -> Kind.PAGE
     }
 

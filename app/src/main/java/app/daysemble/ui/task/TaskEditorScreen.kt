@@ -2,6 +2,7 @@ package app.daysemble.ui.task
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material3.Icon
@@ -50,6 +52,8 @@ import app.daysemble.ui.components.DsConfirmDialog
 import app.daysemble.ui.components.DsDatePickerDialog
 import app.daysemble.ui.components.DsIconButton
 import app.daysemble.ui.components.DsSegmented
+import app.daysemble.ui.components.DsSwitchRow
+import app.daysemble.ui.components.LiveCountdown
 import app.daysemble.ui.components.DsTextField
 import app.daysemble.ui.components.DsTimePickerDialog
 import app.daysemble.ui.components.DsTopBar
@@ -109,9 +113,18 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
     val f = state.form
     var pickDate by rememberSaveable { mutableStateOf(false) }
     var pickTime by rememberSaveable { mutableStateOf(false) }
+    var pickUntil by rememberSaveable { mutableStateOf(false) }
     var confirmDiscard by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var askSaveScope by rememberSaveable { mutableStateOf(false) }
     val titleFocus = remember { FocusRequester() }
+    val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
+    val m = DsTheme.motion
+    val save: () -> Unit = { if (vm.needsScope()) askSaveScope = true else vm.save() }
+    // Choosing a repeat without a due date dates the task today: a repeat counts from its due date.
+    val setRepeat: (TaskRepeatForm) -> Unit = { r ->
+        vm.update { old -> (if (old.dueEpochDay == null && r.repeats) old.withDue(today.toEpochDay()) else old).copy(repeat = r) }
+    }
 
     val attemptClose = { if (state.isDirty) confirmDiscard = true else onClose() }
     BackHandler(enabled = state.isDirty) { confirmDiscard = true }
@@ -129,7 +142,7 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
         ) {
             if (!state.isNew) DsIconButton(Icons.Rounded.DeleteOutline, stringResource(R.string.action_delete), { confirmDelete = true })
             DsButton(
-                stringResource(R.string.action_save), vm::save,
+                stringResource(R.string.action_save), save,
                 modifier = Modifier.padding(end = Space.s),
                 enabled = state.isNew || state.isDirty,
             )
@@ -152,10 +165,19 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                 Row(Modifier.padding(horizontal = Space.gutter - Space.xs)) {
                     DsChip(
                         stringResource(if (state.task.isCompleted) R.string.action_mark_incomplete else R.string.action_complete),
-                        selected = state.task.isCompleted, onClick = vm::toggleCompleted,
+                        selected = state.task.isCompleted, onClick = { vm.toggleCompleted(onCompleted) },
                         role = androidx.compose.ui.semantics.Role.Checkbox,
                     )
                 }
+            }
+            // The live countdown: this task's detail view. It follows the due date as it's edited and
+            // only this block ticks (once a second, while the screen is visible).
+            val deadline = f.deadline(p.zone)
+            AnimatedVisibility(f.countdown && deadline != null, enter = m.expandIn(), exit = m.collapseOut()) {
+                LiveCountdown(
+                    deadline, completed = state.task?.isCompleted == true,
+                    modifier = Modifier.padding(start = Space.gutter, end = Space.gutter, top = Space.m),
+                )
             }
 
             SectionHeader(stringResource(R.string.field_due), Modifier.padding(top = Space.l))
@@ -175,18 +197,43 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                         { pickTime = true }, icon = Icons.Rounded.Schedule, emphasized = f.dueTime != null,
                         contentDescription = stringResource(R.string.cd_pick_due_time),
                     )
-                    DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_clear_due), { vm.update { it.copy(dueEpochDay = null, dueMinutes = null) } }, tint = c.textSecondary)
+                    DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_clear_due), { vm.update { it.withDue(null) } }, tint = c.textSecondary)
                 }
             }
             if (f.dueDate == null) {
                 Row(Modifier.padding(horizontal = Space.gutter - Space.xs, vertical = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    DsChip(stringResource(R.string.day_today), false, { vm.update { it.copy(dueEpochDay = today.toEpochDay()) } })
-                    DsChip(stringResource(R.string.day_tomorrow), false, { vm.update { it.copy(dueEpochDay = today.plusDays(1).toEpochDay()) } })
+                    DsChip(stringResource(R.string.day_today), false, { vm.update { it.withDue(today.toEpochDay()) } })
+                    DsChip(stringResource(R.string.day_tomorrow), false, { vm.update { it.withDue(today.plusDays(1).toEpochDay()) } })
                 }
             }
             if (state.isGoogle && (f.dueTime != null)) {
                 Note(stringResource(R.string.google_task_time_local))
             }
+            if (state.isRecurring && f.dueDate == null) {
+                Note(stringResource(R.string.repeat_needs_due))
+            }
+
+            if (state.isPastOccurrence) {
+                SectionHeader(stringResource(R.string.field_repeat), Modifier.padding(top = Space.l))
+                f.repeat.toRRule(f.dueDate)?.let { Note(repeatLabel(it)) }
+                Note(stringResource(R.string.repeat_past_occurrence))
+            } else if (!state.isSubtask) {
+                SectionHeader(stringResource(R.string.field_repeat), Modifier.padding(top = Space.l))
+                TaskRepeatSection(
+                    form = f.repeat, due = f.dueDate, onChange = setRepeat, onPickUntil = { pickUntil = true },
+                    disabledReason = if (state.inGoogleListAfterSave) stringResource(R.string.repeat_google_unavailable) else null,
+                )
+            }
+
+            SectionHeader(stringResource(R.string.field_countdown), Modifier.padding(top = Space.l))
+            DsSwitchRow(
+                title = stringResource(R.string.countdown_show),
+                subtitle = stringResource(if (f.dueDate == null) R.string.cd_needs_due else R.string.countdown_show_sub),
+                checked = f.countdown && f.dueDate != null, enabled = f.dueDate != null,
+                onCheckedChange = { on -> vm.update { it.copy(countdown = on) } },
+                icon = Icons.Rounded.HourglassTop,
+            )
+            if (state.isGoogle && f.countdown) Note(stringResource(R.string.google_task_countdown_local))
 
             SectionHeader(stringResource(R.string.field_reminders), Modifier.padding(top = Space.l))
             ReminderPicker(
@@ -207,11 +254,14 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
             )
             if (state.isGoogle && f.priority > 0) Note(stringResource(R.string.google_task_priority_local))
 
-            if (state.lists.size > 1 && state.task?.parentId == null && parentIdOf(state) == null) {
+            // A repeating task can only be in a list on this device (Google Tasks can't store the rule).
+            val listChoices = if (f.repeat.repeats) state.lists.filter { !it.isGoogle || it.id == f.listId } else state.lists
+            if (listChoices.size > 1 && !state.isSubtask) {
                 SectionHeader(stringResource(R.string.field_list), Modifier.padding(top = Space.l))
                 FlowRow(Modifier.padding(horizontal = Space.gutter - Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    state.lists.forEach { l -> DsChip(l.title, f.listId == l.id, { vm.update { it.copy(listId = l.id) } }) }
+                    listChoices.forEach { l -> DsChip(l.title, f.listId == l.id, { vm.update { it.copy(listId = l.id) } }) }
                 }
+                if (f.repeat.repeats && listChoices.size < state.lists.size) Note(stringResource(R.string.repeat_local_lists_only))
             }
 
             SectionHeader(stringResource(R.string.field_notes), Modifier.padding(top = Space.l))
@@ -225,7 +275,6 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                 SectionHeader(stringResource(R.string.field_subtasks), Modifier.padding(top = Space.l))
                 // New subtasks fade in and the list grows/shrinks smoothly instead of jumping.
                 // Subtasks already there when the task loads (same emission as the task) appear without motion.
-                val m = DsTheme.motion
                 val loadedIds = remember(state.task?.id) { state.subtasks.map { it.id }.toSet() }
                 Column(if (m.reduced) Modifier else Modifier.animateContentSize(m.standard(m.medium))) {
                     state.subtasks.forEach { s ->
@@ -263,9 +312,27 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
     if (pickDate) {
         DsDatePickerDialog(
             initial = f.dueDate ?: today,
-            onPick = { d -> vm.update { it.copy(dueEpochDay = d.toEpochDay()) } },
+            onPick = { d -> vm.update { it.withDue(d.toEpochDay()) } },
             onDismiss = { pickDate = false },
-            onClear = if (f.dueDate != null) ({ vm.update { it.copy(dueEpochDay = null, dueMinutes = null) } }) else null,
+            onClear = if (f.dueDate != null) ({ vm.update { it.withDue(null) } }) else null,
+        )
+    }
+    if (pickUntil) {
+        val from = f.dueDate ?: today
+        DsDatePickerDialog(
+            initial = f.repeat.untilEpochDay?.let(LocalDate::ofEpochDay) ?: from.plusMonths(1),
+            // The last date can't be before the first occurrence.
+            onPick = { d ->
+                val last = maxOf(d, from)
+                setRepeat(f.repeat.copy(end = app.daysemble.domain.model.RepeatEnd.UNTIL.name, untilEpochDay = last.toEpochDay()))
+            },
+            onDismiss = { pickUntil = false },
+        )
+    }
+    if (askSaveScope) {
+        SeriesScopeDialog(
+            forDelete = false, allowThis = !state.repeatChanged,
+            onPick = { scope -> vm.save(scope) }, onDismiss = { askSaveScope = false },
         )
     }
     if (pickTime) {
@@ -283,7 +350,12 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
             onDismiss = { confirmDiscard = false }, destructive = true,
         )
     }
-    if (confirmDelete) {
+    if (confirmDelete && state.isRecurring) {
+        SeriesScopeDialog(
+            forDelete = true, allowThis = true, pastOccurrence = state.isPastOccurrence,
+            onPick = { scope -> vm.delete(scope) }, onDismiss = { confirmDelete = false },
+        )
+    } else if (confirmDelete) {
         DsConfirmDialog(
             title = stringResource(R.string.delete_task_title),
             body = stringResource(if (state.task?.isGoogle == true) R.string.delete_task_google_body else R.string.delete_task_body),
@@ -292,9 +364,6 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
         )
     }
 }
-
-/** Subtasks stay in their parent's list, so they get no list chooser. */
-private fun parentIdOf(state: TaskEditorUiState): String? = state.task?.parentId
 
 @Composable
 private fun Note(text: String) {

@@ -175,6 +175,14 @@ val LocalSyncStatus = staticCompositionLocalOf<State<SyncStatus?>?> { null }
  */
 val LocalTaskDeleted = staticCompositionLocalOf<(String) -> Unit> { {} }
 
+/**
+ * Call after a task was checked off in a list. For a repeating task it shows where the series went
+ * ("Done · next one Fri, Oct 30", or that the repeat has ended) with Undo, from the root scope like
+ * [LocalTaskDeleted]. Undo reopens the occurrence, which also removes the next one again if it
+ * hasn't been touched. One-off tasks stay in place, struck through, so they need no snackbar.
+ */
+val LocalTaskCompleted = staticCompositionLocalOf<(String, app.daysemble.data.repo.TaskRepository.Completion) -> Unit> { { _, _ -> } }
+
 internal enum class Tab(val icon: ImageVector, val label: Int) {
     TODAY(Icons.Rounded.WbSunny, R.string.tab_today),
     CALENDAR(Icons.Rounded.CalendarMonth, R.string.tab_calendar),
@@ -218,11 +226,26 @@ fun DaysembleRoot(
             }
         }
     }
+    val nextMsg = stringResource(R.string.task_done_next)
+    val endedMsg = stringResource(R.string.task_done_series_ended)
+    val onTaskCompleted: (String, app.daysemble.data.repo.TaskRepository.Completion) -> Unit = remember(container, nextMsg, endedMsg, undoLabel, prefs) {
+        { id, r ->
+            if (r.repeating) rootScope.launch {
+                val today = container.clock.today()
+                val msg = r.nextDue?.let { d ->
+                    nextMsg.format(app.daysemble.ui.format.Fmt.smartDate(d, today, prefs))
+                } ?: endedMsg
+                val res = snackbar.showSnackbar(msg, undoLabel, duration = SnackbarDuration.Short)
+                if (res == SnackbarResult.ActionPerformed) container.tasks.setCompleted(id, false)
+            }
+        }
+    }
     CompositionLocalProvider(
         LocalTimePrefs provides prefs,
         LocalAppClock provides container.clock,
         LocalSnackbar provides snackbar,
         LocalTaskDeleted provides onTaskDeleted,
+        LocalTaskCompleted provides onTaskCompleted,
         LocalAppSettings provides settings,
         LocalSyncStatus provides syncStatus,
     ) {
@@ -348,10 +371,13 @@ private fun AppContent(
 
         LaunchedEffect(open) {
             val r = open ?: return@LaunchedEffect
-            when (r.type) {
-                app.daysemble.data.db.OwnerType.TASK -> nav.navigate(TaskEditorRoute(taskId = r.id))
-                app.daysemble.data.db.OwnerType.EVENT -> nav.navigate(EventDetailRoute(r.id, r.occurrenceKey))
+            val route: Any = when (r.type) {
+                app.daysemble.data.db.OwnerType.TASK -> TaskEditorRoute(taskId = r.id)
+                app.daysemble.data.db.OwnerType.EVENT -> EventDetailRoute(r.id, r.occurrenceKey)
             }
+            // Tapping the notification of the item that's already open (or tapping it twice) doesn't
+            // stack a second copy of the same page.
+            if (!nav.isShowing(route)) nav.navigate(route)
             onOpenHandled()
         }
         LaunchedEffect(openAccountsAfterOnboarding) {
@@ -386,9 +412,9 @@ private fun AppContent(
             initialDate = addDate?.let(LocalDate::ofEpochDay),
             onDismiss = { showAdd = false },
             onMoreEventOptions = { pre ->
-                nav.navigate(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
+                nav.openFromMain(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
             },
-            onMoreTaskOptions = { d -> nav.navigate(TaskEditorRoute(dueEpochDay = d?.toEpochDay())) },
+            onMoreTaskOptions = { d -> nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay())) },
         )
     }
 }
@@ -400,6 +426,16 @@ private fun AppContent(
  */
 private fun NavHostController.openFromMain(route: Any) {
     if (currentBackStackEntry?.destination.isMain()) navigate(route)
+}
+
+/** Whether the top page is already [route] (same destination and arguments). */
+private fun NavHostController.isShowing(route: Any): Boolean {
+    val top = currentBackStackEntry ?: return false
+    return when (route) {
+        is TaskEditorRoute -> top.destination.hasRoute<TaskEditorRoute>() && top.toRoute<TaskEditorRoute>() == route
+        is EventDetailRoute -> top.destination.hasRoute<EventDetailRoute>() && top.toRoute<EventDetailRoute>() == route
+        else -> false
+    }
 }
 
 /**

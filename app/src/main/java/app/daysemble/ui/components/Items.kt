@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -272,6 +274,37 @@ fun EventRow(
     }
 }
 
+/**
+ * A task title with the completion strike-through drawn across it as [strike] goes 0 → 1 (and
+ * retracting when the task is reopened) instead of switching on halfway through.
+ */
+@Composable
+internal fun StrikeTitle(text: String, strike: Float, color: Color, style: androidx.compose.ui.text.TextStyle, maxLines: Int = 2) {
+    var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+    Text(
+        text,
+        style = style,
+        color = color,
+        maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+        onTextLayout = { layout = it },
+        modifier = Modifier.drawWithContent {
+            drawContent()
+            val l = layout ?: return@drawWithContent
+            if (strike <= 0f) return@drawWithContent
+            val rtl = layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl
+            val stroke = 1.25.dp.toPx()
+            for (i in 0 until l.lineCount) {
+                val left = l.getLineLeft(i); val right = l.getLineRight(i)
+                // Through the middle of the lowercase letters, where a regular strike-through sits.
+                val y = l.getLineBaseline(i) - (l.getLineBottom(i) - l.getLineTop(i)) * 0.27f
+                val len = (right - left) * strike
+                val (x0, x1) = if (rtl) right to right - len else left to left + len
+                drawLine(color, androidx.compose.ui.geometry.Offset(x0, y), androidx.compose.ui.geometry.Offset(x1, y), stroke)
+            }
+        },
+    )
+}
+
 @Composable
 fun PriorityFlag(priority: Priority, modifier: Modifier = Modifier) {
     if (priority == Priority.NONE) return
@@ -291,7 +324,12 @@ fun priorityLabel(p: Priority) = when (p) {
     Priority.HIGH -> R.string.priority_high
 }
 
-/** Task row with animated completion (check fill, strike-through, fade to secondary). */
+/**
+ * Task row with animated completion (check fill, strike-through, fade to secondary). Its meta line
+ * shows the due date, subtask progress, the repeat and (when the task has one) a compact countdown
+ * at minute precision from [now].
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TaskRow(
     task: Task,
@@ -332,36 +370,16 @@ fun TaskRow(
             dashed = isSubtask,
         )
         Column(Modifier.weight(1f).padding(vertical = Space.s)) {
-            // The strike-through is drawn across the text as the task completes (and retracts when it is
-            // reopened) instead of switching on halfway through.
-            var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
-            val strikeColor = textColor
-            Text(
-                task.title,
-                style = DsTheme.type.bodyStrong,
-                color = textColor,
-                maxLines = 2, overflow = TextOverflow.Ellipsis,
-                onTextLayout = { layout = it },
-                modifier = Modifier.drawWithContent {
-                    drawContent()
-                    val l = layout ?: return@drawWithContent
-                    if (strike <= 0f) return@drawWithContent
-                    val rtl = layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl
-                    val stroke = 1.25.dp.toPx()
-                    for (i in 0 until l.lineCount) {
-                        val left = l.getLineLeft(i); val right = l.getLineRight(i)
-                        // Through the middle of the lowercase letters, where a regular strike-through sits.
-                        val y = l.getLineBaseline(i) - (l.getLineBottom(i) - l.getLineTop(i)) * 0.27f
-                        val len = (right - left) * strike
-                        val (x0, x1) = if (rtl) right to right - len else left to left + len
-                        drawLine(strikeColor, androidx.compose.ui.geometry.Offset(x0, y), androidx.compose.ui.geometry.Offset(x1, y), stroke)
-                    }
-                },
-            )
+            StrikeTitle(task.title, strike, textColor, DsTheme.type.bodyStrong)
             val due = task.dueDate
-            val hasMeta = (showDue && due != null) || task.subtaskCount > 0
+            val countdown = task.countdownEnabled && !task.isCompleted && due != null
+            val hasMeta = (showDue && due != null) || task.subtaskCount > 0 || task.isRecurring || countdown
             if (hasMeta) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
+                FlowRow(
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.s),
+                    verticalArrangement = Arrangement.spacedBy(Space.xxs),
+                ) {
                     if (showDue && due != null) {
                         val label = dayLabel(due, today, p) + (task.dueTime?.let { " · " + Fmt.time(it, p) } ?: "")
                         Text(
@@ -380,6 +398,13 @@ fun TaskRow(
                             )
                         }
                     }
+                    task.repeat?.let { r ->
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xxs)) {
+                            Icon(Icons.Rounded.Repeat, null, tint = c.textTertiary, modifier = Modifier.size(14.dp))
+                            Text(app.daysemble.ui.task.repeatLabel(r), style = DsTheme.type.label, color = c.textSecondary, maxLines = 1)
+                        }
+                    }
+                    if (countdown) CountdownPill(task.dueMoment(p.zone), task.isCompleted, now, p.zone)
                 }
             }
         }

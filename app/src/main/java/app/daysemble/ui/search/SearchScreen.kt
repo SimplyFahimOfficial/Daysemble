@@ -114,13 +114,14 @@ class SearchViewModel(
 
     fun setQuery(q: String) { query.value = q; handle["q"] = q }
     fun setScope(s: SearchScope) { scope.value = s; handle["s"] = s.name }
-    fun setCompleted(id: String, done: Boolean) = viewModelScope.launch { tasks.setCompleted(id, done) }
+    fun setCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -> Unit = {}) = viewModelScope.launch { tasks.setCompleted(id, done)?.let(onResult) }
 }
 
 @Composable
 fun SearchRoute(onBack: () -> Unit, onOpenEvent: (String, String) -> Unit, onOpenTask: (String) -> Unit) {
     val prefs = LocalTimePrefs.current
     val vm = daysembleViewModel { c, h -> SearchViewModel(c.events, c.tasks, c.clock, c.timeContext, h) }
+    val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     val state by vm.state.collectAsStateWithLifecycle()
     val raw by vm.rawQuery.collectAsStateWithLifecycle()
     val now: Instant = rememberMinuteTicker()
@@ -163,7 +164,7 @@ fun SearchRoute(onBack: () -> Unit, onOpenEvent: (String, String) -> Unit, onOpe
                 if (state.tasks.isNotEmpty()) {
                     item(key = "th") { SectionHeader(stringResource(R.string.search_tasks), Modifier.padding(top = Space.m)) }
                     items(state.tasks, key = { "t" + it.id }) { t ->
-                        TaskRow(t, now, onToggle = { vm.setCompleted(t.id, it) }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()))
+                        TaskRow(t, now, onToggle = { done -> vm.setCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()))
                     }
                 }
             }

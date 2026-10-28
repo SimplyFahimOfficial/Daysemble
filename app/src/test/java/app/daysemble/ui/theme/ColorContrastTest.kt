@@ -1,6 +1,7 @@
 package app.daysemble.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import com.google.common.truth.Truth.assertWithMessage
 import org.junit.Test
@@ -46,6 +47,16 @@ class ColorContrastTest {
         check("$label error/errorContainer", c.error, c.errorContainer, 4.5)
         check("$label textPrimary/accentContainer", c.textPrimary, c.accentContainer, 4.5)
         check("$label accentFill/background (non-text)", c.accentFill, c.background, 3.0)
+        // The date dot is the same orange in every theme.
+        assertWithMessage("$label accentFill is the brand orange").that(c.accentFill).isEqualTo(Brand.Orange)
+        // Agenda cards and countdown pills.
+        check("$label accent/accentContainer (countdown pill)", c.accent, c.accentContainer, 4.5)
+        check("$label textSecondary/surface (pill on a card)", c.textSecondary, c.surface, 4.5)
+        val tinted = app.daysemble.ui.components.OnAccentPillTint.compositeOver(c.accentStrong)
+        check("$label onAccent/pill tint over accentStrong (focus card pills)", c.onAccent, tinted, 4.5)
+        check("$label onInverse/inverse (event time pill)", c.onInverse, c.inverse, 4.5)
+        // The calendar marker in the inverted time pill uses the other theme's tone: visible (3:1).
+        EventSwatch.entries.forEach { s -> check("$label swatch ${s.name} on inverse pill (non-text)", s.color(!c.isDark), c.inverse, 3.0) }
     }
 
     @Test fun lightTheme() = checkTheme("light", LightDsColors)

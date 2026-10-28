@@ -96,7 +96,7 @@ class CalendarViewModel(
         )
     }
 
-    fun setTaskCompleted(id: String, done: Boolean) = viewModelScope.launch { tasks.setCompleted(id, done) }
+    fun setTaskCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -> Unit = {}) = viewModelScope.launch { tasks.setCompleted(id, done)?.let(onResult) }
 
     private fun windowFor(m: CalendarMode, s: LocalDate): Pair<LocalDate, LocalDate> = when (m) {
         // Previous..next month grids so swiping never shows empty cells.
