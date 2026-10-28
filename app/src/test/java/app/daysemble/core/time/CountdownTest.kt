@@ -61,6 +61,26 @@ class CountdownTest {
         assertThat(r.hours * 3600 + r.minutes * 60 + r.seconds).isEqualTo((to.epochSecond - from.epochSecond))
     }
 
+    /**
+     * Review issue: a whole month (or year) added into the spring-forward gap lands past the end.
+     * 02:30 doesn't exist on 28 Mar 2027 in Berlin and resolves to 03:30, after the 03:10 deadline,
+     * so no whole month fits: 27 days and 23:40 are left, not "1 month · 00:00:00".
+     */
+    @Test fun daylightSaving_monthOrYearStepIntoTheGap_isTakenBack() {
+        val end = at("2027-03-28T03:10")
+        val month = Countdown.parts(at("2027-02-28T02:30"), end, berlin)
+        assertThat(month).isEqualTo(p(0, 0, 27, 23, 40, 0))
+        // 28 Mar 2026 02:30 existed (that year's change was on the 29th); one year later it doesn't.
+        val year = Countdown.parts(at("2026-03-28T02:30"), end, berlin)
+        assertThat(year).isEqualTo(p(0, 11, 27, 23, 40, 0))
+        // Either way the parts add up to the exact time between the two moments.
+        for ((from, r) in listOf(at("2027-02-28T02:30") to month, at("2026-03-28T02:30") to year)) {
+            val rebuilt = from.atZone(berlin).plusYears(r.years).plusMonths(r.months).plusDays(r.days)
+                .toInstant().plusSeconds(r.hours * 3600 + r.minutes * 60 + r.seconds)
+            assertThat(rebuilt).isEqualTo(end)
+        }
+    }
+
     @Test fun deadlineAtMidnight() {
         val midnight = at("2026-11-01T00:00")
         assertThat(Countdown.parts(at("2026-10-31T23:59:30"), midnight, berlin)).isEqualTo(p(0, 0, 0, 0, 0, 30))

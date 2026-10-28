@@ -44,13 +44,18 @@ object Countdown {
         val (a, b) = if (from.isAfter(to)) to to from else from to to
         val start = a.atZone(zone)
         val end = b.atZone(zone)
-        val years = ChronoUnit.YEARS.between(start, end)
+        // Each calendar step is counted on the wall clock, but adding it can land in a daylight-saving
+        // gap, where the missing time resolves an hour later and so past the end (28 Feb 02:30 plus a
+        // month is 28 Mar 03:30 in Berlin, after a 03:10 deadline). Every step that overshoots is
+        // taken back, so the parts never exceed the time that is really left.
+        var years = ChronoUnit.YEARS.between(start, end)
+        while (years > 0 && start.plusYears(years).isAfter(end)) years--
         val afterYears = start.plusYears(years)
-        val months = ChronoUnit.MONTHS.between(afterYears, end)
+        var months = ChronoUnit.MONTHS.between(afterYears, end)
+        while (months > 0 && afterYears.plusMonths(months).isAfter(end)) months--
         val afterMonths = afterYears.plusMonths(months)
         var days = ChronoUnit.DAYS.between(afterMonths, end)
         var cursor = afterMonths.plusDays(days)
-        // A day added across a daylight-saving gap can land past the end: take one day back.
         while (days > 0 && cursor.isAfter(end)) { days--; cursor = afterMonths.plusDays(days) }
         val rest = Duration.between(cursor.toInstant(), end.toInstant()).coerceAtLeast(Duration.ZERO)
         // (Duration.toMinutesPart/toSecondsPart would need API 31; minSdk is 26.)
