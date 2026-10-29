@@ -19,6 +19,7 @@ import app.daysemble.core.time.AppClock
 import app.daysemble.core.time.Relative
 import app.daysemble.core.time.RelativeTime
 import app.daysemble.data.prefs.ClockFormat
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import java.time.DayOfWeek
 import java.time.Instant
@@ -136,14 +137,22 @@ fun relativeText(r: Relative): String = when (r) {
     else pluralStringResource(R.plurals.rel_in_days, r.days.toInt(), r.days.toInt())
 }
 
-/** Current instant, refreshed on each minute boundary while in composition. */
+/**
+ * Current instant, refreshed on each minute boundary while in composition and the lifecycle is at
+ * least STARTED. It stops in the background and reads the clock again on return, so a screen
+ * that comes back after hours shows the right "in 5 min" / countdown at once.
+ */
 @Composable
 fun rememberMinuteTicker(clock: AppClock = LocalAppClock.current): Instant {
     var now by remember { mutableStateOf(clock.now()) }
-    LaunchedEffect(clock) {
-        while (true) {
-            delay(RelativeTime.nextTickDelayMs(clock.now()) + 50)
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(clock, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
             now = clock.now()
+            while (true) {
+                delay(RelativeTime.nextTickDelayMs(clock.now()) + 50)
+                now = clock.now()
+            }
         }
     }
     return now

@@ -30,9 +30,10 @@ import androidx.compose.ui.unit.dp
  * | Role                      | Spec                                   | Where                                    |
  * |---------------------------|----------------------------------------|------------------------------------------|
  * | Feedback                  | [feedback] 100 ms, [indicator] spring  | press, selection pills, toggles, chips   |
- * | Primary tabs              | [tabExit] then [tabEnter], ~210 ms     | Today / Calendar / Tasks (TabHost)       |
- * | Push / pop (shared axis)  | [axisIn]/[axisOut], [long] ms, 30 dp   | details, Settings pages (NavMotion)      |
- * | Editors (vertical axis)   | [riseIn]/[sinkOut]                     | task and event editors (NavMotion)       |
+ * | Primary tabs              | [tabEnter] 160 ms over the old tab     | Today / Calendar / Tasks (TabHost)       |
+ * | Open / close a page       | [pushIn]/[pushOut] over a still page   | Search, Settings and its pages           |
+ * | Editors and event detail  | [riseIn]/[sinkOut] over a still page   | task/event editors, event detail         |
+ * | Theme change              | snapshot cross-fade, draw phase only   | DaysembleTheme                           |
  * | Content change in place   | [fadeThrough]                          | day summary, calendar view, quick add    |
  * | Expand / collapse         | [expandIn]/[collapseOut]               | completed tasks, subtasks, field errors  |
  * | Task completion           | `standard(medium)` (check, strike)     | TaskRow, DsCheck                         |
@@ -41,9 +42,10 @@ import androidx.compose.ui.unit.dp
  * | Onboarding entrance       | [entrance], played once                | OnboardingScreen                         |
  *
  * Rules that keep transitions clean:
- * - Two full-screen contents never fade over each other at the same time ("double exposure"):
- *   the outgoing side fades out quickly first, the incoming side fades in after it ([fadeThrough],
- *   shared axis). Movement is small (a few dp), never a full-width slide of a translucent page.
+ * - A screen-sized change never leaves a blank frame: the new tab or page arrives over the old
+ *   one, which stays still and fully drawn until it is covered (and, going back, the page
+ *   underneath is complete from the first frame). Only the arriving or leaving side moves, by a
+ *   few dp, never a full-width slide. Content swaps inside a screen use [fadeThrough].
  * - Nothing waits for an animation: state changes immediately and the animation follows it. All
  *   specs are interruptible (Animatable / Transition based) and resume from the current value.
  * - Animated values are read in the draw or layout phase where possible, so a running animation
@@ -75,20 +77,16 @@ data class DsMotion(val reduced: Boolean = false) {
     fun <T> indicator(): FiniteAnimationSpec<T> =
         if (reduced) tween(short, easing = Standard) else spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)
 
-    // ---- Primary tabs (fade through, see TabHost in DaysembleRoot) ----------------------------
+    // ---- Primary tabs (see TabHost in DaysembleRoot) --------------------------------------------
 
     /**
-     * Outgoing tab: fades from the first frame and is nearly gone by the time the new tab appears.
-     * (A fade-out on an accelerating curve stays almost opaque until its last frames, which showed
-     * both tabs at once.)
+     * Incoming tab: fades in over the outgoing one (which stays drawn until covered) on a curve that
+     * starts fast, so the new tab is mostly there within a few frames. No delay, so a tap shows a
+     * response on the next frame. Shift of [tabShift] in tab order hints at the direction.
      */
-    val tabExitMillis: Int get() = 70
-    /** Incoming tab: starts as the old one finishes, with a short shift of [tabShift] in tab order. */
-    val tabEnterMillis: Int get() = if (reduced) 120 else 170
-    val tabEnterDelay: Int get() = if (reduced) 0 else 40
+    val tabEnterMillis: Int get() = if (reduced) 0 else 160
     val tabShift get() = if (reduced) 0.dp else 8.dp
-    fun tabExit(): FiniteAnimationSpec<Float> = tween(tabExitMillis, easing = Standard)
-    fun tabEnter(): FiniteAnimationSpec<Float> = tween(tabEnterMillis, tabEnterDelay, EmphasizedDecelerate)
+    fun tabEnter(): FiniteAnimationSpec<Float> = tween(tabEnterMillis, easing = EmphasizedDecelerate)
 
     // ---- Content replaced inside a screen -------------------------------------------------------
 
@@ -122,47 +120,49 @@ data class DsMotion(val reduced: Boolean = false) {
         if (reduced) fadeOut(standard(short)) else fadeOut(tween(90, easing = EmphasizedAccelerate)) + shrinkVertically(standard(medium))
 
     // ---- Screen transitions (NavMotion) ---------------------------------------------------------
+    //
+    // A page opens over the one it came from and closes off it: the page underneath stays still and
+    // fully drawn throughout, so no frame is ever blank and nothing under the moving page moves. The
+    // same rule holds for the predictive back gesture, so the gesture and a tap on Back look alike.
 
-    /** Shared axis X, incoming: fades in after the outgoing page has mostly left, moving [axisDistance]. */
-    fun axisIn(fromEnd: Boolean, rtl: Boolean, density: Density): EnterTransition {
-        if (reduced) return fadeIn(tween(long, easing = Standard))
-        val d = with(density) { axisDistance.roundToPx() }
-        val sign = (if (fromEnd) 1 else -1) * (if (rtl) -1 else 1)
-        return fadeIn(tween(long - IN_DELAY, delayMillis = IN_DELAY, easing = EmphasizedDecelerate)) +
-            slideInHorizontally(tween(long, easing = EmphasizedDecelerate)) { sign * d }
+    /** A page arriving: slides [axisDistance] in from the end edge while fading in quickly. */
+    fun pushIn(rtl: Boolean, density: Density): EnterTransition {
+        if (reduced) return fadeIn(tween(short, easing = Standard))
+        val d = with(density) { axisDistance.roundToPx() } * if (rtl) -1 else 1
+        return fadeIn(tween(PAGE_FADE, easing = EmphasizedDecelerate)) +
+            slideInHorizontally(tween(long, easing = EmphasizedDecelerate)) { d }
     }
 
-    /** Shared axis X, outgoing: quick fade while drifting [axisDistance] away. */
-    fun axisOut(toStart: Boolean, rtl: Boolean, density: Density): ExitTransition {
-        if (reduced) return fadeOut(tween(OUT, easing = Standard))
-        val d = with(density) { axisDistance.roundToPx() }
-        val sign = (if (toStart) -1 else 1) * (if (rtl) -1 else 1)
-        return fadeOut(tween(OUT, easing = Standard)) +
-            slideOutHorizontally(tween(long, easing = EmphasizedDecelerate)) { sign * d }
+    /** A page leaving (Back): drifts [axisDistance] toward the end edge while fading out. */
+    fun pushOut(rtl: Boolean, density: Density): ExitTransition {
+        if (reduced) return fadeOut(tween(short, easing = Standard))
+        val d = with(density) { axisDistance.roundToPx() } * if (rtl) -1 else 1
+        return fadeOut(tween(PAGE_FADE, easing = Standard)) + slideOutHorizontally(tween(PAGE_OUT, easing = Standard)) { d }
     }
 
-    /** Editors rise in from just below; the page underneath fades out quickly ([axisOut] timing). */
+    /** Editors and the event detail rise in from just below. */
     fun riseIn(density: Density): EnterTransition {
-        if (reduced) return fadeIn(tween(long, easing = Standard))
+        if (reduced) return fadeIn(tween(short, easing = Standard))
         val d = with(density) { axisDistance.roundToPx() }
-        return fadeIn(tween(long - IN_DELAY, delayMillis = IN_DELAY, easing = EmphasizedDecelerate)) +
+        return fadeIn(tween(PAGE_FADE, easing = EmphasizedDecelerate)) +
             slideInVertically(tween(long, easing = EmphasizedDecelerate)) { d }
     }
 
     fun sinkOut(density: Density): ExitTransition {
-        if (reduced) return fadeOut(tween(OUT, easing = Standard))
+        if (reduced) return fadeOut(tween(short, easing = Standard))
         val d = with(density) { axisDistance.roundToPx() }
-        return fadeOut(tween(OUT, easing = Standard)) +
-            slideOutVertically(tween(long, easing = EmphasizedDecelerate)) { d }
+        return fadeOut(tween(PAGE_FADE, easing = Standard)) + slideOutVertically(tween(PAGE_OUT, easing = Standard)) { d }
     }
+
+    /**
+     * The page underneath while another one opens over it: unchanged and fully drawn until the
+     * new page has finished arriving (an alpha that stays 1, which keeps it in the transition).
+     */
+    fun holdUnderneath(): ExitTransition = fadeOut(tween(long), targetAlpha = 1f)
 
     /** One-off onboarding entrance: total length; groups are staggered by [entranceStagger]. */
     val entrance: Int get() = if (reduced) 0 else 420
     val entranceStagger: Int get() = 70
-
-    /** Fade timing shared by every "through" transition (screens, tabs, content). */
-    fun underlayOut(): ExitTransition = fadeOut(tween(OUT, easing = Standard))
-    fun underlayIn(): EnterTransition = fadeIn(tween(long - IN_DELAY, delayMillis = IN_DELAY, easing = EmphasizedDecelerate))
 
     companion object {
         /**
@@ -171,6 +171,10 @@ data class DsMotion(val reduced: Boolean = false) {
          */
         const val OUT = 90
         const val IN_DELAY = 60
+        /** Fade of a page opening or closing over a still page. */
+        const val PAGE_FADE = 150
+        /** Drift of a page closing. */
+        const val PAGE_OUT = 200
         val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
         val EmphasizedAccelerate = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
         val Standard = CubicBezierEasing(0.2f, 0f, 0f, 1f)

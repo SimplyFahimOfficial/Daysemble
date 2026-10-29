@@ -187,6 +187,29 @@ class FirstUseAndNavigationTest {
         gone("APP LOGO")
     }
 
+    /**
+     * Back works while a page is still opening. (Pages used to act on taps only once RESUMED, i.e.
+     * after the 300 ms open animation, so an early Back or a row tapped right away did nothing.)
+     */
+    @Test fun settings_backDuringItsOpeningAnimation_closesIt() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.mainClock.advanceTimeBy(64) // a few frames into the open animation
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        compose.onNode(hasContentDescription("Back") and hasClickAction()).performClick()
+        settle()
+        gone("Appearance")
+        tab("Today").assertIsSelected()
+        // And a row tapped right after a page opens opens its page.
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.mainClock.advanceTimeBy(64)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        compose.onNodeWithText("Appearance").performClick()
+        settle()
+        compose.onNodeWithText("APP LOGO").assertIsDisplayed()
+    }
+
     private fun monthCell(day: java.time.LocalDate) = compose.onNode(
         hasContentDescription(java.time.format.DateTimeFormatter.ofPattern("MMMM d,", java.util.Locale.US).format(day), substring = true) and
             SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab),

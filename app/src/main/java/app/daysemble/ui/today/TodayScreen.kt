@@ -108,7 +108,8 @@ import app.daysemble.ui.components.DashedDivider
 import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
 import app.daysemble.ui.components.DsChip
-import app.daysemble.ui.components.EventRow
+import app.daysemble.ui.components.AgendaEventCard
+import app.daysemble.ui.components.AgendaTaskCard
 import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.StateMessage
 import app.daysemble.ui.components.TaskRow
@@ -144,13 +145,14 @@ fun TodayRoute(
     val vm = daysembleViewModel { c, h -> TodayViewModel(c.events, c.tasks, c.settings, c.clock, c.timeContext, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()
+    val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     LaunchedEffect(now) { vm.onTick(now) }
     LaunchedEffect(state.date) { onFocusedDate(state.date) }
     TodayScreen(
         state = state, now = now, contentPadding = contentPadding,
         displayName = app.daysemble.ui.LocalAppSettings.current?.displayName,
         onSelectDate = vm::select, onToday = vm::goToToday,
-        onToggleTask = vm::setCompleted, onOpenEvent = onOpenEvent, onOpenTask = onOpenTask,
+        onToggleTask = { id, done -> vm.setCompleted(id, done) { r -> if (done) onCompleted(id, r) } }, onOpenEvent = onOpenEvent, onOpenTask = onOpenTask,
         onAddEvent = onAddEvent, onAddTask = onAddTask,
     )
 }
@@ -592,27 +594,25 @@ private fun AgendaPanel(
                 }
             }
             items(state.allDay, key = { it.key }) { item ->
-                Column(Modifier.then(itemMotion())) {
-                    EventRow(item.event, now, onClick = { onOpenEvent(item.event.eventId, item.event.occurrenceKey) })
-                    DashedDivider(Modifier.padding(horizontal = Space.gutter))
-                }
+                AgendaEventCard(
+                    item.event, now, onClick = { onOpenEvent(item.event.eventId, item.event.occurrenceKey) },
+                    modifier = Modifier.then(itemMotion()),
+                )
             }
             items(state.timeline, key = { it.key }) { item ->
-                Column(Modifier.then(itemMotion())) {
-                    when (item) {
-                        is TimelineItem.EventItem -> EventRow(
-                            item.event, now,
-                            onClick = { onOpenEvent(item.event.eventId, item.event.occurrenceKey) },
-                            showCountdown = item.event.stableKey == state.focusEventKey,
-                        )
-                        is TimelineItem.TaskItem -> TaskRow(
-                            item.task, now,
-                            onToggle = { onToggleTask(item.task.id, it) },
-                            onClick = { onOpenTask(item.task.id) },
-                            showDue = false,
-                        )
-                    }
-                    DashedDivider(Modifier.padding(horizontal = Space.gutter))
+                when (item) {
+                    is TimelineItem.EventItem -> AgendaEventCard(
+                        item.event, now,
+                        onClick = { onOpenEvent(item.event.eventId, item.event.occurrenceKey) },
+                        focused = item.event.stableKey == state.focusEventKey,
+                        modifier = Modifier.then(itemMotion()),
+                    )
+                    is TimelineItem.TaskItem -> AgendaTaskCard(
+                        item.task, now,
+                        onToggle = { onToggleTask(item.task.id, it) },
+                        onClick = { onOpenTask(item.task.id) },
+                        modifier = Modifier.then(itemMotion()),
+                    )
                 }
             }
             if (state.overdue.isNotEmpty()) {
@@ -620,7 +620,7 @@ private fun AgendaPanel(
                     SectionHeader(stringResource(R.string.section_overdue), Modifier.padding(top = Space.l).then(itemMotion()))
                 }
                 items(state.overdue, key = { "o:" + it.id }) { t ->
-                    TaskRow(t, now, onToggle = { onToggleTask(t.id, it) }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()))
+                    AgendaTaskCard(t, now, onToggle = { onToggleTask(t.id, it) }, onClick = { onOpenTask(t.id) }, showDate = true, modifier = Modifier.then(itemMotion()))
                 }
             }
             if (state.completed.isNotEmpty()) {

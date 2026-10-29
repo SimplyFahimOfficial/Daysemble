@@ -70,17 +70,32 @@ import java.time.DayOfWeek
 enum class SettingsPage { APPEARANCE, NOTIFICATIONS, ACCOUNTS, CONFLICTS, LISTS_CALENDARS, DATE_TIME, TASKS, DATA, ABOUT }
 
 @Composable
-private fun SettingsScaffold(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+private fun SettingsScaffold(title: String, onBack: () -> Unit, loaded: Boolean = true, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize().background(DsTheme.colors.background)) {
         DsTopBar(title, onBack)
-        Column(
-            Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(bottom = Space.x3),
-        ) { content() }
+        SettingsBody(loaded) { content() }
     }
+}
+
+/**
+ * The scrolling body of a Settings page, laid out only once [loaded] (its data from the database
+ * is there). Coming back to a page restores its scroll position, but a ScrollState is clamped to
+ * the content's height at its first layout, so laying out the still-empty page first threw the
+ * saved position away and every return started at the top. The state is created (and restored)
+ * either way, and the page is fading in while it loads, so nothing visible waits for it.
+ */
+@Composable
+internal fun androidx.compose.foundation.layout.ColumnScope.SettingsBody(loaded: Boolean, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    val scroll = rememberScrollState()
+    if (!loaded) return
+    Column(
+        Modifier
+            .weight(1f)
+            .verticalScroll(scroll)
+            .navigationBarsPadding()
+            .padding(bottom = Space.x3),
+        content = content,
+    )
 }
 
 @Composable
@@ -191,8 +206,9 @@ fun DateTimeSettingsRoute(onBack: () -> Unit) {
 fun TaskSettingsRoute(onBack: () -> Unit) {
     val (s, container) = rememberSettings()
     val scope = rememberCoroutineScope()
-    val lists by container.tasks.taskLists.collectAsStateWithLifecycle(emptyList())
-    SettingsScaffold(stringResource(R.string.settings_tasks), onBack) {
+    val loadedLists by container.tasks.taskLists.collectAsStateWithLifecycle(null)
+    val lists = loadedLists.orEmpty()
+    SettingsScaffold(stringResource(R.string.settings_tasks), onBack, loaded = loadedLists != null) {
         val settings = s ?: return@SettingsScaffold
         DsSwitchRow(
             stringResource(R.string.setting_show_completed_today), settings.showCompletedOnToday,

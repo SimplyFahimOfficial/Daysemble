@@ -2,7 +2,6 @@ package app.daysemble.ui.calendar
 
 import app.daysemble.ui.components.itemMotion
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,12 +48,11 @@ import app.daysemble.domain.model.EventOccurrence
 import app.daysemble.ui.components.DsChip
 import app.daysemble.ui.components.DsIconButton
 import app.daysemble.ui.components.DsSegmented
-import app.daysemble.ui.components.DashedDivider
 import app.daysemble.ui.components.DateDisc
-import app.daysemble.ui.components.EventRow
+import app.daysemble.ui.components.AgendaEventCard
+import app.daysemble.ui.components.AgendaTaskCard
 import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.StateMessage
-import app.daysemble.ui.components.TaskRow
 import app.daysemble.ui.components.eventColor
 import app.daysemble.ui.daysembleViewModel
 import app.daysemble.ui.format.Fmt
@@ -180,6 +178,7 @@ private fun MonthMode(
     onOpenTask: (String) -> Unit,
     onCreateAt: (LocalDate, Int?) -> Unit,
 ) {
+    val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     val p = LocalTimePrefs.current
     val base = YearMonth.from(state.today)
     val page = CENTER + ChronoUnit.MONTHS.between(base, YearMonth.from(state.selected)).toInt()
@@ -223,16 +222,13 @@ private fun MonthMode(
             }
         }
         items(evs, key = { "e" + it.stableKey }) { e ->
-            Column(Modifier.then(itemMotion())) {
-                EventRow(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showCountdown = state.selected == state.today)
-                DashedDivider(Modifier.padding(horizontal = Space.gutter))
-            }
+            AgendaEventCard(
+                e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) },
+                showCountdown = state.selected == state.today, modifier = Modifier.then(itemMotion()),
+            )
         }
         items(tasks, key = { "t" + it.id }) { t ->
-            Column(Modifier.then(itemMotion())) {
-                TaskRow(t, now, onToggle = { vm.setTaskCompleted(t.id, it) }, onClick = { onOpenTask(t.id) }, showDue = false)
-                DashedDivider(Modifier.padding(horizontal = Space.gutter))
-            }
+            AgendaTaskCard(t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()))
         }
     }
 }
@@ -273,7 +269,7 @@ private fun MonthCell(
     val c = DsTheme.colors
     val m = DsTheme.motion
     val p = LocalTimePrefs.current
-    val bg by animateColorAsState(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "cellBg")
+    val bg = app.daysemble.ui.components.animateStateColor(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "cellBg")
     val count = events.size + taskCount
     val a11y = Fmt.fullDate(d, p) + (if (isToday) ", " + stringResource(R.string.today_suffix) else "") + ", " + pluralStringResource(R.plurals.n_items, count, count)
     // The whole cell stays the touch target, but its press/focus feedback is drawn only on the date
@@ -341,8 +337,8 @@ private fun GridMode(
                     Row(Modifier.fillMaxWidth().padding(start = 52.dp)) {
                         days.forEach { d ->
                             val sel = d == state.selected
-                            val selBg by androidx.compose.animation.animateColorAsState(if (sel) c.inverse else Color.Transparent, DsTheme.motion.indicator(), label = "weekSel")
-                            val selFg by androidx.compose.animation.animateColorAsState(
+                            val selBg = app.daysemble.ui.components.animateStateColor(if (sel) c.inverse else Color.Transparent, DsTheme.motion.indicator(), label = "weekSel")
+                            val selFg = app.daysemble.ui.components.animateStateColor(
                                 if (sel) c.onInverse else if (d == state.today) c.accent else c.textPrimary, DsTheme.motion.indicator(), label = "weekSelText",
                             )
                             val interaction = remember { MutableInteractionSource() }
@@ -381,6 +377,7 @@ private fun AgendaMode(
     onOpenEvent: (String, String) -> Unit,
     onOpenTask: (String) -> Unit,
 ) {
+    val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     val p = LocalTimePrefs.current
     val days = (0 until CalendarViewModel.AGENDA_DAYS).map { state.selected.plusDays(it.toLong()) }
         .filter { state.byDate[it].orEmpty().isNotEmpty() || state.tasksByDate[it].orEmpty().isNotEmpty() }
@@ -397,10 +394,10 @@ private fun AgendaMode(
                 SectionHeader(dayLabel(d, state.today, p) + if (d == state.today || d == state.today.plusDays(1)) " · " + Fmt.mediumDate(d, p) else "", Modifier.padding(top = Space.m))
             }
             items(state.byDate[d].orEmpty(), key = { "e$d" + it.stableKey }) { e ->
-                EventRow(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showCountdown = d == state.today, modifier = Modifier.then(itemMotion()))
+                AgendaEventCard(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showCountdown = d == state.today, modifier = Modifier.then(itemMotion()))
             }
             items(state.tasksByDate[d].orEmpty(), key = { "t$d" + it.id }) { t ->
-                TaskRow(t, now, onToggle = { vm.setTaskCompleted(t.id, it) }, onClick = { onOpenTask(t.id) }, showDue = false, modifier = Modifier.then(itemMotion()))
+                AgendaTaskCard(t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()))
             }
         }
         item(key = "spacer") { Spacer(Modifier.height(Space.l)) }

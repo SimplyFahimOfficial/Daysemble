@@ -85,9 +85,11 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
     // Starts from the root's last status (if any) so the page body doesn't pop in after the transition.
     val status by statusFlow.collectAsStateWithLifecycle(initialValue = app.daysemble.ui.LocalSyncStatus.current?.value)
     val calsFlow = remember(c) { c.database.calendars().observeAll() }
-    val calendars by calsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val loadedCals by calsFlow.collectAsStateWithLifecycle(initialValue = null)
+    val calendars = loadedCals.orEmpty()
     val listsFlow = remember(c) { c.database.taskLists().observeAll() }
-    val lists by listsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val loadedLists by listsFlow.collectAsStateWithLifecycle(initialValue = null)
+    val lists = loadedLists.orEmpty()
     val scope = rememberCoroutineScope()
     var ui by remember { mutableStateOf<ConnectUi>(ConnectUi.Idle) }
     var confirmDisconnect by rememberSaveable { mutableStateOf(false) }
@@ -123,8 +125,8 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
     val colors = DsTheme.colors
     Column(Modifier.fillMaxSize().background(colors.background)) {
         DsTopBar(stringResource(R.string.settings_accounts), onBack)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = Space.x3)) {
-            val s = status ?: return@Column
+        SettingsBody(loaded = status != null && loadedCals != null && loadedLists != null) {
+            val s = status ?: return@SettingsBody
             if (!s.account.isConnected) {
                 NotConnected(ui, connect)
             } else {
@@ -304,12 +306,13 @@ private fun Callout(title: String, body: String, modifier: Modifier = Modifier) 
 fun ConflictLogRoute(onBack: () -> Unit) {
     val c = (LocalContext.current.applicationContext as DaysembleApp).container
     val flow = remember(c) { c.database.sync().observeConflicts() }
-    val items by flow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val loadedItems by flow.collectAsStateWithLifecycle(initialValue = null)
+    val items = loadedItems.orEmpty()
     val p = LocalTimePrefs.current
     val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxSize().background(DsTheme.colors.background)) {
         DsTopBar(stringResource(R.string.conflicts_title), onBack)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = Space.x3)) {
+        SettingsBody(loaded = loadedItems != null) {
             Hint(stringResource(R.string.conflicts_rule))
             if (items.isEmpty()) Hint(stringResource(R.string.conflicts_empty))
             items.forEach { e ->

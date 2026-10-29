@@ -1,5 +1,12 @@
 package app.daysemble.ui
 
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Rect
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -8,7 +15,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.EnterExitState
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -175,6 +181,14 @@ val LocalSyncStatus = staticCompositionLocalOf<State<SyncStatus?>?> { null }
  */
 val LocalTaskDeleted = staticCompositionLocalOf<(String) -> Unit> { {} }
 
+/**
+ * Call after a task was checked off in a list. For a repeating task it shows where the series went
+ * ("Done · next one Fri, Oct 30", or that the repeat has ended) with Undo, from the root scope like
+ * [LocalTaskDeleted]. Undo reopens the occurrence, which also removes the next one again if it
+ * hasn't been touched. One-off tasks stay in place, struck through, so they need no snackbar.
+ */
+val LocalTaskCompleted = staticCompositionLocalOf<(String, app.daysemble.data.repo.TaskRepository.Completion) -> Unit> { { _, _ -> } }
+
 internal enum class Tab(val icon: ImageVector, val label: Int) {
     TODAY(Icons.Rounded.WbSunny, R.string.tab_today),
     CALENDAR(Icons.Rounded.CalendarMonth, R.string.tab_calendar),
@@ -218,11 +232,31 @@ fun DaysembleRoot(
             }
         }
     }
+    val nextMsg = stringResource(R.string.task_done_next)
+    val endedMsg = stringResource(R.string.task_done_series_ended)
+    val doneMsg = stringResource(R.string.task_done)
+    val onTaskCompleted: (String, app.daysemble.data.repo.TaskRepository.Completion) -> Unit = remember(container, nextMsg, endedMsg, doneMsg, undoLabel, prefs) {
+        { id, r ->
+            if (r.repeating) rootScope.launch {
+                val today = container.clock.today()
+                // "The last one" only when the series really has nothing left; an open next
+                // occurrence without a due date gets a plain "Done".
+                val msg = when {
+                    r.nextDue != null -> nextMsg.format(app.daysemble.ui.format.Fmt.smartDate(r.nextDue, today, prefs))
+                    r.seriesEnded -> endedMsg
+                    else -> doneMsg
+                }
+                val res = snackbar.showSnackbar(msg, undoLabel, duration = SnackbarDuration.Short)
+                if (res == SnackbarResult.ActionPerformed) container.tasks.setCompleted(id, false)
+            }
+        }
+    }
     CompositionLocalProvider(
         LocalTimePrefs provides prefs,
         LocalAppClock provides container.clock,
         LocalSnackbar provides snackbar,
         LocalTaskDeleted provides onTaskDeleted,
+        LocalTaskCompleted provides onTaskCompleted,
         LocalAppSettings provides settings,
         LocalSyncStatus provides syncStatus,
     ) {
@@ -348,10 +382,13 @@ private fun AppContent(
 
         LaunchedEffect(open) {
             val r = open ?: return@LaunchedEffect
-            when (r.type) {
-                app.daysemble.data.db.OwnerType.TASK -> nav.navigate(TaskEditorRoute(taskId = r.id))
-                app.daysemble.data.db.OwnerType.EVENT -> nav.navigate(EventDetailRoute(r.id, r.occurrenceKey))
+            val route: Any = when (r.type) {
+                app.daysemble.data.db.OwnerType.TASK -> TaskEditorRoute(taskId = r.id)
+                app.daysemble.data.db.OwnerType.EVENT -> EventDetailRoute(r.id, r.occurrenceKey)
             }
+            // Tapping the notification of the item that's already open (or tapping it twice) doesn't
+            // stack a second copy of the same page.
+            if (!nav.isShowing(route)) nav.navigate(route)
             onOpenHandled()
         }
         LaunchedEffect(openAccountsAfterOnboarding) {
@@ -386,9 +423,9 @@ private fun AppContent(
             initialDate = addDate?.let(LocalDate::ofEpochDay),
             onDismiss = { showAdd = false },
             onMoreEventOptions = { pre ->
-                nav.navigate(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
+                nav.openFromMain(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
             },
-            onMoreTaskOptions = { d -> nav.navigate(TaskEditorRoute(dueEpochDay = d?.toEpochDay())) },
+            onMoreTaskOptions = { d -> nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay())) },
         )
     }
 }
@@ -402,22 +439,34 @@ private fun NavHostController.openFromMain(route: Any) {
     if (currentBackStackEntry?.destination.isMain()) navigate(route)
 }
 
-/**
- * Opens [route] from page [from] only while [from] is the screen the user is looking at. A second
- * tap that lands while the first transition is still running (the source is no longer RESUMED) is
- * ignored.
- */
-private fun NavHostController.openFrom(from: NavBackStackEntry, route: Any) {
-    if (from.lifecycle.currentState == Lifecycle.State.RESUMED) navigate(route)
+/** Whether the top page is already [route] (same destination and arguments). */
+private fun NavHostController.isShowing(route: Any): Boolean {
+    val top = currentBackStackEntry ?: return false
+    return when (route) {
+        is TaskEditorRoute -> top.destination.hasRoute<TaskEditorRoute>() && top.toRoute<TaskEditorRoute>() == route
+        is EventDetailRoute -> top.destination.hasRoute<EventDetailRoute>() && top.toRoute<EventDetailRoute>() == route
+        else -> false
+    }
 }
 
 /**
- * Back from a user tap (app-bar arrow, Cancel): pops [from] only while it is RESUMED and on top. A
- * second quick tap lands while the first pop is animating, often on the page underneath, which
- * isn't RESUMED yet, so it is ignored instead of popping Settings after Appearance.
+ * Opens [route] from page [from] only while [from] is the top of the back stack. A second tap
+ * after the first one already opened a page is ignored, so double taps can't stack two pages.
+ * It doesn't wait for [from]'s own opening animation: a tap is acted on at once.
+ */
+private fun NavHostController.openFrom(from: NavBackStackEntry, route: Any) {
+    if (currentBackStackEntry?.id == from.id) navigate(route)
+}
+
+/**
+ * Back from a user tap (app-bar arrow, Cancel): pops [from] only while it is the top of the back
+ * stack. A second quick tap lands while the first pop is animating, on the page that is leaving
+ * (it is drawn on top and takes all touches), and is ignored instead of popping the page under it.
+ * Like [openFrom] it works during the page's opening animation too (it used to wait for RESUMED,
+ * so Back did nothing for the first 300 ms after a page opened).
  */
 private fun NavHostController.backFrom(from: NavBackStackEntry) {
-    if (from.lifecycle.currentState == Lifecycle.State.RESUMED) closeFrom(from)
+    closeFrom(from)
 }
 
 /**
@@ -460,10 +509,10 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
         navController = nav,
         startDestination = MainRoute,
         enterTransition = { with(NavMotion) { enter(m, rtl, density) } },
-        exitTransition = { with(NavMotion) { exit(m, rtl, density) } },
-        popEnterTransition = { with(NavMotion) { popEnter(m, rtl, density) } },
+        exitTransition = { with(NavMotion) { exit(m) } },
+        popEnterTransition = { with(NavMotion) { popEnter() } },
         popExitTransition = { with(NavMotion) { popExit(m, rtl, density) } },
-        predictivePopEnterTransition = { NavMotion.predictivePopEnter(m, rtl, density) },
+        predictivePopEnterTransition = { NavMotion.predictivePopEnter() },
         predictivePopExitTransition = { edge -> NavMotion.predictivePopExit(m, density, edge) },
     ) {
         composable<MainRoute> {
@@ -604,44 +653,50 @@ internal fun MainHeader(
 
 /**
  * Hosts the three tabs. Each tab is composed once and then kept (with its ViewModel, scroll
- * position and in-progress UI state); switching only changes which one is drawn. The tabs not yet
- * opened are composed in the background shortly after launch, so even the first switch has nothing
- * to build. This replaces an AnimatedContent that disposed the old tab and composed the new one from
- * nothing in the first frame of every switch, which was the main source of tab jank.
+ * position and in-progress UI state); switching only changes which one is drawn on top. Tabs not
+ * opened yet are composed in the background, one at a time, when the main thread is idle (never
+ * during a scroll, a transition or the splash), so even the first switch has nothing to build.
  *
- * The switch is a fade through ([DsMotion.tabExit], [DsMotion.tabEnter]): the old tab fades out in
- * 90 ms, the new one fades in right after with a small shift in tab order. Values are animated with
- * one Animatable per tab and read only in the draw phase, so nothing recomposes per frame, and a
- * switch that interrupts another simply continues from the current values.
+ * Switching: the new tab is placed on top and fades in over the old one, which stays fully drawn
+ * underneath until it is covered and is then hidden. So no frame is ever blank. (The previous
+ * fade-through faded the old tab out before the new one came in, which left one or two nearly
+ * empty frames on every switch, seen as a flash.) The new tab comes in on a fast-starting curve
+ * with a small shift in tab order. Alpha and shift are read only in the draw phase, so nothing
+ * recomposes per frame; a switch that interrupts another simply continues from the current values.
  */
 @Composable
 private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab) -> Unit) {
     val m = DsTheme.motion
+    val c = DsTheme.colors
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val holder = rememberSaveableStateHolder()
     var visited by rememberSaveable { mutableStateOf(listOf(current.name)) }
     androidx.compose.runtime.SideEffect { if (current.name !in visited) visited = visited + current.name }
     LaunchedEffect(Unit) {
-        // After launch work and the first frames, one tab at a time so no single frame does it all.
-        delay(700)
         Tab.entries.forEach { t ->
-            if (t.name !in visited) { visited = visited + t.name; delay(250) }
+            if (t.name in visited) return@forEach
+            // Wait for a moment with nothing else to do (no frame, input or animation queued).
+            delay(300)
+            awaitMainThreadIdle(timeoutMs = 3_000)
+            if (t.name !in visited) visited = visited + t.name
         }
     }
     val composed = Tab.entries.filter { it.name in visited || it == current }
 
     val alpha = remember { Tab.entries.associateWith { Animatable(if (it == current) 1f else 0f) } }
-    val drawn = remember { Tab.entries.associateWith { t -> derivedStateOf { alpha.getValue(t).value > 0f } } }
+    // Tabs being drawn, bottom to top. Usually just the current one; during a switch the one being
+    // covered is under it.
+    var stack by remember { mutableStateOf(listOf(current)) }
     var direction by remember { mutableIntStateOf(0) }
-    var shown by remember { mutableStateOf(current) }
     LaunchedEffect(current) {
-        if (shown == current) return@LaunchedEffect
-        direction = Integer.signum(current.ordinal - shown.ordinal)
-        shown = current
-        Tab.entries.forEach { t -> if (t != current) launch { alpha.getValue(t).animateTo(0f, m.tabExit()) } }
+        if (stack.last() == current) return@LaunchedEffect
+        direction = Integer.signum(current.ordinal - stack.last().ordinal)
+        stack = stack.filter { it != current } + current
         val incoming = alpha.getValue(current)
-        // Coming back to a tab that is still fading out: continue from there without the delay.
-        launch { incoming.animateTo(1f, if (incoming.value > 0.2f) m.enter(m.tabEnterMillis) else m.tabEnter()) }
+        if (m.reduced) incoming.snapTo(1f) else incoming.animateTo(1f, m.tabEnter())
+        // Covered completely: the others are hidden (and unplaced) until they are shown again.
+        Tab.entries.forEach { t -> if (t != current) alpha.getValue(t).snapTo(0f) }
+        stack = listOf(current)
     }
     val currentTab by rememberUpdatedState(current)
     val shift = with(LocalDensity.current) { m.tabShift.toPx() }
@@ -668,6 +723,8 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                                 val dir = if (rtl) -direction else direction
                                 translationX = if (t == currentTab) dir * shift * (1f - a) else 0f
                             }
+                            // Opaque, so the tab being covered never shows through the finished one.
+                            .background(c.background)
                             .then(if (t != current) Modifier.clearAndSetSemantics { } else Modifier)
                             .onFocusChanged { tabHasFocus[t] = it.hasFocus }
                             .focusProperties { onEnter = { if (t != currentTab) cancelFocusChange() } }
@@ -680,13 +737,27 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
         val w = constraints.maxWidth
         val h = constraints.maxHeight
         val child = Constraints.fixed(w, h)
-        // Every composed tab is measured (so a hidden tab is laid out and ready), only visible ones are placed.
-        val placeables = measurables.map { (it.layoutId as Tab) to it.measure(child) }
+        // Every composed tab is measured (so a hidden tab is laid out and ready), only drawn ones are placed.
+        val placeables = measurables.associate { (it.layoutId as Tab) to it.measure(child) }
         layout(w, h) {
-            placeables.forEach { (t, p) ->
-                val top = t == currentTab
-                if (top || drawn.getValue(t).value) p.place(0, 0, zIndex = if (top) 1f else 0f)
-            }
+            // The current tab is always drawn, on top (also in the frame before its switch starts).
+            val order = stack.filter { it != currentTab } + currentTab
+            order.forEachIndexed { z, t -> placeables[t]?.place(0, 0, zIndex = z.toFloat()) }
+        }
+    }
+}
+
+/**
+ * Suspends until the main thread has nothing queued (no frame, input or animation pending), or
+ * [timeoutMs] passes. Used to do deferrable composition work where it can't delay a frame.
+ */
+private suspend fun awaitMainThreadIdle(timeoutMs: Long) {
+    kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            val queue = android.os.Looper.getMainLooper().queue
+            val handler = android.os.MessageQueue.IdleHandler { if (cont.isActive) cont.resumeWith(Result.success(Unit)); false }
+            queue.addIdleHandler(handler)
+            cont.invokeOnCancellation { queue.removeIdleHandler(handler) }
         }
     }
 }
@@ -704,11 +775,22 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        // One selection pill that glides between tabs, so the bar shows where you came from and where
-        // you went. Read in the draw phase only. With reduced motion it moves without the glide.
+        // One selection pill that glides between tabs. The labels are drawn twice, each copy clipped to
+        // one side of the pill's edge: dark outside the pill, light inside it. So a label's colour is
+        // always the one that reads on what's under it, at every frame of the glide. (Animating each
+        // label's own colour instead turned the target white on the white bar before the pill got
+        // there, and left the tab the pill passed over dark on black.) Read in the draw phase only.
         val index by animateFloatAsState(current.ordinal.toFloat(), m.indicator(), label = "tabIndicator")
         val pill = c.inverse
-        Row(
+        val pillPath = remember { Path() }
+        fun DrawScope.pillPath(): Path {
+            val w = size.width / Tab.entries.size
+            val x = if (layoutDirection == LayoutDirection.Rtl) size.width - w * (index + 1) else w * index
+            pillPath.reset()
+            pillPath.addRoundRect(RoundRect(Rect(Offset(x, 0f), Size(w, size.height)), CornerRadius(size.height / 2)))
+            return pillPath
+        }
+        Box(
             Modifier
                 .weight(1f, fill = false)
                 .heightIn(min = Sizes.bottomBar - 8.dp)
@@ -718,15 +800,28 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
                 .background(c.surfaceRaised)
                 .border(Sizes.hairline, c.outline, Radii.pill)
                 .padding(4.dp)
-                .drawBehind {
-                    val w = size.width / Tab.entries.size
-                    val x = if (layoutDirection == LayoutDirection.Rtl) size.width - w * (index + 1) else w * index
-                    drawRoundRect(pill, topLeft = Offset(x, 0f), size = Size(w, size.height), cornerRadius = CornerRadius(size.height / 2))
-                }
-                .selectableGroup(),
-            verticalAlignment = Alignment.CenterVertically,
+                .drawBehind { drawPath(pillPath(), pill) },
         ) {
-            Tab.entries.forEach { t -> TabItem(t, t == current, { onSelect(t) }, Modifier.weight(1f)) }
+            Row(
+                Modifier
+                    .selectableGroup()
+                    .drawWithContent { clipPath(pillPath(), ClipOp.Difference) { this@drawWithContent.drawContent() } },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Tab.entries.forEach { t ->
+                    TabItem(t, t == current, { onSelect(t) }, c.textSecondary, Modifier.weight(1f))
+                }
+            }
+            // The light copy: drawing only (no input, not read out).
+            Row(
+                Modifier
+                    .matchParentSize()
+                    .clearAndSetSemantics { }
+                    .drawWithContent { clipPath(pillPath()) { this@drawWithContent.drawContent() } },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Tab.entries.forEach { t -> TabLabel(t, c.onInverse, Modifier.weight(1f)) }
+            }
         }
         DsFab(
             Icons.Rounded.Add, stringResource(R.string.cd_add), onAdd,
@@ -736,23 +831,26 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
 }
 
 @Composable
-private fun TabItem(tab: Tab, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val c = DsTheme.colors
-    val m = DsTheme.motion
-    // Colour follows the pill; the label and icon never move or resize.
-    val fg by animateColorAsState(if (selected) c.onInverse else c.textSecondary, m.indicator(), label = "tabFg")
+private fun TabItem(tab: Tab, selected: Boolean, onClick: () -> Unit, color: Color, modifier: Modifier = Modifier) {
+    TabLabel(
+        tab, color,
+        modifier.clip(Radii.pill).selectable(selected = selected, role = Role.Tab, onClick = onClick),
+    )
+}
+
+/** Icon and label of a tab; they never move or resize. */
+@Composable
+private fun TabLabel(tab: Tab, color: Color, modifier: Modifier = Modifier) {
     Column(
         modifier
             .heightIn(min = Sizes.bottomBar - 16.dp)
             .widthIn(min = 64.dp)
-            .clip(Radii.pill)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = Space.m),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(tab.icon, null, tint = fg, modifier = Modifier.size(20.dp))
-        Text(stringResource(tab.label), style = DsTheme.type.caps, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(tab.icon, null, tint = color, modifier = Modifier.size(20.dp))
+        Text(stringResource(tab.label), style = DsTheme.type.caps, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

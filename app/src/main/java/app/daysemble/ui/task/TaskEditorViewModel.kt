@@ -9,6 +9,7 @@ import app.daysemble.domain.model.Priority
 import app.daysemble.domain.model.Task
 import app.daysemble.domain.model.TaskDraft
 import app.daysemble.domain.model.TaskList
+import app.daysemble.domain.model.SeriesScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,20 +33,35 @@ data class TaskForm(
     val dueMinutes: Int? = null,
     val priority: Int = 0,
     val reminders: List<Int> = emptyList(),
+    val repeat: TaskRepeatForm = TaskRepeatForm(),
+    val countdown: Boolean = false,
 ) {
     val dueDate: LocalDate? get() = dueEpochDay?.let(LocalDate::ofEpochDay)
     val dueTime: LocalTime? get() = dueMinutes?.let { LocalTime.of(it / 60, it % 60) }
+
+    /** The deadline a countdown counts to: the due time, or the end of the due date (as for "overdue"). */
+    fun deadline(zone: java.time.ZoneId): java.time.Instant? = dueDate?.let { d ->
+        dueTime?.let { java.time.LocalDateTime.of(d, it).atZone(zone).toInstant() } ?: d.plusDays(1).atStartOfDay(zone).toInstant()
+    }
+
+    /** A new due date; a weekly repeat on the old weekday follows it. Repeating and the countdown need a date. */
+    fun withDue(epochDay: Long?): TaskForm {
+        val moved = copy(dueEpochDay = epochDay, dueMinutes = if (epochDay == null) null else dueMinutes, repeat = repeat.followDue(dueDate, epochDay?.let(LocalDate::ofEpochDay)))
+        return if (epochDay == null) moved.copy(repeat = TaskRepeatForm(), countdown = false) else moved
+    }
 
     fun toDraft(parentId: String?) = TaskDraft(
         title = title, notes = notes, listId = listId, parentId = parentId,
         dueDate = dueDate, dueTime = if (dueDate == null) null else dueTime,
         priority = Priority.of(priority), reminderMinutesBefore = reminders,
+        repeat = repeat.toRRule(dueDate), countdown = countdown && dueDate != null,
     )
 
     companion object {
         fun from(t: Task, reminders: List<Int>) = TaskForm(
             title = t.title, notes = t.notes, listId = t.listId, dueEpochDay = t.dueDate?.toEpochDay(),
             dueMinutes = t.dueTime?.let { it.hour * 60 + it.minute }, priority = t.priority.level, reminders = reminders,
+            repeat = TaskRepeatForm.from(t.repeat), countdown = t.countdownEnabled,
         )
     }
 }
@@ -61,10 +77,25 @@ data class TaskEditorUiState(
     val showTitleError: Boolean = false,
     val isMissing: Boolean = false,
     val isLoading: Boolean = true,
+    val isSubtask: Boolean = false,
 ) {
     val isDirty: Boolean get() = if (isNew) form.copy(listId = null) != TaskForm(dueEpochDay = form.dueEpochDay) || form.title.isNotBlank()
         else original != null && form != original
     val isGoogle: Boolean get() = task?.isGoogle ?: lists.firstOrNull { it.id == form.listId }?.isGoogle ?: false
+    /** The list the task will be in after saving is a Google Tasks list (which can't store repeat rules). */
+    val inGoogleListAfterSave: Boolean get() = lists.firstOrNull { it.id == form.listId }?.isGoogle ?: isGoogle
+    /** An occurrence of a repeating task: deleting asks which occurrences it applies to. */
+    val isRecurring: Boolean get() = task?.isRecurring == true
+    /**
+     * A completed occurrence of a repeating task: history. Saving changes only it, and its repeat
+     * can't be edited from here (that's done on the current occurrence).
+     */
+    val isPastOccurrence: Boolean get() = isRecurring && task?.isCompleted == true
+    /**
+     * The repeat rule itself changed: "only this occurrence" can't apply then. Moving the date alone
+     * isn't a rule change, even though a one-day weekly repeat follows the new weekday in the form.
+     */
+    val repeatChanged: Boolean get() = original != null && form.repeat != original.repeat.followDue(original.dueDate, form.dueDate)
 }
 
 sealed interface EditorEvent {
@@ -115,7 +146,7 @@ class TaskEditorViewModel(
         TaskEditorUiState(
             isNew = taskId == null, form = f, original = o, task = task, subtasks = subs, lists = lists,
             showTitleError = err, isMissing = taskId != null && task == null && o != null,
-            isLoading = taskId != null && o == null,
+            isLoading = taskId != null && o == null, isSubtask = parentId != null || task?.parentId != null,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TaskEditorUiState(taskId == null, form.value, original.value, null))
 
@@ -126,16 +157,26 @@ class TaskEditorViewModel(
 
     private var saving = false
 
-    fun save() = viewModelScope.launch {
+    /** True when saving needs a scope choice first (see [save]). */
+    fun needsScope(): Boolean = state.value.let { it.isRecurring && !it.isPastOccurrence && it.isDirty && it.form.title.isNotBlank() }
+
+    fun save(scope: SeriesScope = SeriesScope.THIS) = viewModelScope.launch {
         if (saving) return@launch // repeated taps must not create duplicates
         val f = form.value
         if (f.title.isBlank()) { titleError.value = true; return@launch }
         saving = true
         if (taskId == null) repo.create(f.toDraft(parentId), f.listId ?: defaultListId())
         else {
-            repo.update(taskId, f.toDraft(null))
-            val newList = f.listId
-            if (newList != null && newList != original.value?.listId) repo.moveToList(taskId, newList)
+            // The repository only lets tasks in on-device lists repeat. Into a list on this device:
+            // move first, so a task from a Google list can start repeating in the same save. Into a
+            // Google list: save first, so a repeat turned off here has ended before the move.
+            val newList = f.listId?.takeIf { it != original.value?.listId }
+            val toGoogle = newList != null && state.value.lists.firstOrNull { it.id == newList }?.isGoogle == true
+            // The move follows the chosen scope like the other changes: "this occurrence" leaves the
+            // series (and so the next occurrences) in its list.
+            if (newList != null && !toGoogle) repo.moveToList(taskId, newList, scope)
+            repo.update(taskId, f.toDraft(null), scope)
+            if (newList != null && toGoogle) repo.moveToList(taskId, newList, scope)
         }
         original.value = form.value
         persist()
@@ -143,13 +184,14 @@ class TaskEditorViewModel(
         // `saving` stays true: the screen closes after a successful save.
     }
 
-    fun toggleCompleted() = viewModelScope.launch {
+    fun toggleCompleted(onResult: (String, TaskRepository.Completion) -> Unit = { _, _ -> }) = viewModelScope.launch {
         val t = state.value.task ?: return@launch
-        repo.setCompleted(t.id, !t.isCompleted)
+        val done = !t.isCompleted
+        repo.setCompleted(t.id, done)?.let { if (done) onResult(t.id, it) }
     }
 
-    fun delete() = viewModelScope.launch {
-        taskId?.let { repo.delete(it) }
+    fun delete(scope: SeriesScope = SeriesScope.THIS) = viewModelScope.launch {
+        taskId?.let { repo.delete(it, scope) }
         events.value = EditorEvent.Deleted
     }
 

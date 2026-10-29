@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -23,12 +24,17 @@ import app.daysemble.R
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Space
 
-/** Flat top bar for secondary screens: back, title, actions. No elevation or tint change on scroll. */
+/**
+ * Flat top bar for secondary screens: back, title, actions. No elevation or tint change on scroll.
+ * [close] shows a close (X) instead of the back arrow, for screens that rise over the page they
+ * came from rather than sliding in after it.
+ */
 @Composable
 fun DsTopBar(
     title: String,
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    close: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
@@ -39,7 +45,9 @@ fun DsTopBar(
             .padding(horizontal = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (onBack != null) {
+        if (onBack != null && close) {
+            DsIconButton(Icons.Rounded.Close, stringResource(R.string.action_close), onBack)
+        } else if (onBack != null) {
             DsIconButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.cd_back), onBack)
         } else {
             Spacer(Modifier.width(Space.l))
