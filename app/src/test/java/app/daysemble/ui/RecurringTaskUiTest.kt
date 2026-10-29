@@ -22,6 +22,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
@@ -197,7 +198,9 @@ class RecurringTaskUiTest {
         reveal("Doesn’t repeat")
         compose.onNodeWithText("Doesn’t repeat").performClick(); settle()
         reveal("Google")
-        compose.onNodeWithText("Google").performClick(); settle()
+        // By semantics: the editor grew (Time needed), and the chip can sit at the very bottom edge,
+        // where a touch at its centre would land outside the viewport.
+        compose.onNodeWithText("Google").performSemanticsAction(SemanticsActions.OnClick); settle()
         compose.onNodeWithText("Save").performClick(); settle()
         compose.onNodeWithText("This and future occurrences").performClick()
         repeat(20) { settle() }

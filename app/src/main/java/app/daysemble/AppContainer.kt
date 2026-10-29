@@ -60,6 +60,8 @@ class AppContainer(context: Context) {
 
     val events: EventRepository by lazy { EventRepository(database, outbox, clock, changes) }
 
+    val sleep: app.daysemble.data.repo.SleepRepository by lazy { app.daysemble.data.repo.SleepRepository(database, clock) }
+
     val reminders: ReminderScheduler by lazy {
         ReminderScheduler(database, settings, AndroidAlarmGateway(appContext), clock) { ReminderScheduler.notificationsAllowed(appContext) }
     }

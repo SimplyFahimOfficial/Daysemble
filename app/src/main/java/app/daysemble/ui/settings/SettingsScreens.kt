@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Notifications
@@ -67,7 +68,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 
-enum class SettingsPage { APPEARANCE, NOTIFICATIONS, ACCOUNTS, CONFLICTS, LISTS_CALENDARS, DATE_TIME, TASKS, DATA, ABOUT }
+enum class SettingsPage { APPEARANCE, NOTIFICATIONS, ACCOUNTS, CONFLICTS, LISTS_CALENDARS, DATE_TIME, TASKS, DATA, ABOUT, SCHEDULE }
 
 @Composable
 private fun SettingsScaffold(title: String, onBack: () -> Unit, loaded: Boolean = true, content: @Composable () -> Unit) {
@@ -130,6 +131,12 @@ fun SettingsHomeRoute(onBack: () -> Unit, onOpen: (SettingsPage) -> Unit) {
             stringResource(R.string.settings_your_name),
             subtitle = s?.displayName ?: stringResource(R.string.settings_your_name_unset),
             icon = Icons.Rounded.Person, onClick = { editName = true }, trailing = chevron,
+        )
+        DsRow(
+            stringResource(R.string.settings_schedule),
+            subtitle = s?.schedule?.default?.let { d -> stringResource(R.string.time_range, Fmt.time(d.wake, LocalTimePrefs.current), Fmt.time(d.bed, LocalTimePrefs.current)) }
+                ?: stringResource(R.string.settings_schedule_sub),
+            icon = androidx.compose.material.icons.Icons.Rounded.Bedtime, onClick = { onOpen(SettingsPage.SCHEDULE) }, trailing = chevron,
         )
         DsRow(stringResource(R.string.settings_appearance), subtitle = stringResource(R.string.settings_appearance_sub), icon = Icons.Rounded.Palette, onClick = { onOpen(SettingsPage.APPEARANCE) }, trailing = chevron)
         DsRow(stringResource(R.string.settings_notifications), subtitle = stringResource(R.string.settings_notifications_sub), icon = Icons.Rounded.Notifications, onClick = { onOpen(SettingsPage.NOTIFICATIONS) }, trailing = chevron)

@@ -36,6 +36,7 @@ class TaskRepository(
     private val tasks = db.tasks()
     private val lists = db.taskLists()
     private val series = db.taskSeries()
+    private val skips = db.skips()
 
     val taskLists: Flow<List<TaskList>> = lists.observeAll().map { all -> all.filter { it.isSyncEnabled || it.kind == SourceKind.LOCAL }.map { it.toDomain() } }
 
@@ -133,6 +134,7 @@ class TaskRepository(
                     syncState = if (google) SyncState.PENDING_CREATE else SyncState.LOCAL,
                     countdownEnabled = draft.countdown && draft.dueDate != null,
                     seriesId = seriesId, occurrenceDate = if (seriesId != null) draft.dueDate?.toEpochDay() else null,
+                    durationMinutes = draft.durationMinutes?.takeIf { it > 0 },
                 ),
             )
             saveReminders(id, draft)
@@ -164,6 +166,7 @@ class TaskRepository(
                     title = draft.title.trim(), notes = draft.notes.trim(),
                     dueDate = draft.dueDate?.toEpochDay(), dueTimeMinutes = draft.dueTime?.toMinutes(),
                     priority = draft.priority.level, countdownEnabled = draft.countdown && draft.dueDate != null,
+                    durationMinutes = draft.durationMinutes?.takeIf { it > 0 },
                 )
             } ?: return@withTransaction
             saveReminders(id, draft)
@@ -240,6 +243,7 @@ class TaskRepository(
         val now = clock.now().toEpochMilli()
         var changed: List<String> = emptyList()
         var nextDue: LocalDate? = null
+        var nextId: String? = null
         var repeating = false
         var seriesEnded = false
         val google = db.withTransaction {
@@ -256,14 +260,16 @@ class TaskRepository(
                     // nothing was created but the series hasn't ended.
                     val open = tasks.inSeries(s.id).filter { it.id != id && !it.isDeleted && !it.isCompleted }
                     seriesEnded = open.isEmpty()
-                    nextDue = open.mapNotNull { it.dueDate }.minOrNull()?.let(LocalDate::ofEpochDay)
+                    val next = open.filter { it.dueDate != null }.minByOrNull { it.dueDate!! }
+                    nextDue = next?.dueDate?.let(LocalDate::ofEpochDay)
+                    nextId = next?.id
                 }
             }
             g
         } ?: return null
         notify(id, google)
         changed.forEach(listener::onTaskChanged)
-        return Completion(repeating, nextDue, seriesEnded)
+        return Completion(repeating, nextDue, seriesEnded, nextId)
     }
 
     /**
@@ -272,12 +278,29 @@ class TaskRepository(
      * created it or it was already open. [seriesEnded]: completing it left the series with no open
      * occurrence (its COUNT or UNTIL is reached), so this was the last one.
      */
-    data class Completion(val repeating: Boolean, val nextDue: LocalDate?, val seriesEnded: Boolean = false)
+    data class Completion(val repeating: Boolean, val nextDue: LocalDate?, val seriesEnded: Boolean = false, val nextId: String? = null)
 
     suspend fun setPriority(id: String, priority: Priority) {
         // Priority is local-only for Google tasks, so no push is needed.
         val row = tasks.get(id) ?: return
         tasks.upsert(row.copy(priority = priority.level, updatedAt = clock.now().toEpochMilli()))
+        listener.onTaskChanged(id)
+    }
+
+    /**
+     * Turns the countdown of task [id] on or off (it needs a due date). For the open occurrence of a
+     * repeating task the series template follows, so the next occurrences keep the choice; completed
+     * occurrences are left as they were. Local only: no sync push.
+     */
+    suspend fun setCountdown(id: String, on: Boolean) {
+        db.withTransaction {
+            val row = tasks.get(id)?.takeIf { !it.isDeleted } ?: return@withTransaction
+            val value = on && row.dueDate != null
+            tasks.upsert(row.copy(countdownEnabled = value, updatedAt = clock.now().toEpochMilli()))
+            if (!row.isCompleted) row.seriesId?.let { series.get(it) }?.takeIf { it.endedAt == null }?.let {
+                series.upsert(it.copy(countdownEnabled = value, updatedAt = clock.now().toEpochMilli()))
+            }
+        }
         listener.onTaskChanged(id)
     }
 
@@ -358,6 +381,11 @@ class TaskRepository(
         // the series from a completed occurrence takes the current one with it).
         val deleted = mutableListOf<String>()
         db.withTransaction {
+            // Deleting one occurrence on its own is a skip: its date stays in the history as skipped
+            // (not missed) after the deleted row itself is purged.
+            if (scope == SeriesScope.THIS && !google && row.occurrenceDate != null && row.seriesId != null && series.get(row.seriesId) != null) {
+                skips.insert(app.daysemble.data.db.TaskOccurrenceSkipEntity(row.seriesId, row.occurrenceDate, now))
+            }
             if (s != null) when (scope) {
                 SeriesScope.THIS -> if (!row.isCompleted) generated = generateNext(s, row, now)
                 SeriesScope.FUTURE, SeriesScope.ALL -> {
@@ -405,6 +433,7 @@ class TaskRepository(
         var removed: List<String> = emptyList()
         val restored = mutableListOf<String>()
         db.withTransaction {
+            if (row.seriesId != null && row.occurrenceDate != null) skips.delete(row.seriesId, row.occurrenceDate)
             row.seriesId?.let { series.get(it) }?.let { s ->
                 if (s.endedAt != null && s.endedAt == row.deletedAt) {
                     // Undo of "this and future" / "all": the series repeats again, with what it deleted.
@@ -447,6 +476,51 @@ class TaskRepository(
         tasks.purgeLocalTombstones(before)
         series.purgeEnded(before)
     }
+
+    /**
+     * Everything the occurrence history of series [seriesId] is built from: its rule and first date,
+     * every stored occurrence (deleted ones within the undo window too) and the skipped dates.
+     */
+    fun observeSeries(seriesId: String): Flow<SeriesData?> =
+        combine(series.observe(seriesId), tasks.observeInSeries(seriesId), skips.observeForSeries(seriesId)) { s, rows, sk ->
+            s ?: return@combine null
+            SeriesData(
+                id = s.id, rule = s.activeRule(), anchor = LocalDate.ofEpochDay(s.anchorDate), ended = s.endedAt != null,
+                rows = rows.filter { it.parentId == null }.map { r ->
+                    app.daysemble.core.recurrence.OccurrenceRow(
+                        id = r.id, occurrenceDate = r.occurrenceDate?.let(LocalDate::ofEpochDay), dueDate = r.dueDate?.let(LocalDate::ofEpochDay),
+                        dueTime = r.dueTimeMinutes?.let { LocalTime.of(it / 60, it % 60) }, isCompleted = r.isCompleted,
+                        completedAt = r.completedAt?.let(Instant::ofEpochMilli), isDeleted = r.isDeleted,
+                    )
+                },
+                skips = sk.map { LocalDate.ofEpochDay(it.occurrenceDate) }.toSet(),
+            )
+        }
+
+    /** A series and its stored occurrences (see [observeSeries]). [rule] is null once it stopped repeating. */
+    data class SeriesData(
+        val id: String,
+        val rule: RRule?,
+        val anchor: LocalDate,
+        val ended: Boolean,
+        val rows: List<app.daysemble.core.recurrence.OccurrenceRow>,
+        val skips: Set<LocalDate>,
+    )
+
+    /**
+     * Active series with a due time and a duration: their future occurrences are time blocks on days
+     * that have no row yet (only the current occurrence is stored), for the free-time calculation.
+     */
+    val timedSeries: Flow<List<SeriesTemplate>> = series.observeAll().map { all ->
+        all.mapNotNull { s ->
+            val rule = s.activeRule() ?: return@mapNotNull null
+            val time = s.dueTimeMinutes ?: return@mapNotNull null
+            val minutes = s.durationMinutes?.takeIf { it > 0 } ?: return@mapNotNull null
+            SeriesTemplate(s.id, s.title, rule, LocalDate.ofEpochDay(s.anchorDate), LocalTime.of(time / 60, time % 60), minutes)
+        }
+    }
+
+    data class SeriesTemplate(val id: String, val title: String, val rule: RRule, val anchor: LocalDate, val dueTime: LocalTime, val durationMinutes: Int)
 
     suspend fun get(id: String): Task? = tasks.get(id)?.takeIf { !it.isDeleted }?.let { r ->
         r.toDomain(lists.get(r.listId)?.kind == SourceKind.GOOGLE, repeat = r.seriesId?.let { series.get(it) }?.activeRule())
@@ -531,6 +605,7 @@ class TaskRepository(
                 dueDate = next.toEpochDay(), dueTimeMinutes = s.dueTimeMinutes, priority = s.priority,
                 sortKey = tasks.maxSortKey(s.listId) + 1, createdAt = now, updatedAt = now, syncState = SyncState.LOCAL,
                 countdownEnabled = s.countdownEnabled, seriesId = s.id, occurrenceDate = next.toEpochDay(),
+                durationMinutes = s.durationMinutes,
             ),
         )
         db.reminders().replace(OwnerType.TASK, id, s.reminderList().map { ReminderEntity.of(OwnerType.TASK, id, it) })
@@ -591,6 +666,7 @@ internal fun TaskSeriesEntity.reminderList(): List<Int> = reminders.split(',').m
 internal fun TaskSeriesEntity.withTemplate(d: TaskDraft) = copy(
     title = d.title.trim(), notes = d.notes.trim(), dueTimeMinutes = d.dueTime?.toMinutes(), priority = d.priority.level,
     countdownEnabled = d.countdown, reminders = d.reminderMinutesBefore.distinct().take(5).joinToString(","),
+    durationMinutes = d.durationMinutes?.takeIf { it > 0 },
 )
 
 internal fun LocalTime.toMinutes() = hour * 60 + minute
@@ -615,4 +691,5 @@ internal fun TaskEntity.toDomain(isGoogle: Boolean, subtaskCount: Int = 0, subta
     seriesId = seriesId,
     occurrenceDate = occurrenceDate?.let(LocalDate::ofEpochDay),
     repeat = repeat,
+    durationMinutes = durationMinutes?.takeIf { it > 0 },
 )

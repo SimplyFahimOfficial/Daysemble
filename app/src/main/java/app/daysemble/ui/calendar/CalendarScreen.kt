@@ -224,11 +224,12 @@ private fun MonthMode(
         items(evs, key = { "e" + it.stableKey }) { e ->
             AgendaEventCard(
                 e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) },
+                onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onEventLongPress(e) } },
                 showCountdown = state.selected == state.today, modifier = Modifier.then(itemMotion()),
             )
         }
         items(tasks, key = { "t" + it.id }) { t ->
-            AgendaTaskCard(t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()))
+            AgendaTaskCard(t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(t) } })
         }
     }
 }
@@ -394,10 +395,10 @@ private fun AgendaMode(
                 SectionHeader(dayLabel(d, state.today, p) + if (d == state.today || d == state.today.plusDays(1)) " · " + Fmt.mediumDate(d, p) else "", Modifier.padding(top = Space.m))
             }
             items(state.byDate[d].orEmpty(), key = { "e$d" + it.stableKey }) { e ->
-                AgendaEventCard(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showCountdown = d == state.today, modifier = Modifier.then(itemMotion()))
+                AgendaEventCard(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showCountdown = d == state.today, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onEventLongPress(e) } })
             }
             items(state.tasksByDate[d].orEmpty(), key = { "t$d" + it.id }) { t ->
-                AgendaTaskCard(t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()))
+                AgendaTaskCard(t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(t) } })
             }
         }
         item(key = "spacer") { Spacer(Modifier.height(Space.l)) }

@@ -32,5 +32,30 @@ object Migrations {
         }
     }
 
-    val ALL = arrayOf(MIGRATION_1_2)
+    /**
+     * v3: task durations, skipped-occurrence history and manual sleep records. Additive only.
+     * - task, task_series: durationMinutes (null for every existing row: no task takes free time
+     *   it didn't take before).
+     * - task_occurrence_skip: dates of a repeating task that were skipped.
+     * - sleep_session: "I'm going to sleep" / "I just woke up" records.
+     */
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `task` ADD COLUMN `durationMinutes` INTEGER")
+            db.execSQL("ALTER TABLE `task_series` ADD COLUMN `durationMinutes` INTEGER")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `task_occurrence_skip` (`seriesId` TEXT NOT NULL, `occurrenceDate` INTEGER NOT NULL, " +
+                    "`skippedAt` INTEGER NOT NULL, PRIMARY KEY(`seriesId`, `occurrenceDate`), " +
+                    "FOREIGN KEY(`seriesId`) REFERENCES `task_series`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `sleep_session` (`id` TEXT NOT NULL, `startUtc` INTEGER, `endUtc` INTEGER, " +
+                    "`startZone` TEXT, `endZone` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_sleep_session_startUtc` ON `sleep_session` (`startUtc`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_sleep_session_endUtc` ON `sleep_session` (`endUtc`)")
+        }
+    }
+
+    val ALL = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 }

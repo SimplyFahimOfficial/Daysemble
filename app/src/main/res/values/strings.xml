@@ -121,9 +121,7 @@
     <string name="avail_booked_rest">The rest of your day is booked.</string>
     <string name="avail_booked">Your day is fully booked.</string>
     <string name="metric_free">%1$s free</string>
-    <string name="metric_booked">%1$s in events</string>
     <string name="metric_next">Next: %1$s, %2$s</string>
-    <string name="metric_window_note">Counted %1$s – %2$s · all-day events excluded</string>
     <string name="compact_nothing">Nothing scheduled</string>
     <string name="compact_free_now">free now</string>
     <string name="compact_free_all">free all day</string>
@@ -384,9 +382,9 @@
     <string name="setting_default_sort">Default sort</string>
     <string name="setting_default_list">New tasks go to</string>
     <string name="data_what_stored">What’s stored</string>
-    <string name="data_what_stored_body">Your events, tasks and settings are stored only on this device. Daysemble has no analytics and sends nothing anywhere unless you connect a Google account. Backups include your settings only.</string>
+    <string name="data_what_stored_body">Your events, tasks, sleep records and settings are stored only on this device. Daysemble has no analytics and sends nothing anywhere unless you connect a Google account. Backups include your settings only.</string>
     <string name="data_delete_title">Delete local data</string>
-    <string name="data_delete_body">Removes every event and task stored on this device. Your settings are kept.</string>
+    <string name="data_delete_body">Removes every event, task and sleep record stored on this device. Your settings are kept.</string>
     <string name="data_delete_action">Delete all local data</string>
     <string name="data_delete_confirm_title">Delete all events and tasks?</string>
     <string name="data_delete_confirm_body">This can’t be undone.</string>

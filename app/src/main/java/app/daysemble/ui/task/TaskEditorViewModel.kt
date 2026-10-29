@@ -35,6 +35,8 @@ data class TaskForm(
     val reminders: List<Int> = emptyList(),
     val repeat: TaskRepeatForm = TaskRepeatForm(),
     val countdown: Boolean = false,
+    /** Minutes the task takes; null = no estimate. */
+    val durationMinutes: Int? = null,
 ) {
     val dueDate: LocalDate? get() = dueEpochDay?.let(LocalDate::ofEpochDay)
     val dueTime: LocalTime? get() = dueMinutes?.let { LocalTime.of(it / 60, it % 60) }
@@ -55,6 +57,7 @@ data class TaskForm(
         dueDate = dueDate, dueTime = if (dueDate == null) null else dueTime,
         priority = Priority.of(priority), reminderMinutesBefore = reminders,
         repeat = repeat.toRRule(dueDate), countdown = countdown && dueDate != null,
+        durationMinutes = durationMinutes?.takeIf { it > 0 },
     )
 
     companion object {
@@ -62,6 +65,7 @@ data class TaskForm(
             title = t.title, notes = t.notes, listId = t.listId, dueEpochDay = t.dueDate?.toEpochDay(),
             dueMinutes = t.dueTime?.let { it.hour * 60 + it.minute }, priority = t.priority.level, reminders = reminders,
             repeat = TaskRepeatForm.from(t.repeat), countdown = t.countdownEnabled,
+            durationMinutes = t.durationMinutes,
         )
     }
 }

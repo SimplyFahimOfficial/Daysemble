@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -134,14 +135,15 @@ class RepeatCompletionFlowTest {
             compose.runOnUiThread { requests.value = app.daysemble.OpenRequest(app.daysemble.data.db.OwnerType.TASK, id, null) }
             settle()
         }
-        compose.onNodeWithText("Task").assertExists() // the editor's title
+        // A tap on the notification opens the task's detail screen, once.
+        assertThat(compose.onAllNodesWithTag(app.daysemble.ui.task.TaskDetailTags.SCREEN).fetchSemanticsNodes()).hasSize(1)
         compose.runOnUiThread {
             compose.activity.onBackPressedDispatcher.onBackPressed()
             androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
         }
         settle()
-        // One Back is enough: there was only one copy of the editor.
-        assertThat(compose.onAllNodesWithText("Task").fetchSemanticsNodes()).isEmpty()
+        // One Back is enough: there was only one copy of the page.
+        assertThat(compose.onAllNodesWithTag(app.daysemble.ui.task.TaskDetailTags.SCREEN).fetchSemanticsNodes()).isEmpty()
     }
 
     @Test fun completingTwice_neverCreatesTwoNextOccurrences() {

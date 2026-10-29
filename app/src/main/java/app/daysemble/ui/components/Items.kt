@@ -2,7 +2,6 @@ package app.daysemble.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -219,6 +218,7 @@ fun EventRow(
     modifier: Modifier = Modifier,
     showCountdown: Boolean = false,
     showDate: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val c = DsTheme.colors
     val p = LocalTimePrefs.current
@@ -237,7 +237,7 @@ fun EventRow(
         modifier
             .fillMaxWidth()
             .heightIn(min = Sizes.rowMin)
-            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.action_open), onClick = onClick)
+            .itemClick(onClick, onLongClick)
             .semantics(mergeDescendants = true) { contentDescription = a11y }
             .padding(horizontal = Space.gutter, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
@@ -339,6 +339,7 @@ fun TaskRow(
     showDue: Boolean = true,
     isSubtask: Boolean = false,
     actions: List<androidx.compose.ui.semantics.CustomAccessibilityAction> = emptyList(),
+    onLongClick: (() -> Unit)? = null,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
@@ -355,7 +356,7 @@ fun TaskRow(
         modifier
             .fillMaxWidth()
             .heightIn(min = Sizes.rowMin)
-            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.action_open), onClick = onClick)
+            .itemClick(onClick, onLongClick)
             .semantics { if (actions.isNotEmpty()) customActions = actions }
             .padding(start = if (isSubtask) Space.gutter + Space.xl else Space.gutter - 13.dp, end = Space.gutter, top = Space.xxs, bottom = Space.xxs),
         verticalAlignment = Alignment.CenterVertically,

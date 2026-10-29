@@ -53,6 +53,11 @@ data class Task(
     val occurrenceDate: LocalDate? = null,
     /** The active repeat rule of its series; null for one-off tasks and ended series. */
     val repeat: RRule? = null,
+    /**
+     * How long the task takes, in minutes; null = no estimate. With a [dueTime] the task is a time
+     * block ([scheduledBlock]); without one it is estimated work that is never placed on the clock.
+     */
+    val durationMinutes: Int? = null,
 ) {
     val isRecurring: Boolean get() = repeat != null
 
@@ -61,6 +66,18 @@ data class Task(
         val d = dueDate ?: return null
         return if (dueTime != null) LocalDateTime.of(d, dueTime).atZone(zone).toInstant()
         else d.plusDays(1).atStartOfDay(zone).toInstant()
+    }
+
+    /**
+     * The time the task books on the calendar: from its due time for [durationMinutes]. Null when it
+     * has no due date, no due time or no duration: such a task never takes free time.
+     */
+    fun scheduledBlock(zone: ZoneId): Pair<Instant, Instant>? {
+        val d = dueDate ?: return null
+        val t = dueTime ?: return null
+        val minutes = durationMinutes?.takeIf { it > 0 } ?: return null
+        val start = LocalDateTime.of(d, t).atZone(zone)
+        return start.toInstant() to start.plusMinutes(minutes.toLong()).toInstant()
     }
 }
 
@@ -78,6 +95,8 @@ data class TaskDraft(
     val repeat: RRule? = null,
     /** Show a live countdown; needs a [dueDate]. */
     val countdown: Boolean = false,
+    /** Minutes the task takes; null = no estimate (see [Task.durationMinutes]). */
+    val durationMinutes: Int? = null,
 ) {
     val isValid: Boolean get() = title.isNotBlank()
 }
