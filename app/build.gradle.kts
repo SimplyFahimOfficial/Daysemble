@@ -138,3 +138,17 @@ dependencies {
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
 }
+
+// Patched versions of vulnerable libraries reached only through build and test tooling: the
+// Android Lint tool (androidLintTool), the Room annotation processor (ksp) and the unit-test
+// libraries (testImplementation, e.g. Robolectric). The app's own runtime classpath doesn't contain
+// them. Constraints only raise versions. See gradle/libs.versions.toml.
+dependencies {
+    constraints {
+        for (configuration in listOf("androidLintTool", "ksp", "testImplementation")) {
+            libs.bundles.tooling.security.get().forEach { lib ->
+                add(configuration, lib) { because("Security fix for a build-tool dependency (Dependabot alert)") }
+            }
+        }
+    }
+}
