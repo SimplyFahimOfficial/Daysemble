@@ -81,7 +81,6 @@ import java.time.Instant
 
 @Composable
 fun TasksRoute(contentPadding: PaddingValues, onOpenTask: (String) -> Unit) {
-    val prefs = LocalTimePrefs.current
     val vm = daysembleViewModel { c, h -> TasksViewModel(c.tasks, c.settings, c.clock, c.timeContext, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()

@@ -80,7 +80,6 @@ fun CalendarRoute(
     onCreateAt: (LocalDate, Int?) -> Unit,
     onFocusedDate: (LocalDate) -> Unit = {},
 ) {
-    val prefs = LocalTimePrefs.current
     val vm = daysembleViewModel { c, h -> CalendarViewModel(c.events, c.tasks, c.clock, c.timeContext, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()

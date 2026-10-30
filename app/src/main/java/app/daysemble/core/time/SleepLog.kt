@@ -92,7 +92,7 @@ object SleepLog {
         val w = edited.wake
         if (b == null && w == null) return EditError.EMPTY
         val limit = now.plusSeconds(60)
-        if ((b != null && b.isAfter(limit)) || (w != null && w.isAfter(limit))) return EditError.IN_FUTURE
+        if (listOfNotNull(b, w).any { it.isAfter(limit) }) return EditError.IN_FUTURE
         if (b != null && w != null) {
             if (!w.isAfter(b)) return EditError.WAKE_NOT_AFTER_BEDTIME
             if (Duration.between(b, w) > MAX_EDIT) return EditError.TOO_LONG

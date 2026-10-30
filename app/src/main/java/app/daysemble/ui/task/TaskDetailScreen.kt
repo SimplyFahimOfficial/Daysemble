@@ -140,9 +140,6 @@ fun TaskDetailScreen(
     onToggleSubtask: (String, Boolean) -> Unit,
 ) {
     val c = DsTheme.colors
-    val m = DsTheme.motion
-    val p = LocalTimePrefs.current
-    var menu by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val task = state.task
 
@@ -150,23 +147,7 @@ fun TaskDetailScreen(
         DsTopBar("", onClose, close = true) {
             if (task != null) {
                 DsIconButton(Icons.Rounded.Edit, stringResource(R.string.action_edit), onEdit, modifier = Modifier.testTag(TaskDetailTags.EDIT))
-                Box {
-                    DsIconButton(Icons.Rounded.MoreVert, stringResource(R.string.menu_more_actions), { menu = true }, modifier = Modifier.testTag(TaskDetailTags.MORE))
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = c.surfaceRaised) {
-                        MenuItem(Icons.Rounded.Edit, stringResource(R.string.action_edit)) { menu = false; onEdit() }
-                        MenuItem(
-                            if (task.isCompleted) Icons.AutoMirrored.Rounded.Undo else Icons.Rounded.Check,
-                            stringResource(if (task.isCompleted) R.string.action_mark_incomplete else R.string.action_complete),
-                        ) { menu = false; onToggle() }
-                        if (task.isRecurring && !task.isCompleted) MenuItem(Icons.Rounded.SkipNext, stringResource(R.string.menu_skip_occurrence)) { menu = false; onSkip() }
-                        MenuItem(
-                            Icons.Rounded.HourglassTop,
-                            stringResource(if (task.countdownEnabled) R.string.detail_countdown_off else R.string.detail_countdown_on),
-                            enabled = task.dueDate != null,
-                        ) { menu = false; onCountdown(!task.countdownEnabled) }
-                        MenuItem(Icons.Rounded.DeleteOutline, stringResource(R.string.action_delete), destructive = true) { menu = false; confirmDelete = true }
-                    }
-                }
+                OverflowMenu(task, onEdit, onToggle, onSkip, onCountdown, onDelete = { confirmDelete = true })
             }
         }
         if (task == null) {
@@ -182,98 +163,149 @@ fun TaskDetailScreen(
         ) {
             Header(task, state, now)
             Spacer(Modifier.height(Space.xl))
-
-            // The countdown, the centre of the screen when it's on.
-            val deadline = task.dueMoment(p.zone)
-            AnimatedVisibility(task.countdownEnabled && deadline != null, enter = m.expandIn(), exit = m.collapseOut()) {
-                CountdownHero(
-                    deadline, task.isCompleted,
-                    Modifier
-                        .padding(horizontal = Space.gutter - Space.xs)
-                        .clip(Radii.card)
-                        .background(c.surfaceVariant)
-                        .padding(horizontal = Space.l, vertical = Space.l)
-                        .testTag(TaskDetailTags.COUNTDOWN),
-                )
-            }
-            if (!task.countdownEnabled && deadline != null && !task.isCompleted) {
-                Row(Modifier.padding(horizontal = Space.gutter - Space.xs)) {
-                    DsChip(
-                        stringResource(R.string.detail_countdown_on), false, { onCountdown(true) }, icon = Icons.Rounded.HourglassTop,
-                        role = androidx.compose.ui.semantics.Role.Button, modifier = Modifier.testTag(TaskDetailTags.COUNTDOWN_TOGGLE),
-                    )
-                }
-            }
-
-            // Primary actions.
-            FlowRow(
-                Modifier.padding(horizontal = Space.gutter, vertical = Space.l),
-                horizontalArrangement = Arrangement.spacedBy(Space.s), verticalArrangement = Arrangement.spacedBy(Space.s),
-            ) {
-                DsButton(
-                    stringResource(if (task.isCompleted) R.string.action_mark_incomplete else R.string.detail_complete),
-                    onToggle, icon = if (task.isCompleted) Icons.AutoMirrored.Rounded.Undo else Icons.Rounded.Check,
-                    style = if (task.isCompleted) DsButtonStyle.Secondary else DsButtonStyle.Primary,
-                    modifier = Modifier.testTag(TaskDetailTags.COMPLETE),
-                )
-                if (task.isRecurring && !task.isCompleted) {
-                    DsButton(
-                        stringResource(R.string.menu_skip_occurrence), onSkip, icon = Icons.Rounded.SkipNext, style = DsButtonStyle.Secondary,
-                        modifier = Modifier.testTag(TaskDetailTags.SKIP),
-                    )
-                }
-            }
-
+            CountdownSection(task, onCountdown)
+            PrimaryActions(task, onToggle, onSkip)
             Details(task, state)
-
-            if (task.notes.isNotBlank()) {
-                SectionHeader(stringResource(R.string.field_notes), Modifier.padding(top = Space.l))
-                Row(Modifier.padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.m)) {
-                    Icon(Icons.AutoMirrored.Rounded.Notes, null, tint = c.textTertiary, modifier = Modifier.size(20.dp))
-                    Text(task.notes, style = DsTheme.type.body, color = c.textPrimary)
-                }
-            }
-
-            if (state.subtasks.isNotEmpty()) {
-                SectionHeader(
-                    stringResource(R.string.field_subtasks) + " · " + pluralStringResource(
-                        R.plurals.subtasks_progress, state.subtasks.size, state.subtasks.count { it.isCompleted }, state.subtasks.size,
-                    ),
-                    Modifier.padding(top = Space.l),
-                )
-                state.subtasks.forEach { s ->
-                    androidx.compose.runtime.key(s.id) {
-                        TaskRow(s, now, onToggle = { onToggleSubtask(s.id, it) }, onClick = { onToggleSubtask(s.id, !s.isCompleted) }, showDue = false, isSubtask = true)
-                        HairlineDivider(inset = true)
-                    }
-                }
-            }
-
-            val history = state.history
-            if (history != null) {
-                SectionHeader(stringResource(R.string.history_title), Modifier.padding(top = Space.xl))
-                OccurrenceTracker(
-                    history, state.series?.rule, state.today,
-                    Modifier.padding(horizontal = Space.gutter).testTag(TaskDetailTags.HISTORY),
-                )
-                Text(
-                    stringResource(R.string.history_policy), style = DsTheme.type.label, color = c.textTertiary,
-                    modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
-                )
-            }
+            Notes(task.notes)
+            Subtasks(state.subtasks, now, onToggleSubtask)
+            state.history?.let { HistorySection(it, state) }
         }
     }
 
     if (confirmDelete && task != null) {
-        if (task.seriesId != null && (task.isRecurring || state.series?.rule != null)) {
-            SeriesScopeDialog(forDelete = true, allowThis = true, pastOccurrence = task.isCompleted, onPick = onDelete, onDismiss = { confirmDelete = false })
-        } else {
-            DsConfirmDialog(
-                stringResource(R.string.delete_task_title),
-                stringResource(if (task.isGoogle) R.string.delete_task_google_body else R.string.delete_task_body),
-                stringResource(R.string.action_delete), onConfirm = { onDelete(SeriesScope.THIS) }, onDismiss = { confirmDelete = false }, destructive = true,
+        DeleteDialog(task, state, onDelete, onDismiss = { confirmDelete = false })
+    }
+}
+
+/** The ⋮ menu: every action of the screen, also without a long-press. */
+@Composable
+private fun OverflowMenu(
+    task: Task,
+    onEdit: () -> Unit,
+    onToggle: () -> Unit,
+    onSkip: () -> Unit,
+    onCountdown: (Boolean) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var menu by rememberSaveable { mutableStateOf(false) }
+    Box {
+        DsIconButton(Icons.Rounded.MoreVert, stringResource(R.string.menu_more_actions), { menu = true }, modifier = Modifier.testTag(TaskDetailTags.MORE))
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = DsTheme.colors.surfaceRaised) {
+            MenuItem(Icons.Rounded.Edit, stringResource(R.string.action_edit)) { menu = false; onEdit() }
+            MenuItem(toggleIcon(task), stringResource(toggleLabel(task, R.string.action_complete))) { menu = false; onToggle() }
+            if (canSkip(task)) MenuItem(Icons.Rounded.SkipNext, stringResource(R.string.menu_skip_occurrence)) { menu = false; onSkip() }
+            MenuItem(
+                Icons.Rounded.HourglassTop,
+                stringResource(if (task.countdownEnabled) R.string.detail_countdown_off else R.string.detail_countdown_on),
+                enabled = task.dueDate != null,
+            ) { menu = false; onCountdown(!task.countdownEnabled) }
+            MenuItem(Icons.Rounded.DeleteOutline, stringResource(R.string.action_delete), destructive = true) { menu = false; onDelete() }
+        }
+    }
+}
+
+private fun canSkip(task: Task) = task.isRecurring && !task.isCompleted
+private fun toggleIcon(task: Task) = if (task.isCompleted) Icons.AutoMirrored.Rounded.Undo else Icons.Rounded.Check
+private fun toggleLabel(task: Task, complete: Int) = if (task.isCompleted) R.string.action_mark_incomplete else complete
+
+/** The live countdown when it's on (the centre of the screen); otherwise a chip to turn it on. */
+@Composable
+private fun CountdownSection(task: Task, onCountdown: (Boolean) -> Unit) {
+    val c = DsTheme.colors
+    val m = DsTheme.motion
+    val deadline = task.dueMoment(LocalTimePrefs.current.zone)
+    AnimatedVisibility(task.countdownEnabled && deadline != null, enter = m.expandIn(), exit = m.collapseOut()) {
+        CountdownHero(
+            deadline, task.isCompleted,
+            Modifier
+                .padding(horizontal = Space.gutter - Space.xs)
+                .clip(Radii.card)
+                .background(c.surfaceVariant)
+                .padding(horizontal = Space.l, vertical = Space.l)
+                .testTag(TaskDetailTags.COUNTDOWN),
+        )
+    }
+    val offerCountdown = !task.countdownEnabled && deadline != null && !task.isCompleted
+    if (offerCountdown) {
+        Row(Modifier.padding(horizontal = Space.gutter - Space.xs)) {
+            DsChip(
+                stringResource(R.string.detail_countdown_on), false, { onCountdown(true) }, icon = Icons.Rounded.HourglassTop,
+                role = androidx.compose.ui.semantics.Role.Button, modifier = Modifier.testTag(TaskDetailTags.COUNTDOWN_TOGGLE),
             )
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PrimaryActions(task: Task, onToggle: () -> Unit, onSkip: () -> Unit) {
+    FlowRow(
+        Modifier.padding(horizontal = Space.gutter, vertical = Space.l),
+        horizontalArrangement = Arrangement.spacedBy(Space.s), verticalArrangement = Arrangement.spacedBy(Space.s),
+    ) {
+        DsButton(
+            stringResource(toggleLabel(task, R.string.detail_complete)), onToggle, icon = toggleIcon(task),
+            style = if (task.isCompleted) DsButtonStyle.Secondary else DsButtonStyle.Primary,
+            modifier = Modifier.testTag(TaskDetailTags.COMPLETE),
+        )
+        if (canSkip(task)) {
+            DsButton(
+                stringResource(R.string.menu_skip_occurrence), onSkip, icon = Icons.Rounded.SkipNext, style = DsButtonStyle.Secondary,
+                modifier = Modifier.testTag(TaskDetailTags.SKIP),
+            )
+        }
+    }
+}
+
+@Composable
+private fun Notes(notes: String) {
+    if (notes.isBlank()) return
+    val c = DsTheme.colors
+    SectionHeader(stringResource(R.string.field_notes), Modifier.padding(top = Space.l))
+    Row(Modifier.padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.m)) {
+        Icon(Icons.AutoMirrored.Rounded.Notes, null, tint = c.textTertiary, modifier = Modifier.size(20.dp))
+        Text(notes, style = DsTheme.type.body, color = c.textPrimary)
+    }
+}
+
+@Composable
+private fun Subtasks(subtasks: List<Task>, now: Instant, onToggleSubtask: (String, Boolean) -> Unit) {
+    if (subtasks.isEmpty()) return
+    val done = subtasks.count { it.isCompleted }
+    SectionHeader(
+        stringResource(R.string.field_subtasks) + " · " + pluralStringResource(R.plurals.subtasks_progress, subtasks.size, done, subtasks.size),
+        Modifier.padding(top = Space.l),
+    )
+    subtasks.forEach { s ->
+        androidx.compose.runtime.key(s.id) {
+            TaskRow(s, now, onToggle = { onToggleSubtask(s.id, it) }, onClick = { onToggleSubtask(s.id, !s.isCompleted) }, showDue = false, isSubtask = true)
+            HairlineDivider(inset = true)
+        }
+    }
+}
+
+@Composable
+private fun HistorySection(history: app.daysemble.core.recurrence.OccurrenceHistory, state: TaskDetailUiState) {
+    SectionHeader(stringResource(R.string.history_title), Modifier.padding(top = Space.xl))
+    OccurrenceTracker(history, state.series?.rule, state.today, Modifier.padding(horizontal = Space.gutter).testTag(TaskDetailTags.HISTORY))
+    Text(
+        stringResource(R.string.history_policy), style = DsTheme.type.label, color = DsTheme.colors.textTertiary,
+        modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
+    )
+}
+
+/** A repeating task asks which occurrences; a one-off task confirms. */
+@Composable
+private fun DeleteDialog(task: Task, state: TaskDetailUiState, onDelete: (SeriesScope) -> Unit, onDismiss: () -> Unit) {
+    val repeating = task.seriesId != null && (task.isRecurring || state.series?.rule != null)
+    if (repeating) {
+        SeriesScopeDialog(forDelete = true, allowThis = true, pastOccurrence = task.isCompleted, onPick = onDelete, onDismiss = onDismiss)
+    } else {
+        DsConfirmDialog(
+            stringResource(R.string.delete_task_title),
+            stringResource(if (task.isGoogle) R.string.delete_task_google_body else R.string.delete_task_body),
+            stringResource(R.string.action_delete), onConfirm = { onDelete(SeriesScope.THIS) }, onDismiss = onDismiss, destructive = true,
+        )
     }
 }
 

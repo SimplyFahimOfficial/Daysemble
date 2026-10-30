@@ -116,7 +116,7 @@ fun ScheduleSettingsRoute(onBack: () -> Unit) {
                 subtitle = stringResource(if (schedule.perWeekday) R.string.schedule_per_weekday_on else R.string.schedule_per_weekday_off),
             )
             if (schedule.perWeekday) {
-                (0 until 7).map { p.firstDayOfWeek.plus(it.toLong()) }.forEach { day ->
+                for (day in weekOrder(p.firstDayOfWeek)) {
                     val own = schedule.overrides[day]
                     val eff = own ?: d
                     DsRow(
@@ -227,3 +227,8 @@ private fun WeekdayDialog(day: DayOfWeek, prefs: DaySchedulePrefs, p: TimePrefs,
         DsTimePickerDialog(LocalTime.of(m / 60, m % 60), onPick = { t -> if (which == "wake") wake = t.hour * 60 + t.minute else bed = t.hour * 60 + t.minute }, onDismiss = { pick = null })
     }
 }
+
+/** The seven weekdays, starting at [first]. */
+internal fun weekOrder(first: DayOfWeek): List<DayOfWeek> = List(DAYS_PER_WEEK) { first.plus(it.toLong()) }
+
+private const val DAYS_PER_WEEK = 7

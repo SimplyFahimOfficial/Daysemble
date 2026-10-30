@@ -88,9 +88,8 @@ object OccurrenceHistoryCalc {
             project(rule, anchor, stored, cells, today, horizonEnd)
         } else Projection(nextAfterActive = null, endsWithinHorizon = rule == null)
         // Skips without a scheduled date (rule changed since) still show as skipped.
-        stored.skipped.forEach { d ->
-            if (d !in cells && (anchor == null || !d.isBefore(anchor)) && !d.isAfter(today)) cells[d] = OccurrenceCell(d, OccurrenceStatus.SKIPPED)
-        }
+        val first = anchor ?: LocalDate.MIN
+        stored.skipped.filter { it !in cells && it in first..today }.forEach { d -> cells[d] = OccurrenceCell(d, OccurrenceStatus.SKIPPED) }
         val list = cells.values.toList()
         return OccurrenceHistory(
             cells = list,

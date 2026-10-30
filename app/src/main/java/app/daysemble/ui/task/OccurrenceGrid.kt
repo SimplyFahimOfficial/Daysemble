@@ -162,18 +162,18 @@ private fun WeekGrid(byDate: Map<LocalDate, OccurrenceCell>, h: OccurrenceHistor
                 rangeLabel(start, lastWeek.plusDays(6), p), style = DsTheme.type.label, color = c.textSecondary,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(Space.xs), modifier = Modifier.clearAndSetSemantics { }) {
-                (0 until 7).forEach { i ->
+                for (day in app.daysemble.ui.settings.weekOrder(p.firstDayOfWeek)) {
                     Text(
-                        Fmt.weekdayNarrow(p.firstDayOfWeek.plus(i.toLong()), p), style = DsTheme.type.caps, color = c.textTertiary,
+                        Fmt.weekdayNarrow(day, p), style = DsTheme.type.caps, color = c.textTertiary,
                         textAlign = TextAlign.Center, modifier = Modifier.size(width = cell, height = 16.dp),
                     )
                 }
             }
-            (0 until shown).forEach { w ->
+            for (w in 0 until shown) {
                 val ws = start.plusWeeks(w.toLong())
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    (0 until 7).forEach { i ->
-                        val d = ws.plusDays(i.toLong())
+                    for (i in 0L until 7L) {
+                        val d = ws.plusDays(i)
                         DayCell(d, byDate[d], d == today, d == selected, cell, p) { onSelect(d) }
                     }
                 }

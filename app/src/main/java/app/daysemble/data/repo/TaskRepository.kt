@@ -384,9 +384,7 @@ class TaskRepository(
             // Deleting one occurrence on its own is a skip: its date stays in the history as skipped
             // after the deleted row itself is purged. A completed one too: without the record its date
             // would show as missed, which the user never did.
-            if (scope == SeriesScope.THIS && !google && row.occurrenceDate != null && row.seriesId != null && series.get(row.seriesId) != null) {
-                skips.insert(app.daysemble.data.db.TaskOccurrenceSkipEntity(row.seriesId, row.occurrenceDate, now))
-            }
+            if (scope == SeriesScope.THIS && !google) recordSkip(row, now)
             if (s != null) when (scope) {
                 SeriesScope.THIS -> if (!row.isCompleted) generated = generateNext(s, row, now)
                 SeriesScope.FUTURE, SeriesScope.ALL -> {
@@ -632,6 +630,13 @@ class TaskRepository(
             }
         }
         return created
+    }
+
+    /** Keeps [row]'s scheduled date as skipped (see [delete]), if it is an occurrence of a stored series. */
+    private suspend fun recordSkip(row: TaskEntity, now: Long) {
+        val sid = row.seriesId ?: return
+        val date = row.occurrenceDate ?: return
+        if (series.get(sid) != null) skips.insert(app.daysemble.data.db.TaskOccurrenceSkipEntity(sid, date, now))
     }
 
     /**
