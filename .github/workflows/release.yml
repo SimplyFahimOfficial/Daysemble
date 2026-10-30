@@ -1,0 +1,306 @@
+# Signed release from a version tag (v1.2.3, or v1.2.3-rc.1 for a pre-release).
+#
+#   validate → build (signed, `release` environment) → smoke (emulator) → publish (GitHub release)
+#
+# The tag must point at a commit on main that passed ci.yml, and versionName in
+# app/build.gradle.kts must equal the tag. Signing secrets exist only in the `release`
+# environment and only the build job uses them. See docs/RELEASE.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# One release per tag at a time; never cancel a release half way.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  APP_ID: app.daysemble
+  BUILD_TOOLS_VERSION: "36.0.0"
+
+jobs:
+  validate:
+    name: Validate tag and version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Reads ci.yml runs for the tagged commit.
+      actions: read
+    outputs:
+      version_name: ${{ steps.version.outputs.version_name }}
+      version_code: ${{ steps.version.outputs.version_code }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Tag commit is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error title=Release::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main. Tag a commit that has been merged to main."
+            exit 1
+          fi
+
+      - name: Version matches the tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          prev="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$GITHUB_SHA^" 2>/dev/null || true)"
+          args=()
+          if [ -n "$prev" ]; then
+            git show "$prev:app/build.gradle.kts" > "$RUNNER_TEMP/previous.gradle.kts"
+            args=(--previous-build-file "$RUNNER_TEMP/previous.gradle.kts")
+            echo "Previous release tag: $prev"
+          else
+            echo "No previous release tag."
+          fi
+          python3 scripts/ci/release_version.py "$TAG" "${args[@]}"
+
+      - name: CI passed on the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=1" --jq '.total_count')"
+          if [ "$count" -lt 1 ]; then
+            echo "::error title=Release::no successful CI run (ci.yml) for $GITHUB_SHA. Wait for CI on main to pass, then push the tag again."
+            exit 1
+          fi
+          echo "CI passed on $GITHUB_SHA."
+
+  build:
+    name: Build and sign
+    needs: validate
+    # Holds the signing secrets. Configure it to allow only v* tags and to require a reviewer.
+    environment: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.validate.outputs.version_name }}
+      VERSION_CODE: ${{ needs.validate.outputs.version_code }}
+    steps:
+      - name: Check for signing secrets
+        env:
+          DAYSEMBLE_KEYSTORE_BASE64: ${{ secrets.DAYSEMBLE_KEYSTORE_BASE64 }}
+          DAYSEMBLE_KEYSTORE_PASSWORD: ${{ secrets.DAYSEMBLE_KEYSTORE_PASSWORD }}
+          DAYSEMBLE_KEY_ALIAS: ${{ secrets.DAYSEMBLE_KEY_ALIAS }}
+          DAYSEMBLE_KEY_PASSWORD: ${{ secrets.DAYSEMBLE_KEY_PASSWORD }}
+          RELEASE_CERT_SHA256: ${{ vars.RELEASE_CERT_SHA256 }}
+        run: |
+          missing=()
+          for name in DAYSEMBLE_KEYSTORE_BASE64 DAYSEMBLE_KEYSTORE_PASSWORD DAYSEMBLE_KEY_ALIAS DAYSEMBLE_KEY_PASSWORD RELEASE_CERT_SHA256; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error title=Release::missing in the release environment: ${missing[*]}. See docs/RELEASE.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Android platform 37 and build tools
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;${BUILD_TOOLS_VERSION}" > /dev/null
+
+      # No cache: a release is built from scratch, so nothing a pull request wrote to a cache
+      # can end up in it.
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          cache-disabled: true
+
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.DAYSEMBLE_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          echo "DAYSEMBLE_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Signed release build (R8) and SBOM
+        env:
+          DAYSEMBLE_KEYSTORE_PASSWORD: ${{ secrets.DAYSEMBLE_KEYSTORE_PASSWORD }}
+          DAYSEMBLE_KEY_ALIAS: ${{ secrets.DAYSEMBLE_KEY_ALIAS }}
+          DAYSEMBLE_KEY_PASSWORD: ${{ secrets.DAYSEMBLE_KEY_PASSWORD }}
+        run: ./gradlew --no-build-cache assembleRelease :app:cyclonedxDirectBom --stacktrace
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Verify signature and signing certificate
+        env:
+          EXPECTED_CERT: ${{ vars.RELEASE_CERT_SHA256 }}
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          bt="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
+          if [ ! -f "$apk" ]; then
+            echo "::error title=Release::$apk was not produced (the build fell back to unsigned)."
+            exit 1
+          fi
+          "$bt/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apksigner.txt"
+          if ! grep -qE "Verified using v(2|3) scheme .*: true" "$RUNNER_TEMP/apksigner.txt"; then
+            echo "::error title=Release::the APK is not signed with APK Signature Scheme v2 or v3."
+            exit 1
+          fi
+          signers="$(grep -c '^Signer #[0-9]* certificate SHA-256 digest' "$RUNNER_TEMP/apksigner.txt")"
+          actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt")"
+          expected="$(echo "$EXPECTED_CERT" | tr -d ': ' | tr '[:upper:]' '[:lower:]')"
+          if [ "$signers" -ne 1 ] || [ -z "$actual" ] || [ "${#expected}" -ne 64 ] || [ "$actual" != "$expected" ]; then
+            echo "::error title=Release::the signing certificate (SHA-256 $actual, $signers signer(s)) is not the expected release certificate. Check the keystore secrets."
+            exit 1
+          fi
+          echo "CERT_SHA256=$actual" >> "$GITHUB_ENV"
+          echo "Signed with the release certificate $actual."
+
+      - name: Alignment and APK audit
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          bt="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
+          "$bt/zipalign" -c -P 16 4 "$apk"
+          python3 scripts/ci/apk_audit.py --apk "$apk" --package "$APP_ID" --version-name "$VERSION" --version-code "$VERSION_CODE" --build-tools "$bt"
+
+      - name: Package release files
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/daysemble-$VERSION.apk"
+          cp app/build/reports/sbom/daysemble-bom.json "dist/daysemble-$VERSION-sbom.cdx.json"
+          cp app/build/outputs/mapping/release/mapping.txt "dist/daysemble-$VERSION-mapping.txt"
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          echo "$CERT_SHA256" > dist/signing-cert-sha256.txt
+          { echo "## Release files"; echo; echo '```'; cat dist/SHA256SUMS; echo '```'; echo "Signing certificate SHA-256: \`$CERT_SHA256\`"; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
+
+  smoke:
+    name: Signed APK smoke test (emulator)
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.validate.outputs.version_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: dist
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Launch on emulator
+        env:
+          SMOKE_OUT: build/emulator-smoke
+        run: |
+          (cd dist && sha256sum --check --strict SHA256SUMS)
+          scripts/ci/emulator-smoke.sh "dist/daysemble-$VERSION.apk" "$APP_ID"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: emulator-smoke
+          path: build/emulator-smoke/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  publish:
+    name: Publish GitHub release
+    needs: [validate, build, smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # Creates the release and uploads its files.
+      contents: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version_name }}
+      PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: dist
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd dist && sha256sum --check --strict SHA256SUMS)
+          cert="$(cat dist/signing-cert-sha256.txt)"
+          apk_sha="$(sha256sum "dist/daysemble-$VERSION.apk" | cut -d' ' -f1)"
+          {
+            echo "## Verify this release"
+            echo
+            echo "- APK SHA-256: \`$apk_sha\`"
+            echo "- Signing certificate SHA-256: \`$cert\`"
+            echo
+            echo '```sh'
+            echo 'sha256sum --check SHA256SUMS --ignore-missing'
+            echo "apksigner verify --print-certs daysemble-$VERSION.apk   # \"Signer #1 certificate SHA-256 digest\" must match"
+            echo '```'
+            echo
+            echo "Built by GitHub Actions run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID from commit $GITHUB_SHA."
+            echo "The SBOM (CycloneDX) lists the libraries in the APK; the mapping file is for R8 stack traces."
+            echo
+          } > "$RUNNER_TEMP/notes.md"
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Daysemble $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" --generate-notes "${flags[@]}" \
+            "dist/daysemble-$VERSION.apk" "dist/daysemble-$VERSION-sbom.cdx.json" \
+            "dist/daysemble-$VERSION-mapping.txt" dist/SHA256SUMS
+          echo "Published $TAG." >> "$GITHUB_STEP_SUMMARY"
+
+  # Build provenance (SLSA, Sigstore). Artifact attestations need a public repository, or GitHub
+  # Enterprise Cloud for private ones, so this job only runs on a public repository.
+  attest:
+    name: Build provenance attestation
+    needs: [validate, publish]
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: dist
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/daysemble-*.apk
+            dist/daysemble-*-sbom.cdx.json
