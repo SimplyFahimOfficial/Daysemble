@@ -282,14 +282,19 @@ fun TodayScreen(
             OverviewValue.Expanded at expandedTop
         }
         if (panel.state.anchors != anchors) panel.state.updateAnchors(anchors, panel.state.targetValue)
-        val top = panel.state.offset.takeIf { !it.isNaN() }
-            ?: if (panel.state.currentValue == OverviewValue.Expanded) expandedTop else collapsedTop
-        val y = top.roundToInt().coerceIn(0, h)
-        val agenda = measurables[2].measure(Constraints.fixed(w, h - y))
+        // The panel is measured once, at its collapsed (tallest) height, and only moved while it is
+        // dragged or settles. It used to be re-measured to the space left above it on every frame, so
+        // its week pager and agenda list ran a full measure (and the list composed new rows) 60 times
+        // a second during the gesture. When expanded its bottom is below the screen; the list can't
+        // scroll in that state anyway (an upward drag folds the overview away first, see AgendaScroll).
+        val agenda = measurables[2].measure(Constraints.fixed(w, (h - collapsedTop.roundToInt()).coerceAtLeast(0)))
         layout(w, h) {
             compact.place(0, 0)
             expanded.place(0, 0)
-            agenda.place(0, y)
+            // Read here, in placement: a moving panel re-places, it doesn't re-measure.
+            val top = panel.state.offset.takeIf { !it.isNaN() }
+                ?: if (panel.state.currentValue == OverviewValue.Expanded) expandedTop else collapsedTop
+            agenda.place(0, top.roundToInt().coerceIn(0, h))
         }
     }
 }
@@ -554,10 +559,16 @@ private fun AgendaPanel(
             WeekStrip(selected = state.date, today = state.today, onSelect = onSelectDate)
         }
         DashedDivider(Modifier.padding(horizontal = Space.gutter, vertical = Space.xs))
+        var showCompleted by rememberSaveable { mutableStateOf(false) }
+        // Another day replaces the list as a whole (no row-by-row cross-fade of two days) and it
+        // starts at the top; within a day, rows animate as they change. See ContentSwap.
+        var shownDate by remember { mutableStateOf(state.date) }
+        val direction = state.date.compareTo(shownDate).coerceIn(-1, 1)
+        androidx.compose.runtime.SideEffect { shownDate = state.date }
+        app.daysemble.ui.components.ContentSwap(state.date, direction) {
         val list = rememberLazyListState()
         val startedAtTop = remember { booleanArrayOf(false) }
         val listScroll = remember(panel) { AgendaScroll(panel) { startedAtTop[0] } }
-        var showCompleted by rememberSaveable { mutableStateOf(false) }
         LazyColumn(
             state = list,
             modifier = Modifier
@@ -634,16 +645,18 @@ private fun AgendaPanel(
                 item(key = "completedHeader") {
                     CompletedHeader(state.completed.size, showCompleted, { showCompleted = !showCompleted }, Modifier.then(itemMotion()))
                 }
-                item(key = "completedList") {
-                    AnimatedVisibility(visible = showCompleted, enter = m.expandIn(), exit = m.collapseOut()) {
-                        Column {
-                            state.completed.forEach { t ->
-                                TaskRow(t, now, onToggle = { onToggleTask(t.id, it) }, onClick = { onOpenTask(t.id) }, showDue = false, onLongClick = itemActions?.let { a -> { a.onTaskLongPress(t) } })
-                            }
-                        }
+                // Each completed task is its own row, so showing them fades rows in place instead of
+                // growing one item that holds them all (which re-measured the list on every frame).
+                if (showCompleted) {
+                    items(state.completed, key = { "c:" + it.id }) { t ->
+                        TaskRow(
+                            t, now, onToggle = { onToggleTask(t.id, it) }, onClick = { onOpenTask(t.id) }, showDue = false,
+                            onLongClick = itemActions?.let { a -> { a.onTaskLongPress(t) } }, modifier = Modifier.then(itemMotion()),
+                        )
                     }
                 }
             }
+        }
         }
     }
 }

@@ -88,7 +88,8 @@ fun EventDetailRoute(
     val p = LocalTimePrefs.current
     val flow = androidx.compose.runtime.remember(eventId, occurrenceKey, p.zone) { container.events.observeOccurrence(eventId, occurrenceKey, p.zone) }
     val loaded by produceState<Pair<Boolean, EventOccurrence?>>(false to null, flow) { flow.collect { value = true to it } }
-    val rrule by produceState<String?>(null, eventId) { value = container.events.get(eventId)?.rrule }
+    // Re-read whenever the occurrence changes (an edit of the series), not only when the screen opens.
+    val rrule by produceState<String?>(null, eventId, loaded.second) { value = container.events.get(eventId)?.rrule }
     val calendarName by produceState<String?>(null, loaded.second?.calendarId) {
         value = loaded.second?.calendarId?.let { container.events.calendar(it)?.name }
     }

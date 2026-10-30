@@ -28,6 +28,9 @@ import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
@@ -186,6 +189,11 @@ private fun MonthMode(
         val ym = base.plusMonths((settled - CENTER).toLong())
         if (YearMonth.from(vm.state.value.selected) != ym) vm.select(if (ym == base) state.today else ym.atDay(1))
     }
+    // The selected day's rows are replaced as a whole when another day is picked: they appear at once
+    // (no row fading out over the next day's rows); within the same day they animate as they change.
+    var freshDay by remember(state.selected) { mutableStateOf(true) }
+    LaunchedEffect(state.selected) { withFrameNanos { }; withFrameNanos { }; freshDay = false }
+    app.daysemble.ui.components.ItemsAppearInstantly(freshDay) {
     LazyColumn(contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + Space.xxl)) {
         item(key = "weekdays") {
             Row(Modifier.padding(horizontal = Space.m)) {
@@ -220,25 +228,28 @@ private fun MonthMode(
                 )
             }
         }
-        items(evs, key = { "e" + it.stableKey }) { e ->
+        val day = state.selected
+        items(evs, key = { "e$day" + it.stableKey }) { e ->
             AgendaEventCard(
                 e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) },
                 onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onEventLongPress(e) } },
-                showCountdown = state.selected == state.today, modifier = Modifier.then(itemMotion()),
+                showCountdown = state.selected == state.today, modifier = Modifier.then(itemMotion(fadeOut = false)),
             )
         }
-        items(tasks, key = { "t" + it.id }) { t ->
-            AgendaTaskCard(t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(t) } })
+        items(tasks, key = { "t$day" + it.id }) { t ->
+            AgendaTaskCard(t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion(fadeOut = false)), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(t) } })
         }
+    }
     }
 }
 
 @Composable
 private fun MonthGrid(ym: YearMonth, gridStart: LocalDate, state: CalendarUiState, onSelect: (LocalDate) -> Unit) {
-    val weeks = run {
-        val last = ym.atEndOfMonth()
-        ((ChronoUnit.DAYS.between(gridStart, last) / 7) + 1).toInt()
-    }
+    // Always six rows (the most a month needs), so the grid, and everything under it, keeps its
+    // height while paging between 5- and 6-week months instead of jumping when a swipe settles.
+    // The days of the neighbouring months are shown dimmed, as before. The view model loads 42 days
+    // from each grid start, so they have their events.
+    val weeks = MONTH_ROWS
     Column(Modifier.padding(horizontal = Space.m)) {
         repeat(weeks) { w ->
             Row {
@@ -404,3 +415,4 @@ private fun AgendaMode(
     }
 }
 
+private const val MONTH_ROWS = 6

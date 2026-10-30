@@ -167,8 +167,13 @@ val LocalSnackbar = staticCompositionLocalOf { SnackbarHostState() }
  * The settings the app is currently running with (already loaded before the first frame). Settings
  * pages use it as their initial value, so they never render an empty frame while their own flow
  * starts. Null outside [DaysembleRoot] (e.g. in screen tests).
+ *
+ * Dynamic, not static: settings change while the app runs (every switch in Settings), and a static
+ * local invalidates its whole subtree on each change. That recomposed the entire app, including the
+ * three tabs kept composed under Settings, on every toggle, while the toggle was animating. Now only
+ * the few places that read it recompose.
  */
-val LocalAppSettings = staticCompositionLocalOf<AppSettings?> { null }
+val LocalAppSettings = androidx.compose.runtime.compositionLocalOf<AppSettings?> { null }
 
 /**
  * Sync status collected once at the app root, which stays alive across navigation, so screens have
@@ -345,6 +350,8 @@ private fun AppContent(
         onEditEvent = { id -> nav.navigate(EventEditorRoute(eventId = id)) },
     ) {
     Box(Modifier.fillMaxSize().background(c.background)) {
+        // Paused (lifecycle CREATED) while a page covers it completely: see VisibilityLifecycle.
+        app.daysemble.ui.components.VisibilityLifecycle(visible = onMain || mainShown > 0) {
         MainScreen(
             tab = tab,
             onTab = { tab = it },
@@ -387,6 +394,7 @@ private fun AppContent(
                 )
                 Tab.TASKS -> TasksScreenRoute(bottomPadding, onOpenTask = openTask)
             }
+        }
         }
 
         DaysembleNavHost(nav, mainLayer, onMainShown)
@@ -705,6 +713,10 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
         }
     }
     val composed = Tab.entries.filter { it.name in visited || it == current }
+    // Tabs the user has looked at. A tab composed in the background but never shown keeps loading
+    // (so its first appearance has data); once seen, it pauses whenever it is hidden.
+    var seen by rememberSaveable { mutableStateOf(listOf(current.name)) }
+    androidx.compose.runtime.SideEffect { if (current.name !in seen) seen = seen + current.name }
 
     val alpha = remember { Tab.entries.associateWith { Animatable(if (it == current) 1f else 0f) } }
     // Tabs being drawn, bottom to top. Usually just the current one; during a switch the one being
@@ -752,7 +764,11 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                             .onFocusChanged { tabHasFocus[t] = it.hasFocus }
                             .focusProperties { onEnter = { if (t != currentTab) cancelFocusChange() } }
                             .focusGroup(),
-                    ) { holder.SaveableStateProvider(t.name) { content(t) } }
+                    ) {
+                        app.daysemble.ui.components.VisibilityLifecycle(visible = t == current || t in stack || t.name !in seen) {
+                            holder.SaveableStateProvider(t.name) { content(t) }
+                        }
+                    }
                 }
             }
         },

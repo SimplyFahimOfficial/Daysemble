@@ -35,7 +35,10 @@ import androidx.compose.ui.unit.dp
  * | Editors and event detail  | [riseIn]/[sinkOut] over a still page   | task/event editors, event detail         |
  * | Theme change              | snapshot cross-fade, draw phase only   | DaysembleTheme                           |
  * | Content change in place   | [fadeThrough]                          | day summary, calendar view, quick add    |
- * | Expand / collapse         | [expandIn]/[collapseOut]               | completed tasks, subtasks, field errors  |
+ * | List for another day      | ContentSwap: at once + [swapShift]     | Today agenda, selected day in Month view |
+ * | Rows changing in a list   | itemMotion (animateItem)               | completion, delete, add, reorder         |
+ * | Expand / collapse         | [expandIn]/[collapseOut]               | subtasks, field errors, repeat options   |
+ * | Overview panel drag       | finger, then [indicator]-like spring   | Today (moved in placement, not measured) |
  * | Task completion           | `standard(medium)` (check, strike)     | TaskRow, DsCheck                         |
  * | Calendar date             | [indicator] (colour only, no movement) | month cells, week header, date strip     |
  * | Dialogs and sheets        | Material's own motion                  | AlertDialog, ModalBottomSheet            |
@@ -49,7 +52,15 @@ import androidx.compose.ui.unit.dp
  * - Nothing waits for an animation: state changes immediately and the animation follows it. All
  *   specs are interruptible (Animatable / Transition based) and resume from the current value.
  * - Animated values are read in the draw or layout phase where possible, so a running animation
- *   doesn't recompose the screen on every frame.
+ *   doesn't recompose the screen on every frame. A moving or resizing container never re-measures
+ *   its contents per frame: it is measured once and moved in placement or with a graphics layer.
+ * - Only what is on screen does work. Screens kept composed for instant return (the hidden tabs,
+ *   the main screen under a page) are paused through VisibilityLifecycle: no data collection, no
+ *   tickers, so they cost nothing while another screen animates.
+ * - One container animates a given screen: the NavHost for pages, TabHost for tabs. Content inside
+ *   them never adds its own screen-sized enter/exit on top.
+ * - A list whose content is replaced (another day) is swapped in one piece; per-row motion is only
+ *   for rows that change within the same list, so two versions never cross-fade row by row.
  *
  * [reduced] (Android "Remove animations", or the in-app Motion setting) keeps only short fades: no
  * movement, scaling or springs.
@@ -65,6 +76,9 @@ data class DsMotion(val reduced: Boolean = false) {
 
     /** Distance of shared-axis screen transitions. Small on purpose: it hints at direction, it doesn't carry the page. */
     val axisDistance get() = 30.dp
+
+    /** Shift of a list swapped for another day (ContentSwap): a hint of direction, drawn only. */
+    val swapShift get() = 16.dp
 
     fun <T> enter(duration: Int = medium, delay: Int = 0): FiniteAnimationSpec<T> = tween(duration, delay, EmphasizedDecelerate)
     fun <T> exit(duration: Int = short, delay: Int = 0): FiniteAnimationSpec<T> = tween(duration, delay, EmphasizedAccelerate)

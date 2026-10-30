@@ -133,17 +133,13 @@ fun ItemActionsHost(
             onOpen = { target = null; if (t.isTask) onOpenTask(t.id) else onOpenEvent(t.id, t.occurrenceKey.orEmpty()) },
             onEdit = { target = null; if (t.isTask) onEditTask(t.id) else onEditEvent(t.id) },
             onToggle = {
-                target = null
                 scope.launch {
                     val done = !(container.tasks.get(t.id)?.isCompleted ?: return@launch)
                     container.tasks.setCompleted(t.id, done)?.let { r -> if (done) onCompleted(t.id, r) }
                 }
             },
-            onSkip = {
-                target = null
-                scope.launch { container.tasks.delete(t.id, SeriesScope.THIS); onDeleted(t.id) }
-            },
-            onDelete = { target = null; confirmDelete = t },
+            onSkip = { scope.launch { container.tasks.delete(t.id, SeriesScope.THIS); onDeleted(t.id) } },
+            onDelete = { confirmDelete = t },
         )
     }
     confirmDelete?.let { t ->
@@ -202,6 +198,20 @@ private fun ItemMenu(
 ) {
     val c = DsTheme.colors
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    // In-place actions run at once; the sheet then slides away and only afterwards leaves the
+    // composition. (Removing it straight away skipped its exit animation: it vanished.) Actions that
+    // open a page close it immediately instead: the page arrives over it.
+    var closing by remember { mutableStateOf(false) }
+    val inPlace: (() -> Unit) -> () -> Unit = { action ->
+        {
+            if (!closing) {
+                closing = true
+                action()
+                scope.launch { sheet.hide() }.invokeOnCompletion { onDismiss() }
+            }
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = c.surfaceRaised, shape = Radii.sheet) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = Space.l).testTag(ItemMenuTags.SHEET)) {
             Text(
@@ -215,12 +225,12 @@ private fun ItemMenu(
             if (t.isTask) {
                 MenuRow(
                     if (t.completed) Icons.Rounded.RadioButtonUnchecked else Icons.Rounded.CheckCircleOutline,
-                    stringResource(if (t.completed) R.string.action_mark_incomplete else R.string.action_complete), onToggle,
+                    stringResource(if (t.completed) R.string.action_mark_incomplete else R.string.action_complete), inPlace(onToggle),
                     Modifier.testTag(ItemMenuTags.COMPLETE),
                 )
-                if (t.recurring && !t.completed) MenuRow(Icons.Rounded.SkipNext, stringResource(R.string.menu_skip_occurrence), onSkip, Modifier.testTag(ItemMenuTags.SKIP))
+                if (t.recurring && !t.completed) MenuRow(Icons.Rounded.SkipNext, stringResource(R.string.menu_skip_occurrence), inPlace(onSkip), Modifier.testTag(ItemMenuTags.SKIP))
             }
-            if (!t.readOnly) MenuRow(Icons.Rounded.DeleteOutline, stringResource(R.string.action_delete), onDelete, Modifier.testTag(ItemMenuTags.DELETE), tint = c.error)
+            if (!t.readOnly) MenuRow(Icons.Rounded.DeleteOutline, stringResource(R.string.action_delete), inPlace(onDelete), Modifier.testTag(ItemMenuTags.DELETE), tint = c.error)
         }
     }
 }
