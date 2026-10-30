@@ -188,9 +188,6 @@ interface TaskDao {
     @Query("SELECT * FROM task WHERE seriesId = :seriesId")
     suspend fun inSeries(seriesId: String): List<TaskEntity>
 
-    @Query("SELECT * FROM task WHERE seriesId = :seriesId")
-    fun observeInSeries(seriesId: String): Flow<List<TaskEntity>>
-
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(task: TaskEntity)
 }
@@ -205,6 +202,10 @@ interface TaskSeriesDao {
 
     @Query("SELECT * FROM task_series WHERE id = :id")
     fun observe(id: String): Flow<TaskSeriesEntity?>
+
+    /** Every stored occurrence (task row) of series [seriesId], deleted ones included. */
+    @Query("SELECT * FROM task WHERE seriesId = :seriesId")
+    fun observeOccurrences(seriesId: String): Flow<List<TaskEntity>>
 
     @Upsert suspend fun upsert(series: TaskSeriesEntity)
 

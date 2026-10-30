@@ -99,6 +99,9 @@ data class TaskDraft(
     val durationMinutes: Int? = null,
 ) {
     val isValid: Boolean get() = title.isNotBlank()
+
+    /** [durationMinutes] if it is a real duration (more than 0). */
+    val positiveDuration: Int? get() = durationMinutes?.takeIf { it > 0 }
 }
 
 /** Which occurrences an edit or delete of a repeating task applies to. */

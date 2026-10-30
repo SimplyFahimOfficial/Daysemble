@@ -165,8 +165,7 @@ class TaskRepository(
                 row.copy(
                     title = draft.title.trim(), notes = draft.notes.trim(),
                     dueDate = draft.dueDate?.toEpochDay(), dueTimeMinutes = draft.dueTime?.toMinutes(),
-                    priority = draft.priority.level, countdownEnabled = draft.countdown && draft.dueDate != null,
-                    durationMinutes = draft.durationMinutes?.takeIf { it > 0 },
+                    priority = draft.priority.level, countdownEnabled = draft.countdown && draft.dueDate != null, durationMinutes = draft.positiveDuration,
                 )
             } ?: return@withTransaction
             saveReminders(id, draft)
@@ -384,7 +383,7 @@ class TaskRepository(
             // Deleting one occurrence on its own is a skip: its date stays in the history as skipped
             // after the deleted row itself is purged. A completed one too: without the record its date
             // would show as missed, which the user never did.
-            if (scope == SeriesScope.THIS && !google) recordSkip(row, now)
+            recordSkip(row, scope, google, now)
             if (s != null) when (scope) {
                 SeriesScope.THIS -> if (!row.isCompleted) generated = generateNext(s, row, now)
                 SeriesScope.FUTURE, SeriesScope.ALL -> {
@@ -432,7 +431,7 @@ class TaskRepository(
         var removed: List<String> = emptyList()
         val restored = mutableListOf<String>()
         db.withTransaction {
-            if (row.seriesId != null && row.occurrenceDate != null) skips.delete(row.seriesId, row.occurrenceDate)
+            forgetSkip(row)
             row.seriesId?.let { series.get(it) }?.let { s ->
                 if (s.endedAt != null && s.endedAt == row.deletedAt) {
                     // Undo of "this and future" / "all": the series repeats again, with what it deleted.
@@ -481,7 +480,7 @@ class TaskRepository(
      * every stored occurrence (deleted ones within the undo window too) and the skipped dates.
      */
     fun observeSeries(seriesId: String): Flow<SeriesData?> =
-        combine(series.observe(seriesId), tasks.observeInSeries(seriesId), skips.observeForSeries(seriesId)) { s, rows, sk ->
+        combine(series.observe(seriesId), series.observeOccurrences(seriesId), skips.observeForSeries(seriesId)) { s, rows, sk ->
             s ?: return@combine null
             SeriesData(
                 id = s.id, rule = s.activeRule(), anchor = LocalDate.ofEpochDay(s.anchorDate), ended = s.endedAt != null,
@@ -632,11 +631,21 @@ class TaskRepository(
         return created
     }
 
-    /** Keeps [row]'s scheduled date as skipped (see [delete]), if it is an occurrence of a stored series. */
-    private suspend fun recordSkip(row: TaskEntity, now: Long) {
+    /**
+     * Keeps [row]'s scheduled date as skipped when one occurrence of an on-device series is deleted on
+     * its own (see [delete]).
+     */
+    private suspend fun recordSkip(row: TaskEntity, scope: SeriesScope, google: Boolean, now: Long) {
+        if (scope != SeriesScope.THIS || google) return
         val sid = row.seriesId ?: return
         val date = row.occurrenceDate ?: return
         if (series.get(sid) != null) skips.insert(app.daysemble.data.db.TaskOccurrenceSkipEntity(sid, date, now))
+    }
+
+    /** Undo of [recordSkip]: the restored occurrence is back on its date. */
+    private suspend fun forgetSkip(row: TaskEntity) {
+        val sid = row.seriesId ?: return
+        row.occurrenceDate?.let { skips.delete(sid, it) }
     }
 
     /**
