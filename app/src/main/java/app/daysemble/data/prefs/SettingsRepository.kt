@@ -143,14 +143,21 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
     }
 
     private fun Preferences.schedule(): DaySchedulePrefs {
-        val d = SleepSchedule.DEFAULT
-        val wake = this[Keys.wake]?.takeIf { it in 0 until SleepSchedule.MINUTES_PER_DAY } ?: d.wakeMinute
-        val bed = this[Keys.bed]?.takeIf { it in 0 until SleepSchedule.MINUTES_PER_DAY && it != wake } ?: if (d.bedMinute != wake) d.bedMinute else (wake + 16 * 60) % SleepSchedule.MINUTES_PER_DAY
+        val wake = minuteOrNull(this[Keys.wake]) ?: SleepSchedule.DEFAULT.wakeMinute
+        val bed = minuteOrNull(this[Keys.bed])?.takeIf { it != wake } ?: defaultBedtime(wake)
         return DaySchedulePrefs(
             default = SleepSchedule(wake, bed),
             perWeekday = this[Keys.perWeekday] ?: false,
             overrides = DaySchedulePrefs.decodeOverrides(this[Keys.weekdayOverrides]),
         )
+    }
+
+    private fun minuteOrNull(v: Int?): Int? = v?.takeIf { it in 0 until SleepSchedule.MINUTES_PER_DAY }
+
+    /** The default bedtime, or 16 h after [wake] when that is the default bedtime's own minute. */
+    private fun defaultBedtime(wake: Int): Int {
+        val d = SleepSchedule.DEFAULT.bedMinute
+        return if (d != wake) d else (wake + SleepSchedule.DEFAULT.awakeMinutes) % SleepSchedule.MINUTES_PER_DAY
     }
 
     suspend fun setThemeMode(mode: ThemeMode) = store.edit { it[Keys.theme] = mode.key }

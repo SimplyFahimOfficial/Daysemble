@@ -15,6 +15,7 @@ import app.daysemble.data.prefs.settingsDataStore
 import app.daysemble.data.repo.EventRepository
 import app.daysemble.data.repo.SleepRepository
 import app.daysemble.data.repo.TaskRepository
+import app.daysemble.data.repo.TaskSeriesReader
 import app.daysemble.data.sync.ChangeListener
 import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.EventDraft
@@ -86,7 +87,7 @@ class FreeTimeAndSleepTest {
         val tasks = TaskRepository(d, outbox, clock, listener)
         val events = EventRepository(d, outbox, clock, listener)
         val handle = SavedStateHandle(mapOf("today_selected" to day.toEpochDay()))
-        val vm = TodayViewModel(events, tasks, c.settings, clock, MutableStateFlow(TimeContext(zone)), handle, Dispatchers.Unconfined, SleepRepository(d, clock))
+        val vm = TodayViewModel(events, tasks, c.settings, clock, MutableStateFlow(TimeContext(zone)), handle, Dispatchers.Unconfined, SleepRepository(d, clock), TaskSeriesReader(d))
         return Triple(vm, tasks, events)
     }
 
@@ -204,7 +205,7 @@ class FreeTimeAndSleepTest {
         val outbox = Outbox(second.sync()) { clock.now().toEpochMilli() }
         val vm = TodayViewModel(
             EventRepository(second, outbox, clock, listener), TaskRepository(second, outbox, clock, listener), c.settings, clock,
-            MutableStateFlow(TimeContext(zone)), SavedStateHandle(mapOf("today_selected" to day.toEpochDay())), Dispatchers.Unconfined, sleep2,
+            MutableStateFlow(TimeContext(zone)), SavedStateHandle(mapOf("today_selected" to day.toEpochDay())), Dispatchers.Unconfined, sleep2, TaskSeriesReader(second),
         )
         val s = vm.awaitState { it.sleep.lastNight != null }
         assertThat(s.sleep.lastNight!!.duration).isEqualTo(Duration.ofMinutes(465))

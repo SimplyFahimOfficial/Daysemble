@@ -108,7 +108,7 @@ fun TaskDetailRoute(
     onDone: (() -> Unit)? = null,
 ) {
     val finish = onDone ?: onClose
-    val vm = daysembleViewModel(key = "taskDetail:$taskId") { c, h -> TaskDetailViewModel(c.tasks, c.clock, c.timeContext, taskId, h) }
+    val vm = daysembleViewModel(key = "taskDetail:$taskId") { c, h -> TaskDetailViewModel(c.tasks, c.clock, c.timeContext, taskId, h, c.taskSeries) }
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()
     LaunchedEffect(now) { vm.onTick(now) }

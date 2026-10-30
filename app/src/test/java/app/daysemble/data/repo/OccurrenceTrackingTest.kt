@@ -53,7 +53,7 @@ class OccurrenceTrackingTest {
 
     @After fun tearDown() = db.close()
 
-    private suspend fun history(seriesId: String) = repo.observeSeries(seriesId).first()!!.let {
+    private suspend fun history(seriesId: String) = TaskSeriesReader(db).observeSeries(seriesId).first()!!.let {
         OccurrenceHistoryCalc.build(OccurrenceHistoryCalc.SeriesInput(it.rule, it.anchor, it.rows, it.skips), clock.now(), zone, clock.today().plusWeeks(1))
     }
 

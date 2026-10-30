@@ -9,6 +9,7 @@ import app.daysemble.core.recurrence.OccurrenceHistoryCalc
 import app.daysemble.core.time.AppClock
 import app.daysemble.core.time.TimeContext
 import app.daysemble.data.repo.TaskRepository
+import app.daysemble.data.repo.TaskSeriesReader
 import app.daysemble.domain.model.SeriesScope
 import app.daysemble.domain.model.Task
 import app.daysemble.domain.model.TaskList
@@ -37,7 +38,7 @@ data class TaskDetailUiState(
     /** The series' stored history; null for one-off tasks. */
     val history: OccurrenceHistory? = null,
     /** The series' rule, also after it stopped repeating is false (null then). */
-    val series: TaskRepository.SeriesData? = null,
+    val series: TaskSeriesReader.SeriesData? = null,
     val today: LocalDate,
     val isLoading: Boolean = true,
     /** The task was deleted (or never existed): the screen closes. */
@@ -58,6 +59,7 @@ class TaskDetailViewModel(
     private val time: StateFlow<TimeContext>,
     private val initialId: String,
     private val handle: SavedStateHandle,
+    private val seriesReader: TaskSeriesReader,
     compute: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
 ) : ViewModel() {
     private val focus = MutableStateFlow(handle.get<String>(KEY_FOCUS) ?: initialId)
@@ -70,7 +72,7 @@ class TaskDetailViewModel(
 
     val state: StateFlow<TaskDetailUiState> = focus.flatMapLatest { id ->
         repo.observeTask(id).flatMapLatest { task ->
-            val series: Flow<TaskRepository.SeriesData?> = task?.seriesId?.let(repo::observeSeries) ?: flowOf(null)
+            val series: Flow<TaskSeriesReader.SeriesData?> = task?.seriesId?.let(seriesReader::observeSeries) ?: flowOf(null)
             combine(
                 combine(repo.observeSubtasks(id), repo.observeReminders(id), repo.taskLists) { subs, rem, lists -> Related(subs, rem, lists) },
                 series, tick, time,
@@ -95,7 +97,7 @@ class TaskDetailViewModel(
     /** What the screen shows besides the task and its series. */
     private class Related(val subtasks: List<Task>, val reminders: List<Int>, val lists: List<TaskList>)
 
-    private fun build(task: Task?, r: Related, s: TaskRepository.SeriesData?, now: Instant, t: TimeContext): TaskDetailUiState {
+    private fun build(task: Task?, r: Related, s: TaskSeriesReader.SeriesData?, now: Instant, t: TimeContext): TaskDetailUiState {
         val today = now.atZone(t.zone).toLocalDate()
         if (task == null) return TaskDetailUiState(today = today, isLoading = false, isMissing = true)
         val history = s?.let {
@@ -126,7 +128,7 @@ class TaskDetailViewModel(
         repo.delete(t.id, SeriesScope.THIS)
         onDeleted(t.id)
         // Follow the series to its new current occurrence, if there is one.
-        val next = seriesId?.let { sid -> repo.observeSeries(sid).first() }
+        val next = seriesId?.let { sid -> seriesReader.observeSeries(sid).first() }
             ?.rows?.filter { !it.isDeleted && !it.isCompleted }?.maxByOrNull { it.date ?: LocalDate.MIN }?.id
         if (next != null) { previous = null; setFocus(next) }
         following.value = false

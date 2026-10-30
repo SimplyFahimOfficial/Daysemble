@@ -143,7 +143,7 @@ fun TodayRoute(
     onAddTask: (LocalDate) -> Unit = {},
     onOpenSchedule: () -> Unit = {},
 ) {
-    val vm = daysembleViewModel { c, h -> TodayViewModel(c.events, c.tasks, c.settings, c.clock, c.timeContext, h, sleepRepo = c.sleep) }
+    val vm = daysembleViewModel { c, h -> TodayViewModel(c.events, c.tasks, c.settings, c.clock, c.timeContext, h, sleepRepo = c.sleep, seriesReader = c.taskSeries) }
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()
     val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
@@ -158,10 +158,18 @@ fun TodayRoute(
         onSelectDate = vm::select, onToday = vm::goToToday,
         onToggleTask = { id, done -> vm.setCompleted(id, done) { r -> if (done) onCompleted(id, r) } }, onOpenEvent = onOpenEvent, onOpenTask = onOpenTask,
         onAddEvent = onAddEvent, onAddTask = onAddTask,
-        onOpenSchedule = onOpenSchedule, sleepActions = sleepActions, sleepRecords = records,
+        sleep = TodaySleep(sleepActions, records, onOpenSchedule),
     )
     app.daysemble.ui.sleep.SleepPrompts(sleepActions)
 }
+
+/** Sleep and waking-hours hooks of Today: the sleep buttons, recent records, and Settings → Daily schedule. */
+@androidx.compose.runtime.Immutable
+class TodaySleep(
+    val actions: app.daysemble.ui.sleep.SleepActions? = null,
+    val records: List<app.daysemble.core.time.SleepRecord> = emptyList(),
+    val onOpenSchedule: () -> Unit = {},
+)
 
 /** Test tags for the Today layout (gesture tests and visual QA). */
 object TodayTags {
@@ -202,10 +210,11 @@ fun TodayScreen(
     displayName: String? = null,
     onAddEvent: (LocalDate) -> Unit = {},
     onAddTask: (LocalDate) -> Unit = {},
-    onOpenSchedule: () -> Unit = {},
-    sleepActions: app.daysemble.ui.sleep.SleepActions? = null,
-    sleepRecords: List<app.daysemble.core.time.SleepRecord> = emptyList(),
+    sleep: TodaySleep = TodaySleep(),
 ) {
+    val sleepActions = sleep.actions
+    val onOpenSchedule = sleep.onOpenSchedule
+    val sleepRecords = sleep.records
     val c = DsTheme.colors
     val panel = rememberOverviewPanel()
     var showBreakdown by rememberSaveable { mutableStateOf(false) }

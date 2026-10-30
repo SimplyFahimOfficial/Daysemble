@@ -17,6 +17,7 @@ import app.daysemble.data.prefs.SettingsRepository
 import app.daysemble.data.repo.EventRepository
 import app.daysemble.data.repo.SleepRepository
 import app.daysemble.data.repo.TaskRepository
+import app.daysemble.data.repo.TaskSeriesReader
 import app.daysemble.domain.TaskRules
 import app.daysemble.domain.model.EventOccurrence
 import app.daysemble.domain.model.Task
@@ -116,6 +117,7 @@ class TodayViewModel(
     private val handle: SavedStateHandle,
     private val compute: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
     private val sleepRepo: SleepRepository? = null,
+    private val seriesReader: TaskSeriesReader? = null,
 ) : ViewModel() {
     private fun zone(): ZoneId = time.value.zone
 
@@ -130,7 +132,7 @@ class TodayViewModel(
     val state: StateFlow<TodayUiState> = combine(selected, time) { d, t -> d to t.zone }.flatMapLatest { (date, z) ->
         combine(
             events.occurrences(date, date.plusDays(1), z),
-            combine(tasks.allTasks, tasks.timedSeries) { a, b -> a to b },
+            combine(tasks.allTasks, seriesReader?.timedSeries ?: flowOf(emptyList())) { a, b -> a to b },
             settings.settings,
             tick,
             sleepRepo?.recent ?: flowOf(emptyList()),
@@ -167,7 +169,7 @@ class TodayViewModel(
         /** Event occurrences of the date and the day after (a waking window can pass midnight). */
         val occurrences: List<EventOccurrence>,
         val all: List<Task>,
-        val series: List<TaskRepository.SeriesTemplate>,
+        val series: List<TaskSeriesReader.SeriesTemplate>,
         val showCompleted: Boolean,
         val schedule: DaySchedulePrefs,
         val sleep: List<SleepRecord>,
@@ -291,7 +293,7 @@ class TodayViewModel(
         return SleepSummary(lastNight = lastNight, open = open, wakeOnly = wakeOnly.takeIf { lastNight == null })
     }
 
-    private fun projectedBlocks(series: List<TaskRepository.SeriesTemplate>, all: List<Task>, window: AwakeWindow, z: ZoneId): List<FreeTimeEntry.TaskBlock> {
+    private fun projectedBlocks(series: List<TaskSeriesReader.SeriesTemplate>, all: List<Task>, window: AwakeWindow, z: ZoneId): List<FreeTimeEntry.TaskBlock> {
         if (series.isEmpty()) return emptyList()
         val bySeries = all.filter { it.seriesId != null }.groupBy { it.seriesId }
         // The window can touch two dates (bedtime after midnight).
