@@ -140,4 +140,28 @@ class OccurrenceTrackingTest {
         assertThat(repo.get(after)!!.durationMinutes).isEqualTo(20)
         assertThat(repo.get(id)!!.durationMinutes).isNull()
     }
+
+    /** Deleting a completed occurrence removes it from the history as skipped, never as missed. */
+    @Test fun deletingACompletedOccurrence_showsSkipped_beforeAndAfterThePurge() = runTest {
+        val id = repo.create(TaskDraft(title = "Floss", dueDate = d("2026-10-26"), repeat = RRule.parse("FREQ=DAILY")), list)
+        val sid = repo.get(id)!!.seriesId!!
+        repo.setCompleted(id, true) // next one: the 27th (today)
+        repo.delete(id, SeriesScope.THIS)
+        fun status() = kotlinx.coroutines.runBlocking { history(sid) }.cells.first { it.date == d("2026-10-26") }.status
+        assertThat(status()).isEqualTo(OccurrenceStatus.SKIPPED) // within the undo window
+        clock.instant = clock.instant.plusSeconds(60)
+        repo.purgeExpiredTombstones()
+        assertThat(status()).isEqualTo(OccurrenceStatus.SKIPPED) // after the purge, from the skip record
+        val h = history(sid)
+        assertThat(h.missed).isEqualTo(0)
+        assertThat(h.completed).isEqualTo(0)
+        // The current occurrence is untouched and no extra one was created.
+        assertThat(repo.allTasks.first().filter { it.title == "Floss" && !it.isCompleted }.map { it.dueDate }).containsExactly(d("2026-10-27"))
+        // Undo before a purge brings the completed one back.
+        val id2 = repo.create(TaskDraft(title = "Walk", dueDate = d("2026-10-26"), repeat = RRule.parse("FREQ=DAILY")), list)
+        val sid2 = repo.get(id2)!!.seriesId!!
+        repo.setCompleted(id2, true); repo.delete(id2, SeriesScope.THIS); repo.restore(id2)
+        assertThat(history(sid2).completed).isEqualTo(1)
+        assertThat(history(sid2).skipped).isEqualTo(0)
+    }
 }

@@ -107,4 +107,22 @@ class OccurrenceHistoryTest {
         val h = OccurrenceHistoryCalc.build(monthly, d("2027-01-31"), rows, emptySet(), at("2027-02-10"), zone, d("2027-05-01"))
         assertThat(h.cells.map { it.date.toString() }).containsExactly("2027-01-31", "2027-02-28", "2027-03-31", "2027-04-30").inOrder()
     }
+
+    @Test fun verySeriesOld_stillReachesTodayAndTheHorizon() {
+        // Anchored ~16 years ago: the walk starts near the horizon instead of stopping early.
+        val anchor = "2010-01-01"
+        val h = build(daily, anchor, listOf(done("2026-10-26"), open("2026-10-27")), at("2026-10-27", 9))
+        assertThat(h.active!!.date).isEqualTo(d("2026-10-27"))
+        assertThat(h.nextAfterActive).isEqualTo(d("2026-10-28"))
+        assertThat(h.cells.last().date).isEqualTo(d("2026-11-02"))
+        assertThat(h.cells.single { it.date == d("2026-10-25") }.status).isEqualTo(OccurrenceStatus.MISSED)
+    }
+
+    @Test fun deletedCompletedRow_isSkippedNotMissed() {
+        val gone = done("2026-10-25").copy(isDeleted = true)
+        val h = build(daily, "2026-10-24", listOf(done("2026-10-24"), gone, done("2026-10-26"), open("2026-10-27")), at("2026-10-27", 9))
+        assertThat(h.cells.single { it.date == d("2026-10-25") }.status).isEqualTo(OccurrenceStatus.SKIPPED)
+        assertThat(h.missed).isEqualTo(0)
+        assertThat(h.completed).isEqualTo(2)
+    }
 }

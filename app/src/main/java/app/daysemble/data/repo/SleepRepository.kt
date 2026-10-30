@@ -77,7 +77,7 @@ class SleepRepository(private val db: DaysembleDatabase, private val clock: AppC
     suspend fun update(id: String, bedtime: Instant?, wake: Instant?, zone: ZoneId): SleepLog.EditError? = db.withTransaction {
         val row = dao.get(id) ?: return@withTransaction null
         val edited = SleepRecord(id, bedtime, wake)
-        SleepLog.validate(edited, all(), clock.now())?.let { return@withTransaction it }
+        SleepLog.validate(edited, overlapCandidates(bedtime, wake), clock.now())?.let { return@withTransaction it }
         val b = bedtime?.toEpochMilli()
         val w = wake?.toEpochMilli()
         dao.upsert(
@@ -94,7 +94,7 @@ class SleepRepository(private val db: DaysembleDatabase, private val clock: AppC
     /** Adds a record entered by hand (e.g. a night that wasn't tapped). */
     suspend fun add(bedtime: Instant?, wake: Instant?, zone: ZoneId): SleepLog.EditError? = db.withTransaction {
         val now = clock.now()
-        SleepLog.validate(SleepRecord("new", bedtime, wake), all(), now)?.let { return@withTransaction it }
+        SleepLog.validate(SleepRecord("new", bedtime, wake), overlapCandidates(bedtime, wake), now)?.let { return@withTransaction it }
         insert(bedtime, wake, zone, now)
         null
     }
@@ -112,7 +112,13 @@ class SleepRepository(private val db: DaysembleDatabase, private val clock: AppC
         )
     }
 
+    /** Recent records, for the button decisions (only the latest ones can be open or a repeat). */
     private suspend fun all(): List<SleepRecord> = dao.recent(RECENT).map { it.toRecord() }
+
+    /** Every stored record that overlaps [bedtime, wake), however old, for checking an edit. */
+    private suspend fun overlapCandidates(bedtime: Instant?, wake: Instant?): List<SleepRecord> =
+        if (bedtime == null || wake == null) emptyList()
+        else dao.overlapping(bedtime.toEpochMilli(), wake.toEpochMilli()).map { it.toRecord() }
 
     private suspend fun insert(bedtime: Instant?, wake: Instant?, zone: ZoneId, now: Instant): SleepRecord {
         val row = SleepSessionEntity(

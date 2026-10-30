@@ -184,9 +184,17 @@ class TodayOverviewTest {
         dateCell(today).assertIsSelected()
     }
 
+    /** Another day in today's week (the strip shows one week; a later week's cells are off-screen). */
+    private val otherDayThisWeek: LocalDate get() {
+        val first = java.time.temporal.WeekFields.of(Locale.getDefault()).firstDayOfWeek
+        val start = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(first))
+        return if (today.plusDays(1).isBefore(start.plusDays(7))) today.plusDays(1) else today.minusDays(1)
+    }
+
     @Test fun overviewAndDate_surviveTabsAndSettings() {
         handle().performClick(); settle()
-        dateCell(today.plusDays(2)).performClick(); settle()
+        val other = otherDayThisWeek
+        dateCell(other).performClick(); settle()
         tab("Tasks").performClick(); settle()
         tab("Today").performClick(); settle()
         compose.onNodeWithContentDescription("Settings").performClick(); settle()
@@ -196,7 +204,7 @@ class TodayOverviewTest {
         }
         settle()
         assertOverview("Expanded")
-        dateCell(today.plusDays(2)).assertIsSelected()
+        dateCell(other).assertIsSelected()
     }
 
     @Test fun themeChoice_isSavedAndHandedToTheSystemForTheSplash() {

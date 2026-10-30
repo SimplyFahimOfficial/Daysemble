@@ -201,36 +201,8 @@ class TodayViewModel(
         val focus = if (date == today) timed.firstOrNull { it.end > now }?.stableKey else null
         val next = if (date == today) timed.firstOrNull { it.start > now } else null
 
-        // ---- Free time -------------------------------------------------------------------------
-        val window = schedule.awakeWindow(date, z)
-        val windowEvents = allOcc.filter { !it.isAllDay && it.start.isBefore(window.end) && it.end.isAfter(window.start) }
-        val entries = ArrayList<FreeTimeEntry>()
-        windowEvents.forEach { entries += FreeTimeEntry.Event(it.title, it.start, it.end) }
-        // Open tasks with a real time block (due time + duration) inside the window, any due date
-        // (a block after midnight belongs to this window if bedtime is after midnight).
-        val blocks = topLevel.filter { !it.isCompleted }.mapNotNull { t -> t.scheduledBlock(z)?.let { t to it } }
-            .filter { (_, b) -> b.first.isBefore(window.end) && b.second.isAfter(window.start) }
-        blocks.forEach { (t, b) -> entries += FreeTimeEntry.TaskBlock(t.title, b.first, b.second, projected = false) }
-        // Later occurrences of repeating tasks with a time and duration, on dates that have no row
-        // yet (only the current occurrence is stored); never on or before the current one.
-        val projected = projectedBlocks(series, all, window, z)
-        projected.forEach { entries += it }
-        val estimates = dayTasks.filter { it.dueTime == null && (it.durationMinutes ?: 0) > 0 }
-        estimates.forEach { entries += FreeTimeEntry.Estimate(it.title, it.durationMinutes!!) }
-        val unestimated = dayTasks.count { (it.durationMinutes ?: 0) <= 0 }
-        val availability = Availability.of(
-            window,
-            windowEvents.map { Availability.Busy(it.start, it.end) },
-            now,
-            tasks = blocks.map { (_, b) -> Availability.Busy(b.first, b.second) } + projected.map { Availability.Busy(it.start, it.end) },
-            estimatedWork = Duration.ofMinutes(estimates.sumOf { it.durationMinutes!!.toLong() }),
-            unestimatedTasks = unestimated,
-        )
-
-        // ---- Sleep -----------------------------------------------------------------------------
-        val open = if (date == today) SleepLog.openSession(sleep, now) else null
-        val lastNight = SleepLog.lastNight(sleep, date, z)
-        val wakeOnly = sleep.filter { it.bedtime == null && it.wake != null && it.nightOf(z) == date }.maxByOrNull { it.wake!! }
+        val free = freeTime(date, allOcc, topLevel, all, dayTasks, series, schedule, now, z)
+        val sleepSummary = sleepSummary(sleep, date, today, now, z)
 
         return TodayUiState(
             date = date, today = today,
@@ -241,22 +213,63 @@ class TodayViewModel(
             eventCount = occ.size,
             taskCount = dayTasks.size,
             overdueCount = overdue.size,
-            availability = availability,
-            window = window,
+            availability = free.availability,
+            window = free.window,
             schedule = schedule.forDate(date),
             scheduledSleep = schedule.scheduledSleepBefore(date, z),
-            freeTimeEntries = entries.sortedBy {
-                when (it) {
-                    is FreeTimeEntry.Event -> it.start
-                    is FreeTimeEntry.TaskBlock -> it.start
-                    is FreeTimeEntry.Estimate -> Instant.MAX
-                }
-            },
-            sleep = SleepSummary(lastNight = lastNight, open = open, wakeOnly = wakeOnly.takeIf { lastNight == null }),
+            freeTimeEntries = free.entries,
+            sleep = sleepSummary,
             nextEvent = next,
             focusEventKey = focus,
             isLoading = false,
         )
+    }
+
+    private class FreeTime(val window: AwakeWindow, val availability: DayAvailability?, val entries: List<FreeTimeEntry>)
+
+    /**
+     * The date's waking window and what takes time in it: timed events (any day, clipped), open tasks
+     * with a due time and duration, later occurrences of such repeating tasks, and, not subtracted,
+     * estimated work of tasks with a duration but no time.
+     */
+    private fun freeTime(
+        date: LocalDate, allOcc: List<EventOccurrence>, topLevel: List<Task>, all: List<Task>, dayTasks: List<Task>,
+        series: List<TaskRepository.SeriesTemplate>, schedule: DaySchedulePrefs, now: Instant, z: ZoneId,
+    ): FreeTime {
+        val window = schedule.awakeWindow(date, z)
+        val windowEvents = allOcc.filter { !it.isAllDay && it.start.isBefore(window.end) && it.end.isAfter(window.start) }
+        // Any due date: a block after midnight belongs to this window if bedtime is after midnight.
+        val blocks = topLevel.filter { !it.isCompleted }.mapNotNull { t -> t.scheduledBlock(z)?.let { t to it } }
+            .filter { (_, b) -> b.first.isBefore(window.end) && b.second.isAfter(window.start) }
+        val projected = projectedBlocks(series, all, window, z)
+        val estimates = dayTasks.filter { it.dueTime == null && (it.durationMinutes ?: 0) > 0 }
+        val entries = windowEvents.map { FreeTimeEntry.Event(it.title, it.start, it.end) } +
+            blocks.map { (t, b) -> FreeTimeEntry.TaskBlock(t.title, b.first, b.second, projected = false) } +
+            projected + estimates.map { FreeTimeEntry.Estimate(it.title, it.durationMinutes!!) }
+        val availability = Availability.of(
+            window,
+            windowEvents.map { Availability.Busy(it.start, it.end) },
+            now,
+            tasks = blocks.map { (_, b) -> Availability.Busy(b.first, b.second) } + projected.map { Availability.Busy(it.start, it.end) },
+            estimatedWork = Duration.ofMinutes(estimates.sumOf { it.durationMinutes!!.toLong() }),
+            unestimatedTasks = dayTasks.count { (it.durationMinutes ?: 0) <= 0 },
+        )
+        val sorted = entries.sortedBy {
+            when (it) {
+                is FreeTimeEntry.Event -> it.start
+                is FreeTimeEntry.TaskBlock -> it.start
+                is FreeTimeEntry.Estimate -> Instant.MAX
+            }
+        }
+        return FreeTime(window, availability, sorted)
+    }
+
+    /** Last night's complete record, an open bedtime (today only), or a wake-up without bedtime. */
+    private fun sleepSummary(sleep: List<SleepRecord>, date: LocalDate, today: LocalDate, now: Instant, z: ZoneId): SleepSummary {
+        val open = if (date == today) SleepLog.openSession(sleep, now) else null
+        val lastNight = SleepLog.lastNight(sleep, date, z)
+        val wakeOnly = sleep.filter { it.bedtime == null && it.wake != null && it.nightOf(z) == date }.maxByOrNull { it.wake!! }
+        return SleepSummary(lastNight = lastNight, open = open, wakeOnly = wakeOnly.takeIf { lastNight == null })
     }
 
     private fun projectedBlocks(series: List<TaskRepository.SeriesTemplate>, all: List<Task>, window: AwakeWindow, z: ZoneId): List<FreeTimeEntry.TaskBlock> {

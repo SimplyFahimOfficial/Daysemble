@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import app.daysemble.DaysembleApp
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.core.time.FixedAppClock
+import app.daysemble.core.time.SleepLog
 import app.daysemble.core.time.SleepSchedule
 import app.daysemble.core.time.TimeContext
 import app.daysemble.data.db.Migrations
@@ -224,6 +225,21 @@ class FreeTimeAndSleepTest {
         // A wake-up before the bedtime is refused and nothing changes.
         assertThat(sleep.update(w.id, w.wake, bed, zone)).isNotNull()
         assertThat(sleep.recent.first().single().duration).isEqualTo(Duration.ofMinutes(450))
+    }
+
+    /** The overlap check of an edit sees every record, not just the newest 90. */
+    @Test fun editOverlappingAnOldRecord_isRefused_evenBehind90NewerOnes() = runBlocking {
+        val d = db()
+        val sleep = SleepRepository(d, clock)
+        val base = at(0, 0, LocalDate.parse("2026-01-01")).atZone(zone).toInstant()
+        // The old night, then 100 newer ones.
+        assertThat(sleep.add(base.minusSeconds(8 * 3600), base, zone)).isNull()
+        repeat(100) { i ->
+            val wake = base.plus(Duration.ofDays(i + 1L))
+            assertThat(sleep.add(wake.minusSeconds(7 * 3600), wake, zone)).isNull()
+        }
+        val err = sleep.add(base.minusSeconds(6 * 3600), base.plusSeconds(3600), zone)
+        assertThat(err).isEqualTo(SleepLog.EditError.OVERLAPS)
     }
 
     @Test fun scheduleSettings_persistAcrossARestartOfTheStore_andRestoreDefaults() = runBlocking {

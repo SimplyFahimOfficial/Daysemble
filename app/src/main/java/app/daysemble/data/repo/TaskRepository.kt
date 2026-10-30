@@ -382,7 +382,8 @@ class TaskRepository(
         val deleted = mutableListOf<String>()
         db.withTransaction {
             // Deleting one occurrence on its own is a skip: its date stays in the history as skipped
-            // (not missed) after the deleted row itself is purged.
+            // after the deleted row itself is purged. A completed one too: without the record its date
+            // would show as missed, which the user never did.
             if (scope == SeriesScope.THIS && !google && row.occurrenceDate != null && row.seriesId != null && series.get(row.seriesId) != null) {
                 skips.insert(app.daysemble.data.db.TaskOccurrenceSkipEntity(row.seriesId, row.occurrenceDate, now))
             }

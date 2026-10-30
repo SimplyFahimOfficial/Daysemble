@@ -246,6 +246,10 @@ interface SleepDao {
     @Query("SELECT * FROM sleep_session WHERE id = :id")
     suspend fun get(id: String): SleepSessionEntity?
 
+    /** Complete records that overlap [start, end), at any age (for the overlap check of an edit). */
+    @Query("SELECT * FROM sleep_session WHERE startUtc IS NOT NULL AND endUtc IS NOT NULL AND startUtc < :end AND endUtc > :start")
+    suspend fun overlapping(start: Long, end: Long): List<SleepSessionEntity>
+
     @Upsert suspend fun upsert(session: SleepSessionEntity)
 
     @Query("DELETE FROM sleep_session WHERE id = :id")

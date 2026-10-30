@@ -82,79 +82,120 @@ object OccurrenceHistoryCalc {
         horizonEnd: LocalDate,
     ): OccurrenceHistory {
         val today = now.atZone(zone).toLocalDate()
-        val live = rows.filter { !it.isDeleted }
-        val deletedDates = rows.filter { it.isDeleted && !it.isCompleted }.mapNotNull { it.date }.toSet()
-        val skipped = skips + deletedDates
-        val open = live.filter { !it.isCompleted && it.date != null }.sortedBy { it.date }
-        val active = open.lastOrNull()
-        val completedRows = live.filter { it.isCompleted }
-        // How far the series has got: the newest stored row (a done one, or the active one).
-        val frontier = live.mapNotNull { it.date }.maxOrNull()
-
-        val cells = sortedMapOf<LocalDate, OccurrenceCell>()
-        completedRows.forEach { r ->
-            val d = r.date ?: r.completedAt?.atZone(zone)?.toLocalDate() ?: return@forEach
-            cells[d] = OccurrenceCell(d, OccurrenceStatus.COMPLETED, r.id, r.completedAt)
-        }
-        open.forEach { r ->
-            val d = r.date!!
-            val due = dueMoment(r, zone)
-            val status = if (due != null && !now.isBefore(due)) OccurrenceStatus.OVERDUE else OccurrenceStatus.DUE
-            if (cells[d]?.status != OccurrenceStatus.COMPLETED) cells[d] = OccurrenceCell(d, status, r.id)
-        }
-
-        var endsWithinHorizon = rule == null
-        var nextAfterActive: LocalDate? = null
-        if (rule != null && anchor != null && TaskRecurrence.supports(rule)) {
-            var o = TaskRecurrence.firstOnOrAfter(rule, anchor, anchor)
-            var steps = 0
-            while (o != null && !o.date.isAfter(horizonEnd) && steps++ < MAX_STEPS) {
-                val d = o.date
-                if (d !in cells) {
-                    val status = when {
-                        d in skipped -> OccurrenceStatus.SKIPPED
-                        frontier != null && d.isBefore(frontier) -> OccurrenceStatus.MISSED
-                        // Behind an active occurrence that is still open: these can't be done any more.
-                        d.isBefore(today) && active != null -> OccurrenceStatus.MISSED
-                        // Past dates with no row and nothing stored after them yet: the series
-                        // hasn't reached them (it was created later on the same anchor, or is new).
-                        d.isBefore(today) -> null
-                        else -> OccurrenceStatus.UPCOMING
-                    }
-                    if (status != null) cells[d] = OccurrenceCell(d, status)
-                }
-                if (active != null && nextAfterActive == null && d.isAfter(active.date!!)) nextAfterActive = d
-                o = TaskRecurrence.firstOnOrAfter(rule, anchor, d.plusDays(1))
-            }
-            endsWithinHorizon = o == null
-        }
+        val stored = Stored.of(rows, skips)
+        val cells = storedCells(stored, now, zone)
+        val projection = if (rule != null && anchor != null && TaskRecurrence.supports(rule)) {
+            project(rule, anchor, stored, cells, today, horizonEnd)
+        } else Projection(nextAfterActive = null, endsWithinHorizon = rule == null)
         // Skips without a scheduled date (rule changed since) still show as skipped.
-        skipped.forEach { d -> if (d !in cells && (anchor == null || !d.isBefore(anchor)) && !d.isAfter(today)) cells[d] = OccurrenceCell(d, OccurrenceStatus.SKIPPED) }
-
-        val list = cells.values.toList()
-        val streak = run {
-            var n = 0
-            for (c in list.asReversed()) {
-                if (c.date.isAfter(today)) continue
-                when (c.status) {
-                    OccurrenceStatus.COMPLETED -> n++
-                    OccurrenceStatus.SKIPPED, OccurrenceStatus.OVERDUE, OccurrenceStatus.DUE, OccurrenceStatus.UPCOMING -> Unit
-                    OccurrenceStatus.MISSED -> break
-                }
-            }
-            n
+        stored.skipped.forEach { d ->
+            if (d !in cells && (anchor == null || !d.isBefore(anchor)) && !d.isAfter(today)) cells[d] = OccurrenceCell(d, OccurrenceStatus.SKIPPED)
         }
+        val list = cells.values.toList()
         return OccurrenceHistory(
             cells = list,
             completed = list.count { it.status == OccurrenceStatus.COMPLETED },
             missed = list.count { it.status == OccurrenceStatus.MISSED },
             skipped = list.count { it.status == OccurrenceStatus.SKIPPED },
             upcoming = list.count { it.status == OccurrenceStatus.UPCOMING || it.status == OccurrenceStatus.DUE },
-            streak = streak,
-            active = active?.let { cells[it.date!!] },
-            nextAfterActive = nextAfterActive,
-            endsWithinHorizon = endsWithinHorizon,
+            streak = streak(list, today),
+            active = stored.active?.let { cells[it.date!!] },
+            nextAfterActive = projection.nextAfterActive,
+            endsWithinHorizon = projection.endsWithinHorizon,
         )
+    }
+
+    /** The stored rows, sorted into what the classification needs. */
+    private class Stored(
+        val completed: List<OccurrenceRow>,
+        val open: List<OccurrenceRow>,
+        val skipped: Set<LocalDate>,
+        /** How far the series has got: the newest stored row (a done one, or the active one). */
+        val frontier: LocalDate?,
+    ) {
+        val active: OccurrenceRow? get() = open.lastOrNull()
+
+        companion object {
+            fun of(rows: List<OccurrenceRow>, skips: Set<LocalDate>): Stored {
+                val live = rows.filter { !it.isDeleted }
+                val liveDates = live.mapNotNull { it.date }.toSet()
+                // A deleted occurrence (open or done) is skipped, the same as after its row is purged
+                // and only its skip record is left: never missed, since the user removed it on purpose.
+                val deleted = rows.filter { it.isDeleted }.mapNotNull { it.date }.toSet() - liveDates
+                return Stored(
+                    completed = live.filter { it.isCompleted },
+                    open = live.filter { !it.isCompleted && it.date != null }.sortedBy { it.date },
+                    skipped = skips + deleted,
+                    frontier = liveDates.maxOrNull(),
+                )
+            }
+        }
+    }
+
+    /** Completed rows on their date, then the open (active) one as due or overdue. */
+    private fun storedCells(st: Stored, now: Instant, zone: ZoneId): java.util.SortedMap<LocalDate, OccurrenceCell> {
+        val cells = sortedMapOf<LocalDate, OccurrenceCell>()
+        st.completed.forEach { r ->
+            val d = r.date ?: r.completedAt?.atZone(zone)?.toLocalDate() ?: return@forEach
+            cells[d] = OccurrenceCell(d, OccurrenceStatus.COMPLETED, r.id, r.completedAt)
+        }
+        st.open.forEach { r ->
+            val d = r.date!!
+            val due = dueMoment(r, zone)
+            val status = if (due != null && !now.isBefore(due)) OccurrenceStatus.OVERDUE else OccurrenceStatus.DUE
+            if (cells[d]?.status != OccurrenceStatus.COMPLETED) cells[d] = OccurrenceCell(d, status, r.id)
+        }
+        return cells
+    }
+
+    private class Projection(val nextAfterActive: LocalDate?, val endsWithinHorizon: Boolean)
+
+    /**
+     * Walks the scheduled dates up to [horizonEnd] and fills those without a row (see the policy on
+     * [OccurrenceStatus]). The walk starts at most [MAX_STEPS] days before the horizon, so a very old
+     * series still reaches today; anything older than that is only shown through its stored rows.
+     */
+    private fun project(
+        rule: RRule, anchor: LocalDate, st: Stored, cells: MutableMap<LocalDate, OccurrenceCell>,
+        today: LocalDate, horizonEnd: LocalDate,
+    ): Projection {
+        val active = st.active?.date
+        var nextAfterActive: LocalDate? = null
+        var o = TaskRecurrence.firstOnOrAfter(rule, anchor, maxOf(anchor, horizonEnd.minusDays(MAX_STEPS - 1L)))
+        var steps = 0
+        while (o != null && !o.date.isAfter(horizonEnd) && steps++ < MAX_STEPS) {
+            val d = o.date
+            if (d !in cells) classify(d, st, today)?.let { cells[d] = OccurrenceCell(d, it) }
+            if (active != null && nextAfterActive == null && d.isAfter(active)) nextAfterActive = d
+            o = TaskRecurrence.firstOnOrAfter(rule, anchor, d.plusDays(1))
+        }
+        return Projection(nextAfterActive, endsWithinHorizon = o == null)
+    }
+
+    /** The state of a scheduled date that has no stored row, or null if the series never reached it. */
+    private fun classify(d: LocalDate, st: Stored, today: LocalDate): OccurrenceStatus? = when {
+        d in st.skipped -> OccurrenceStatus.SKIPPED
+        st.frontier != null && d.isBefore(st.frontier) -> OccurrenceStatus.MISSED
+        // Behind an active occurrence that is still open: these can't be done any more.
+        d.isBefore(today) && st.active != null -> OccurrenceStatus.MISSED
+        // Past dates with no row and nothing stored after them yet: the series hasn't reached them
+        // (it was created later on the same anchor, or is new).
+        d.isBefore(today) -> null
+        else -> OccurrenceStatus.UPCOMING
+    }
+
+    /** Completed occurrences in a row back from today; skipped and an active one don't break it. */
+    private fun streak(cells: List<OccurrenceCell>, today: LocalDate): Int {
+        var n = 0
+        for (c in cells.asReversed()) {
+            if (c.date.isAfter(today)) continue
+            when (c.status) {
+                OccurrenceStatus.COMPLETED -> n++
+                OccurrenceStatus.MISSED -> return n
+                OccurrenceStatus.SKIPPED, OccurrenceStatus.OVERDUE, OccurrenceStatus.DUE, OccurrenceStatus.UPCOMING -> Unit
+            }
+        }
+        return n
     }
 
     private fun dueMoment(r: OccurrenceRow, zone: ZoneId): Instant? {
