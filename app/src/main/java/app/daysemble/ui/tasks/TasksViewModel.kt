@@ -1,6 +1,8 @@
 package app.daysemble.ui.tasks
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -62,13 +64,26 @@ class TasksViewModel(
     )
     private val tick = MutableStateFlow(clock.now())
 
+    /**
+     * The search field's text, updated synchronously on every keystroke. The field must not show
+     * [TasksUiState.query]: that is rebuilt with the task list on a background dispatcher and arrives
+     * a frame or more later, so typing quickly reset the field to an older value (lost characters,
+     * jumping cursor, broken IME composition).
+     */
+    var searchText by androidx.compose.runtime.mutableStateOf(query.value.query)
+        private set
+
     // Grouping, sorting and recurrence expansion run off the main thread, so a month change or a tab
     // switch never waits for them; the result is collected on the main thread as before.
     val state: StateFlow<TasksUiState> = combine(
         combine(repo.allTasks, repo.taskLists) { a, b -> a to b }, settings.settings, query, tick, time,
     ) { (tasks, lists), s, q, now, _ -> build(tasks, lists, s.taskSort, q, now) }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TasksUiState())
 
-    fun setQuery(q: String) = update { it.copy(query = q) }.also { handle["q"] = q }
+    fun setQuery(q: String) {
+        searchText = q
+        update { it.copy(query = q) }
+        handle["q"] = q
+    }
     fun setFilter(f: TaskFilter) = update { it.copy(filter = f) }.also { handle["f"] = f.name }
     fun setList(id: String?) = update { it.copy(listId = id) }.also { handle["l"] = id }
     fun setSort(s: TaskSort) = viewModelScope.launch { settings.setTaskSort(s) }

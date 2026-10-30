@@ -89,7 +89,7 @@ fun TasksRoute(contentPadding: PaddingValues, onOpenTask: (String) -> Unit) {
     val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     TasksScreen(
         state = state, now = now, contentPadding = contentPadding,
-        onQuery = vm::setQuery, onFilter = vm::setFilter, onList = vm::setList, onSort = vm::setSort,
+        query = vm.searchText, onQuery = vm::setQuery, onFilter = vm::setFilter, onList = vm::setList, onSort = vm::setSort,
         onToggle = { id, done -> vm.setCompleted(id, done) { r -> if (done) onCompleted(id, r) } }, onOpen = onOpenTask,
         onDelete = { id, scope -> vm.delete(id, scope); onDeleted(id) },
         onReorder = vm::reorder,
@@ -99,6 +99,8 @@ fun TasksRoute(contentPadding: PaddingValues, onOpenTask: (String) -> Unit) {
 @Composable
 fun TasksScreen(
     state: TasksUiState,
+    /** The search field's own text (synchronous; see TasksViewModel.searchText). */
+    query: String = state.query,
     now: Instant,
     contentPadding: PaddingValues,
     onQuery: (String) -> Unit,
@@ -139,7 +141,7 @@ fun TasksScreen(
         }
         item(key = "search") {
             DsSearchField(
-                value = state.query, onValueChange = onQuery,
+                value = query, onValueChange = onQuery,
                 placeholder = stringResource(R.string.search_tasks_hint),
                 modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.s),
             )

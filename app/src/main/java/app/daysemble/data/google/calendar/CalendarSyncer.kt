@@ -105,7 +105,9 @@ class CalendarSyncer(
             val cal = e?.let { cals.get(it.calendarId) }
             if (e == null || cal == null || cal.kind != SourceKind.GOOGLE || cal.remoteId == null) { db.sync().remove(op.id); continue }
             if (!cal.isSyncEnabled || op.permanentFailures >= MAX_ATTEMPTS) continue
-            if (!isWritableRole(cal.accessRole)) { db.sync().markFailed(op.id, "read_only", now()); failed++; continue }
+            // Google will never accept it: a permanent rejection, so it is parked after MAX_ATTEMPTS and
+            // shown under "rejected changes" with Retry, instead of failing every sync run forever.
+            if (!isWritableRole(cal.accessRole)) { db.sync().markRejected(op.id, "read_only", now()); failed++; continue }
             try {
                 db.sync().markAttempt(op.id, now())
                 when (op.op) {

@@ -225,6 +225,35 @@ class CalendarSyncTest : SyncTestBase() {
         syncer().refreshCalendars(acct)
         assertThat(db.calendars().byKind(SourceKind.GOOGLE).map { it.remoteId }).containsExactly("primary@x")
     }
+
+    /**
+     * A change to an event in a calendar the user can only read can never be pushed. It is a
+     * permanent rejection: parked after MAX_ATTEMPTS (then skipped, and offered under "rejected
+     * changes" with Retry), not retried and failed on every sync run forever. Nothing is sent.
+     */
+    @Test fun `a change in a read-only calendar is parked, not retried forever`() = runTest {
+        router.on("GET", "/calendar/v3/users/me/calendarList") {
+            calendarList(""",{"id":"hol","summary":"Holidays","accessRole":"reader"}""")
+        }
+        syncer().refreshCalendars(acct)
+        val hol = db.calendars().byKind(SourceKind.GOOGLE).single { it.remoteId == "hol" }
+        val t = clock.now().toEpochMilli()
+        db.events().upsert(
+            app.daysemble.data.db.EventEntity(
+                id = "e1", calendarId = hol.id, remoteId = "r1", title = "Edited", isAllDay = false,
+                startUtc = t, endUtc = t + 3_600_000, timeZone = "Europe/Berlin", rangeStartUtc = t, rangeEndUtc = t + 3_600_000,
+                createdAt = t, updatedAt = t, syncState = app.daysemble.data.db.SyncState.PENDING_UPDATE,
+            ),
+        )
+        db.sync().enqueue(app.daysemble.data.db.OutboxEntity(entityType = app.daysemble.data.db.OwnerType.EVENT, entityId = "e1", op = app.daysemble.data.db.OutboxOp.UPDATE, createdAt = t))
+        val failedPerRun = (1..CalendarSyncer.MAX_ATTEMPTS + 2).map { syncer().pushOutbox().third }
+        assertThat(failedPerRun.take(CalendarSyncer.MAX_ATTEMPTS)).containsExactlyElementsIn(List(CalendarSyncer.MAX_ATTEMPTS) { 1 })
+        assertThat(failedPerRun.drop(CalendarSyncer.MAX_ATTEMPTS)).containsExactly(0, 0) // parked: skipped
+        val op = db.sync().outbox().single()
+        assertThat(op.permanentFailures).isEqualTo(CalendarSyncer.MAX_ATTEMPTS)
+        assertThat(op.lastError).isEqualTo("read_only")
+        assertThat(router.count("PATCH", "/calendar/v3/calendars/hol")).isEqualTo(0)
+    }
 }
 
 @RunWith(RobolectricTestRunner::class)

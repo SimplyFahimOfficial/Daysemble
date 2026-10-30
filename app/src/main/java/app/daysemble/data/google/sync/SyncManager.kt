@@ -112,6 +112,14 @@ class SyncManager(
         } catch (e: kotlinx.serialization.SerializationException) {
             db.sync().upsertState(prev.copy(lastAttemptAt = now(), lastError = "unexpected_response"))
             SyncOutcome.FAILED
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            // Anything else (a malformed item, a database error) is recorded as this service's error
+            // instead of escaping: the worker then reports a failure the UI can show, and the other
+            // service still syncs. Only the type is kept, never item content.
+            db.sync().upsertState(prev.copy(lastAttemptAt = now(), lastError = "internal"))
+            SyncOutcome.FAILED
         }
     }
 

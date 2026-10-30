@@ -20,6 +20,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.datastore.preferences.core.edit
@@ -210,9 +211,14 @@ class FirstUseAndNavigationTest {
         compose.onNodeWithText("APP LOGO").assertIsDisplayed()
     }
 
+    /**
+     * The cell for [day] on the month page that is on screen. The grid always has six rows, so a
+     * date near a month boundary also appears (dimmed) on the neighbouring, off-screen page.
+     */
     private fun monthCell(day: java.time.LocalDate) = compose.onNode(
         hasContentDescription(java.time.format.DateTimeFormatter.ofPattern("MMMM d,", java.util.Locale.US).format(day), substring = true) and
-            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab),
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab) and
+            SemanticsMatcher("on screen") { n -> n.boundsInWindow.width > 0f },
     )
 
     /**
