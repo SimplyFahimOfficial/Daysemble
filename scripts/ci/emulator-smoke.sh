@@ -22,6 +22,10 @@ avdmanager="$sdk/cmdline-tools/latest/bin/avdmanager"
 adb="$sdk/platform-tools/adb"
 out="${SMOKE_OUT:-build/emulator-smoke}"
 mkdir -p "$out"
+# avdmanager and the emulator resolve the AVD directory differently on some machines (GitHub's
+# runners included); one explicit directory for both.
+export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-${RUNNER_TEMP:-$HOME}/avd}"
+mkdir -p "$ANDROID_AVD_HOME"
 
 [ -f "$apk" ] || { echo "::error title=Emulator smoke::APK not found: $apk"; exit 1; }
 [ -e /dev/kvm ] || { echo "::error title=Emulator smoke::/dev/kvm is not available; the emulator needs hardware acceleration."; exit 1; }
@@ -30,6 +34,7 @@ echo "::group::Install emulator and $image"
 yes | "$sdkmanager" --licenses > /dev/null || true
 "$sdkmanager" "emulator" "platform-tools" "$image" > /dev/null
 echo "no" | "$avdmanager" create avd --force --name smoke --package "$image" --device "pixel_6" > /dev/null
+[ -f "$ANDROID_AVD_HOME/smoke.ini" ] || { echo "::error title=Emulator smoke::avdmanager did not create $ANDROID_AVD_HOME/smoke.ini"; exit 1; }
 echo "::endgroup::"
 
 echo "::group::Boot"
@@ -37,13 +42,16 @@ echo "::group::Boot"
   -camera-back none -camera-front none > "$out/emulator.log" 2>&1 &
 emu_pid=$!
 trap 'kill "$emu_pid" 2>/dev/null || true' EXIT
-"$adb" wait-for-device
+# No unbounded waits: give up after 6 minutes, or as soon as the emulator process exits.
 booted=""
-for _ in $(seq 1 120); do
+for _ in $(seq 1 180); do
+  if ! kill -0 "$emu_pid" 2>/dev/null; then
+    echo "::error title=Emulator smoke::the emulator exited during boot"; tail -50 "$out/emulator.log"; exit 1
+  fi
   if [ "$("$adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then booted=1; break; fi
   sleep 2
 done
-[ -n "$booted" ] || { echo "::error title=Emulator smoke::the emulator did not finish booting in 4 minutes"; tail -50 "$out/emulator.log"; exit 1; }
+[ -n "$booted" ] || { echo "::error title=Emulator smoke::the emulator did not finish booting in 6 minutes"; tail -50 "$out/emulator.log"; exit 1; }
 "$adb" shell settings put global window_animation_scale 0
 "$adb" shell settings put global transition_animation_scale 0
 "$adb" shell settings put global animator_duration_scale 0
