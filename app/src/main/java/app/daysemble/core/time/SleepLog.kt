@@ -88,20 +88,25 @@ object SleepLog {
      * nothing more than a minute in the future; no overlap with another complete record.
      */
     fun validate(edited: SleepRecord, others: List<SleepRecord>, now: Instant): EditError? {
-        val b = edited.bedtime
-        val w = edited.wake
-        if (b == null && w == null) return EditError.EMPTY
+        val times = listOfNotNull(edited.bedtime, edited.wake)
         val limit = now.plusSeconds(60)
-        if (listOfNotNull(b, w).any { it.isAfter(limit) }) return EditError.IN_FUTURE
-        if (b != null && w != null) {
-            if (!w.isAfter(b)) return EditError.WAKE_NOT_AFTER_BEDTIME
-            if (Duration.between(b, w) > MAX_EDIT) return EditError.TOO_LONG
-            val clash = others.any { o ->
-                o.id != edited.id && o.isComplete && o.bedtime!!.isBefore(w) && b.isBefore(o.wake!!)
-            }
-            if (clash) return EditError.OVERLAPS
+        return when {
+            times.isEmpty() -> EditError.EMPTY
+            times.any { it.isAfter(limit) } -> EditError.IN_FUTURE
+            else -> periodError(edited, others)
         }
-        return null
+    }
+
+    /** Checks of a record with both times; none apply to a record with only one. */
+    private fun periodError(edited: SleepRecord, others: List<SleepRecord>): EditError? {
+        val b = edited.bedtime ?: return null
+        val w = edited.wake ?: return null
+        return when {
+            !w.isAfter(b) -> EditError.WAKE_NOT_AFTER_BEDTIME
+            Duration.between(b, w) > MAX_EDIT -> EditError.TOO_LONG
+            others.any { o -> o.id != edited.id && o.isComplete && o.bedtime!!.isBefore(w) && b.isBefore(o.wake!!) } -> EditError.OVERLAPS
+            else -> null
+        }
     }
 
     /** The newest complete record whose wake-up is on [date] (the night before that day). */

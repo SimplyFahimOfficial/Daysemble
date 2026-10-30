@@ -117,18 +117,9 @@ object Availability {
         val busy = total(merged)
         val free = Duration.between(from, until) - busy
 
-        var freeAfter: Instant? = null
-        var mostly = false
-        for ((i, b) in merged.withIndex()) {
-            val rest = Duration.between(b.end, until)
-            if (rest < MIN_FREE_STRETCH) break
-            val busyAfter = total(merged.drop(i + 1))
-            if (busyAfter <= MOSTLY_FREE_MAX && busyAfter.toMillis() <= rest.toMillis() * MOSTLY_FREE_SHARE) {
-                freeAfter = b.end
-                mostly = !busyAfter.isZero
-                break
-            }
-        }
+        val after = freeAfter(merged, until)
+        val freeAfter = after?.first
+        val mostly = after?.second ?: false
         val longestBreak = if (freeAfter == null && merged.isNotEmpty()) {
             val gaps = buildList {
                 add(from..merged.first().start)
@@ -147,6 +138,21 @@ object Availability {
             freeAfter = freeAfter, mostly = mostly, longestBreak = longestBreak,
         )
     }
+
+    /**
+     * The earliest busy end after which the rest of the window (at least [MIN_FREE_STRETCH]) is free
+     * or nearly free, and whether "nearly" (some short busy time still follows). Busy ends are in
+     * order, so once less than the stretch is left, no later one qualifies either.
+     */
+    private fun freeAfter(merged: List<Busy>, until: Instant): Pair<Instant, Boolean>? =
+        merged.indices.asSequence()
+            .takeWhile { i -> Duration.between(merged[i].end, until) >= MIN_FREE_STRETCH }
+            .map { i -> i to total(merged.drop(i + 1)) }
+            .firstOrNull { (i, busyAfter) ->
+                val rest = Duration.between(merged[i].end, until)
+                busyAfter <= MOSTLY_FREE_MAX && busyAfter.toMillis() <= rest.toMillis() * MOSTLY_FREE_SHARE
+            }
+            ?.let { (i, busyAfter) -> merged[i].end to !busyAfter.isZero }
 
     /** Sorted, non-overlapping union of [intervals] (touching intervals join). */
     fun merge(intervals: List<Busy>): List<Busy> {

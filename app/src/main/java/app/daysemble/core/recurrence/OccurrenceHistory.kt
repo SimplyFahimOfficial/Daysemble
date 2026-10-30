@@ -72,20 +72,23 @@ object OccurrenceHistoryCalc {
     /** Upper bound of scheduled dates walked (a daily series over ~10 years). */
     private const val MAX_STEPS = 4_000
 
-    fun build(
-        rule: RRule?,
-        anchor: LocalDate?,
-        rows: List<OccurrenceRow>,
-        skips: Set<LocalDate>,
-        now: Instant,
-        zone: ZoneId,
-        horizonEnd: LocalDate,
-    ): OccurrenceHistory {
+    /** What a series has stored: its rule (null once it stopped repeating), first date, rows and skips. */
+    data class SeriesInput(
+        val rule: RRule?,
+        val anchor: LocalDate?,
+        val rows: List<OccurrenceRow>,
+        val skips: Set<LocalDate> = emptySet(),
+    )
+
+    /** The history of [series] at [now] in [zone], with scheduled dates projected up to [horizonEnd]. */
+    fun build(series: SeriesInput, now: Instant, zone: ZoneId, horizonEnd: LocalDate): OccurrenceHistory {
+        val rule = series.rule
+        val anchor = series.anchor
         val today = now.atZone(zone).toLocalDate()
-        val stored = Stored.of(rows, skips)
+        val stored = Stored.of(series.rows, series.skips)
         val cells = storedCells(stored, now, zone)
         val projection = if (rule != null && anchor != null && TaskRecurrence.supports(rule)) {
-            project(rule, anchor, stored, cells, today, horizonEnd)
+            project(Schedule(rule, anchor, today, horizonEnd), stored, cells)
         } else Projection(nextAfterActive = null, endsWithinHorizon = rule == null)
         // Skips without a scheduled date (rule changed since) still show as skipped.
         val first = anchor ?: LocalDate.MIN
@@ -154,17 +157,19 @@ object OccurrenceHistoryCalc {
      * [OccurrenceStatus]). The walk starts at most [MAX_STEPS] days before the horizon, so a very old
      * series still reaches today; anything older than that is only shown through its stored rows.
      */
-    private fun project(
-        rule: RRule, anchor: LocalDate, st: Stored, cells: MutableMap<LocalDate, OccurrenceCell>,
-        today: LocalDate, horizonEnd: LocalDate,
-    ): Projection {
+    private class Schedule(val rule: RRule, val anchor: LocalDate, val today: LocalDate, val horizonEnd: LocalDate)
+
+    private fun project(sc: Schedule, st: Stored, cells: MutableMap<LocalDate, OccurrenceCell>): Projection {
+        val rule = sc.rule
+        val anchor = sc.anchor
+        val horizonEnd = sc.horizonEnd
         val active = st.active?.date
         var nextAfterActive: LocalDate? = null
         var o = TaskRecurrence.firstOnOrAfter(rule, anchor, maxOf(anchor, horizonEnd.minusDays(MAX_STEPS - 1L)))
         var steps = 0
         while (o != null && !o.date.isAfter(horizonEnd) && steps++ < MAX_STEPS) {
             val d = o.date
-            if (d !in cells) classify(d, st, today)?.let { cells[d] = OccurrenceCell(d, it) }
+            if (d !in cells) classify(d, st, sc.today)?.let { cells[d] = OccurrenceCell(d, it) }
             if (active != null && nextAfterActive == null && d.isAfter(active)) nextAfterActive = d
             o = TaskRecurrence.firstOnOrAfter(rule, anchor, d.plusDays(1))
         }

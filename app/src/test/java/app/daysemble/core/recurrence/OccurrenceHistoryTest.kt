@@ -17,7 +17,7 @@ class OccurrenceHistoryTest {
     private fun open(date: String, time: LocalTime? = null) = OccurrenceRow("s:$date", d(date), d(date), time, false, null)
 
     private fun build(rule: RRule?, anchor: String, rows: List<OccurrenceRow>, now: Instant, skips: Set<LocalDate> = emptySet()) =
-        OccurrenceHistoryCalc.build(rule, d(anchor), rows, skips, now, zone, horizonEnd = now.atZone(zone).toLocalDate().plusDays(6))
+        OccurrenceHistoryCalc.build(OccurrenceHistoryCalc.SeriesInput(rule, d(anchor), rows, skips), now, zone, horizonEnd = now.atZone(zone).toLocalDate().plusDays(6))
 
     @Test fun newSeries_hasNoHistory_onlyTheActiveOneAndUpcoming() {
         val h = build(daily, "2026-10-27", listOf(open("2026-10-27")), at("2026-10-27", 9))
@@ -104,7 +104,7 @@ class OccurrenceHistoryTest {
     @Test fun monthlyOnThe31st_clampsLikeTheRepository() {
         val monthly = RRule.parse("FREQ=MONTHLY")!!
         val rows = listOf(done("2027-01-31"), open("2027-02-28"))
-        val h = OccurrenceHistoryCalc.build(monthly, d("2027-01-31"), rows, emptySet(), at("2027-02-10"), zone, d("2027-05-01"))
+        val h = OccurrenceHistoryCalc.build(OccurrenceHistoryCalc.SeriesInput(monthly, d("2027-01-31"), rows), at("2027-02-10"), zone, d("2027-05-01"))
         assertThat(h.cells.map { it.date.toString() }).containsExactly("2027-01-31", "2027-02-28", "2027-03-31", "2027-04-30").inOrder()
     }
 

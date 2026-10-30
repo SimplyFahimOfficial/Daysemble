@@ -72,9 +72,9 @@ class TaskDetailViewModel(
         repo.observeTask(id).flatMapLatest { task ->
             val series: Flow<TaskRepository.SeriesData?> = task?.seriesId?.let(repo::observeSeries) ?: flowOf(null)
             combine(
-                combine(repo.observeSubtasks(id), repo.observeReminders(id)) { a, b -> a to b },
-                repo.taskLists, series, tick, time,
-            ) { (subs, reminders), lists, s, now, t -> build(task, subs, reminders, lists, s, now, t) }
+                combine(repo.observeSubtasks(id), repo.observeReminders(id), repo.taskLists) { subs, rem, lists -> Related(subs, rem, lists) },
+                series, tick, time,
+            ) { related, s, now, t -> build(task, related, s, now, t) }
         }
     }.flowOn(compute).let { inner ->
         combine(inner, following) { st, f -> if (f && st.isMissing) st.copy(isMissing = false, isLoading = true) else st }
@@ -92,17 +92,17 @@ class TaskDetailViewModel(
 
     fun onTick(now: Instant) { tick.value = now }
 
-    private fun build(
-        task: Task?, subs: List<Task>, reminders: List<Int>, lists: List<TaskList>,
-        s: TaskRepository.SeriesData?, now: Instant, t: TimeContext,
-    ): TaskDetailUiState {
+    /** What the screen shows besides the task and its series. */
+    private class Related(val subtasks: List<Task>, val reminders: List<Int>, val lists: List<TaskList>)
+
+    private fun build(task: Task?, r: Related, s: TaskRepository.SeriesData?, now: Instant, t: TimeContext): TaskDetailUiState {
         val today = now.atZone(t.zone).toLocalDate()
         if (task == null) return TaskDetailUiState(today = today, isLoading = false, isMissing = true)
         val history = s?.let {
-            OccurrenceHistoryCalc.build(it.rule, it.anchor, it.rows, it.skips, now, t.zone, horizonEnd = today.plusWeeks(4))
+            OccurrenceHistoryCalc.build(OccurrenceHistoryCalc.SeriesInput(it.rule, it.anchor, it.rows, it.skips), now, t.zone, horizonEnd = today.plusWeeks(4))
         }
         return TaskDetailUiState(
-            task = task, subtasks = subs, list = lists.firstOrNull { it.id == task.listId }, reminders = reminders,
+            task = task, subtasks = r.subtasks, list = r.lists.firstOrNull { it.id == task.listId }, reminders = r.reminders,
             history = history, series = s, today = today, isLoading = false,
         )
     }

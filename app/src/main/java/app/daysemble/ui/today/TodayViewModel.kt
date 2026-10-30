@@ -135,7 +135,7 @@ class TodayViewModel(
             tick,
             sleepRepo?.recent ?: flowOf(emptyList()),
         ) { occ, (allTasks, series), s, now, sleep ->
-            build(date, occ, allTasks, series, s.showCompletedOnToday, s.schedule, sleep, now, z)
+            build(DayInputs(date, z, now, occ, allTasks, series, s.showCompletedOnToday, s.schedule, sleep))
         }
     }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState(selected.value, clock.today()))
 
@@ -159,69 +159,89 @@ class TodayViewModel(
     fun delete(id: String) = viewModelScope.launch { tasks.delete(id) }
     fun restore(id: String) = viewModelScope.launch { tasks.restore(id) }
 
-    private fun build(
-        date: LocalDate,
-        allOcc: List<EventOccurrence>,
-        all: List<Task>,
-        series: List<TaskRepository.SeriesTemplate>,
-        showCompleted: Boolean,
-        schedule: DaySchedulePrefs,
-        sleep: List<SleepRecord>,
-        now: Instant,
-        z: ZoneId,
-    ): TodayUiState {
-        val today = now.atZone(z).toLocalDate()
+    /** Everything one day's state is built from (all loaded for the date and the next one). */
+    private data class DayInputs(
+        val date: LocalDate,
+        val zone: ZoneId,
+        val now: Instant,
+        /** Event occurrences of the date and the day after (a waking window can pass midnight). */
+        val occurrences: List<EventOccurrence>,
+        val all: List<Task>,
+        val series: List<TaskRepository.SeriesTemplate>,
+        val showCompleted: Boolean,
+        val schedule: DaySchedulePrefs,
+        val sleep: List<SleepRecord>,
+    ) {
+        val today: LocalDate = now.atZone(zone).toLocalDate()
+        val topLevel: List<Task> = all.filter { it.parentId == null }
+        /** Open top-level tasks due on the date. */
+        val dayTasks: List<Task> = topLevel.filter { !it.isCompleted && it.dueDate == date }
+    }
+
+    private fun build(i: DayInputs): TodayUiState {
+        val agenda = agenda(i)
+        val free = freeTime(i)
+        return TodayUiState(
+            date = i.date, today = i.today,
+            allDay = agenda.allDay,
+            timeline = agenda.timeline,
+            overdue = agenda.overdue,
+            completed = agenda.completed,
+            eventCount = agenda.eventCount,
+            taskCount = i.dayTasks.size,
+            overdueCount = agenda.overdue.size,
+            availability = free.availability,
+            window = free.window,
+            schedule = i.schedule.forDate(i.date),
+            scheduledSleep = i.schedule.scheduledSleepBefore(i.date, i.zone),
+            freeTimeEntries = free.entries,
+            sleep = sleepSummary(i),
+            nextEvent = agenda.next,
+            focusEventKey = agenda.focus,
+            isLoading = false,
+        )
+    }
+
+    private data class Agenda(
+        val allDay: List<TimelineItem.EventItem>,
+        val timeline: List<TimelineItem>,
+        val overdue: List<Task>,
+        val completed: List<Task>,
+        val eventCount: Int,
+        val next: EventOccurrence?,
+        val focus: String?,
+    )
+
+    /** The date's agenda: all-day events, then timed events and tasks by time, then date-only tasks. */
+    private fun agenda(i: DayInputs): Agenda {
+        val date = i.date
+        val z = i.zone
+        val now = i.now
+        val today = i.today
         val dayStart = date.atStartOfDay(z).toInstant()
         val dayEnd = date.plusDays(1).atStartOfDay(z).toInstant()
-        // The agenda shows the date itself; the extra day is only for a window past midnight.
-        val occ = allOcc.filter { o ->
-            if (o.isAllDay) !date.isBefore(o.startDate) && date.isBefore(o.endDate)
-            else o.start.isBefore(dayEnd) && (o.end.isAfter(dayStart) || (o.start == o.end && !o.start.isBefore(dayStart)))
-        }
-        val topLevel = all.filter { it.parentId == null }
-        val dayTasks = topLevel.filter { !it.isCompleted && it.dueDate == date }
+        val occ = i.occurrences.filter { o -> if (o.isAllDay) o.coversDate(date) else o.overlaps(dayStart, dayEnd) }
         val overdue = if (date == today) {
-            topLevel.filter { !it.isCompleted && it.dueDate != null && it.dueDate.isBefore(today) }
+            i.topLevel.filter { !it.isCompleted && it.dueDate?.isBefore(today) == true }
                 .sortedWith(TaskRules.comparator(app.daysemble.data.prefs.TaskSort.DUE, z))
         } else emptyList()
-        val completed = if (showCompleted) {
-            topLevel.filter { it.isCompleted && (it.dueDate == date || (it.dueDate == null && it.completedAt?.atZone(z)?.toLocalDate() == date)) }
-                .sortedByDescending { it.completedAt }
+        val completed = if (i.showCompleted) {
+            i.topLevel.filter { it.isCompleted && it.completedOn(date, z) }.sortedByDescending { it.completedAt }
         } else emptyList()
-
-        val allDay = occ.filter { it.isAllDay }.map { TimelineItem.EventItem(it) }
         val timed = occ.filter { !it.isAllDay }
-        val timedTasks = dayTasks.filter { it.dueTime != null }
-        val dateOnly = dayTasks.filter { it.dueTime == null }.sortedWith(compareByDescending<Task> { it.priority.level }.thenBy { it.sortKey })
-
+        val dateOnly = i.dayTasks.filter { it.dueTime == null }.sortedWith(compareByDescending<Task> { it.priority.level }.thenBy { it.sortKey })
         val merged = (timed.map { TimelineItem.EventItem(it) to it.start } +
-            timedTasks.map { TimelineItem.TaskItem(it) to (it.dueMoment(z) ?: Instant.MAX) })
+            i.dayTasks.filter { it.dueTime != null }.map { TimelineItem.TaskItem(it) to (it.dueMoment(z) ?: Instant.MAX) })
             .sortedBy { it.second }.map { it.first }
-
-        val focus = if (date == today) timed.firstOrNull { it.end > now }?.stableKey else null
-        val next = if (date == today) timed.firstOrNull { it.start > now } else null
-
-        val free = freeTime(date, allOcc, topLevel, all, dayTasks, series, schedule, now, z)
-        val sleepSummary = sleepSummary(sleep, date, today, now, z)
-
-        return TodayUiState(
-            date = date, today = today,
-            allDay = allDay,
+        val isToday = date == today
+        return Agenda(
+            allDay = occ.filter { it.isAllDay }.map { TimelineItem.EventItem(it) },
             timeline = merged + dateOnly.map { TimelineItem.TaskItem(it) },
             overdue = overdue,
             completed = completed,
             eventCount = occ.size,
-            taskCount = dayTasks.size,
-            overdueCount = overdue.size,
-            availability = free.availability,
-            window = free.window,
-            schedule = schedule.forDate(date),
-            scheduledSleep = schedule.scheduledSleepBefore(date, z),
-            freeTimeEntries = free.entries,
-            sleep = sleepSummary,
-            nextEvent = next,
-            focusEventKey = focus,
-            isLoading = false,
+            next = if (isToday) timed.firstOrNull { it.start > now } else null,
+            focus = if (isToday) timed.firstOrNull { it.end > now }?.stableKey else null,
         )
     }
 
@@ -232,16 +252,15 @@ class TodayViewModel(
      * with a due time and duration, later occurrences of such repeating tasks, and, not subtracted,
      * estimated work of tasks with a duration but no time.
      */
-    private fun freeTime(
-        date: LocalDate, allOcc: List<EventOccurrence>, topLevel: List<Task>, all: List<Task>, dayTasks: List<Task>,
-        series: List<TaskRepository.SeriesTemplate>, schedule: DaySchedulePrefs, now: Instant, z: ZoneId,
-    ): FreeTime {
-        val window = schedule.awakeWindow(date, z)
-        val windowEvents = allOcc.filter { !it.isAllDay && it.start.isBefore(window.end) && it.end.isAfter(window.start) }
+    private fun freeTime(i: DayInputs): FreeTime {
+        val z = i.zone
+        val dayTasks = i.dayTasks
+        val window = i.schedule.awakeWindow(i.date, z)
+        val windowEvents = i.occurrences.filter { !it.isAllDay && it.start.isBefore(window.end) && it.end.isAfter(window.start) }
         // Any due date: a block after midnight belongs to this window if bedtime is after midnight.
-        val blocks = topLevel.filter { !it.isCompleted }.mapNotNull { t -> t.scheduledBlock(z)?.let { t to it } }
+        val blocks = i.topLevel.filter { !it.isCompleted }.mapNotNull { t -> t.scheduledBlock(z)?.let { t to it } }
             .filter { (_, b) -> b.first.isBefore(window.end) && b.second.isAfter(window.start) }
-        val projected = projectedBlocks(series, all, window, z)
+        val projected = projectedBlocks(i.series, i.all, window, z)
         val estimates = dayTasks.filter { it.dueTime == null && (it.durationMinutes ?: 0) > 0 }
         val entries = windowEvents.map { FreeTimeEntry.Event(it.title, it.start, it.end) } +
             blocks.map { (t, b) -> FreeTimeEntry.TaskBlock(t.title, b.first, b.second, projected = false) } +
@@ -249,7 +268,7 @@ class TodayViewModel(
         val availability = Availability.of(
             window,
             windowEvents.map { Availability.Busy(it.start, it.end) },
-            now,
+            i.now,
             tasks = blocks.map { (_, b) -> Availability.Busy(b.first, b.second) } + projected.map { Availability.Busy(it.start, it.end) },
             estimatedWork = Duration.ofMinutes(estimates.sumOf { it.durationMinutes!!.toLong() }),
             unestimatedTasks = dayTasks.count { (it.durationMinutes ?: 0) <= 0 },
@@ -265,10 +284,10 @@ class TodayViewModel(
     }
 
     /** Last night's complete record, an open bedtime (today only), or a wake-up without bedtime. */
-    private fun sleepSummary(sleep: List<SleepRecord>, date: LocalDate, today: LocalDate, now: Instant, z: ZoneId): SleepSummary {
-        val open = if (date == today) SleepLog.openSession(sleep, now) else null
-        val lastNight = SleepLog.lastNight(sleep, date, z)
-        val wakeOnly = sleep.filter { it.bedtime == null && it.wake != null && it.nightOf(z) == date }.maxByOrNull { it.wake!! }
+    private fun sleepSummary(i: DayInputs): SleepSummary {
+        val open = if (i.date == i.today) SleepLog.openSession(i.sleep, i.now) else null
+        val lastNight = SleepLog.lastNight(i.sleep, i.date, i.zone)
+        val wakeOnly = i.sleep.filter { it.bedtime == null && it.wake != null && it.nightOf(i.zone) == i.date }.maxByOrNull { it.wake!! }
         return SleepSummary(lastNight = lastNight, open = open, wakeOnly = wakeOnly.takeIf { lastNight == null })
     }
 
@@ -296,3 +315,16 @@ class TodayViewModel(
         const val KEY_DATE = "today_selected"
     }
 }
+
+/** An all-day occurrence that includes [date] (its end date is exclusive). */
+private fun EventOccurrence.coversDate(date: LocalDate) = !date.isBefore(startDate) && date.isBefore(endDate)
+
+/** A timed occurrence inside [from, until); a zero-length one counts if it starts in it. */
+private fun EventOccurrence.overlaps(from: Instant, until: Instant): Boolean {
+    if (!start.isBefore(until)) return false
+    return end.isAfter(from) || (start == end && !start.isBefore(from))
+}
+
+/** Completed on [date]: due that day, or with no due date and ticked off that day. */
+private fun Task.completedOn(date: LocalDate, z: ZoneId): Boolean =
+    dueDate == date || (dueDate == null && completedAt?.atZone(z)?.toLocalDate() == date)
