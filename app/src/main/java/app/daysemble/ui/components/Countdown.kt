@@ -224,46 +224,64 @@ fun LiveCountdown(deadline: Instant?, completed: Boolean, modifier: Modifier = M
  */
 @Composable
 fun CountdownHero(deadline: Instant?, completed: Boolean, modifier: Modifier = Modifier) {
-    val c = DsTheme.colors
     val p = LocalTimePrefs.current
     val ticking = deadline != null && !completed
     val now = rememberSecondTicker(enabled = ticking)
     val state = Countdown.state(deadline, completed, now, p.zone)
     val spoken = countdownSpoken(state)
     Column(modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = spoken }) {
-        when (state) {
-            is CountdownState.Remaining, is CountdownState.Overdue -> {
-                val parts = if (state is CountdownState.Remaining) state.parts else (state as CountdownState.Overdue).parts
-                val overdue = state is CountdownState.Overdue
-                Text(
-                    stringResource(if (overdue) R.string.cd_hero_overdue else R.string.cd_hero_remaining).uppercase(),
-                    style = DsTheme.type.caps, color = if (overdue) c.error else c.textSecondary,
-                )
-                Spacer(Modifier.height(Space.xs))
-                val units = buildList {
-                    if (parts.years > 0) add(pluralStringResource(R.plurals.cd_years, parts.years.toInt(), parts.years.toInt()))
-                    if (parts.months > 0) add(pluralStringResource(R.plurals.cd_months, parts.months.toInt(), parts.months.toInt()))
-                    if (parts.days > 0) add(pluralStringResource(R.plurals.cd_days, parts.days.toInt(), parts.days.toInt()))
-                }
-                val big = if (units.isNotEmpty()) units.joinToString(" · ") else countdownShort(parts.copy(seconds = 0))
-                Text(big, style = DsTheme.type.hero, color = if (overdue) c.error else c.textPrimary)
-                Text(
-                    "%02d:%02d:%02d".format(parts.hours, parts.minutes, parts.seconds),
-                    style = DsTheme.type.titleLarge.copy(fontFeatureSettings = "tnum"),
-                    color = if (overdue) c.error else c.accent,
-                )
-            }
-            CountdownState.Completed -> Text(stringResource(R.string.cd_completed), style = DsTheme.type.titleLarge, color = c.textSecondary)
-            CountdownState.NoDeadline -> Text(stringResource(R.string.cd_needs_due), style = DsTheme.type.body, color = c.textSecondary)
-        }
+        CountdownHeroContent(state)
         if (deadline != null && state !is CountdownState.Completed) {
-            Spacer(Modifier.height(Space.xs))
-            Text(
-                stringResource(R.string.cd_until, Fmt.fullDate(deadline.atZone(p.zone).toLocalDate(), p) + " · " + Fmt.time(deadline, p)),
-                style = DsTheme.type.label, color = c.textSecondary,
-            )
+            CountdownHeroDeadline(deadline)
         }
     }
+}
+
+@Composable
+private fun CountdownHeroContent(state: CountdownState) {
+    val c = DsTheme.colors
+    when (state) {
+        is CountdownState.Remaining -> CountdownHeroActive(state.parts, overdue = false)
+        is CountdownState.Overdue -> CountdownHeroActive(state.parts, overdue = true)
+        CountdownState.Completed -> Text(stringResource(R.string.cd_completed), style = DsTheme.type.titleLarge, color = c.textSecondary)
+        CountdownState.NoDeadline -> Text(stringResource(R.string.cd_needs_due), style = DsTheme.type.body, color = c.textSecondary)
+    }
+}
+
+@Composable
+private fun CountdownHeroActive(parts: CountdownParts, overdue: Boolean) {
+    val c = DsTheme.colors
+    Text(
+        stringResource(if (overdue) R.string.cd_hero_overdue else R.string.cd_hero_remaining).uppercase(),
+        style = DsTheme.type.caps, color = if (overdue) c.error else c.textSecondary,
+    )
+    Spacer(Modifier.height(Space.xs))
+    Text(countdownHeroCalendarUnits(parts), style = DsTheme.type.hero, color = if (overdue) c.error else c.textPrimary)
+    Text(
+        "%02d:%02d:%02d".format(parts.hours, parts.minutes, parts.seconds),
+        style = DsTheme.type.titleLarge.copy(fontFeatureSettings = "tnum"),
+        color = if (overdue) c.error else c.accent,
+    )
+}
+
+@Composable
+private fun countdownHeroCalendarUnits(parts: CountdownParts): String {
+    val units = buildList {
+        if (parts.years > 0) add(pluralStringResource(R.plurals.cd_years, parts.years.toInt(), parts.years.toInt()))
+        if (parts.months > 0) add(pluralStringResource(R.plurals.cd_months, parts.months.toInt(), parts.months.toInt()))
+        if (parts.days > 0) add(pluralStringResource(R.plurals.cd_days, parts.days.toInt(), parts.days.toInt()))
+    }
+    return if (units.isNotEmpty()) units.joinToString(" · ") else countdownShort(parts.copy(seconds = 0))
+}
+
+@Composable
+private fun CountdownHeroDeadline(deadline: Instant) {
+    val p = LocalTimePrefs.current
+    Spacer(Modifier.height(Space.xs))
+    Text(
+        stringResource(R.string.cd_until, Fmt.fullDate(deadline.atZone(p.zone).toLocalDate(), p) + " · " + Fmt.time(deadline, p)),
+        style = DsTheme.type.label, color = DsTheme.colors.textSecondary,
+    )
 }
 
 /** Small rounded label used on cards (due, duration, repeat, countdown). */

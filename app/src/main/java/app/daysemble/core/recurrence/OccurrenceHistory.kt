@@ -137,12 +137,12 @@ object OccurrenceHistoryCalc {
     /** Completed rows on their date, then the open (active) one as due or overdue. */
     private fun storedCells(st: Stored, now: Instant, zone: ZoneId): java.util.SortedMap<LocalDate, OccurrenceCell> {
         val cells = sortedMapOf<LocalDate, OccurrenceCell>()
-        st.completed.forEach { r ->
-            val d = r.date ?: r.completedAt?.atZone(zone)?.toLocalDate() ?: return@forEach
+        for (r in st.completed) {
+            val d = r.date ?: r.completedAt?.atZone(zone)?.toLocalDate() ?: continue
             cells[d] = OccurrenceCell(d, OccurrenceStatus.COMPLETED, r.id, r.completedAt)
         }
-        st.open.forEach { r ->
-            val d = r.date!!
+        for (r in st.open) {
+            val d = r.date ?: continue
             val due = dueMoment(r, zone)
             val status = if (due != null && !now.isBefore(due)) OccurrenceStatus.OVERDUE else OccurrenceStatus.DUE
             if (cells[d]?.status != OccurrenceStatus.COMPLETED) cells[d] = OccurrenceCell(d, status, r.id)
