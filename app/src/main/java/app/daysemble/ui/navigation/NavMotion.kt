@@ -43,7 +43,7 @@ internal object NavMotion {
     private fun NavDestination.kind(): Kind = when {
         hasRoute<MainRoute>() -> Kind.MAIN
         // The event detail is a sheet-like view of one item (closed with an X), so it rises like the editors.
-        hasRoute<TaskEditorRoute>() || hasRoute<EventEditorRoute>() || hasRoute<EventDetailRoute>() -> Kind.EDITOR
+        hasRoute<TaskEditorRoute>() || hasRoute<EventEditorRoute>() || hasRoute<EventDetailRoute>() || hasRoute<TaskDetailRoute>() -> Kind.EDITOR
         else -> Kind.PAGE
     }
 

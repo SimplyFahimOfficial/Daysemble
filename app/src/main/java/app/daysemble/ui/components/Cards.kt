@@ -3,7 +3,6 @@ package app.daysemble.ui.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,6 +86,8 @@ fun AgendaEventCard(
     focused: Boolean = false,
     /** Show "in 25 min" / "ends in 10 min" (kept current by the caller's minute [now]). */
     showCountdown: Boolean = focused,
+    /** Long-press: the item menu (edit, delete). */
+    onLongClick: (() -> Unit)? = null,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
@@ -113,7 +114,7 @@ fun AgendaEventCard(
             .fillMaxWidth()
             .clip(CardShape)
             .background(bg)
-            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.action_open), onClick = onClick)
+            .itemClick(onClick, onLongClick)
             .semantics(mergeDescendants = true) { contentDescription = a11y }
             .padding(start = Space.l, end = Space.m, top = Space.m, bottom = Space.l),
     ) {
@@ -175,6 +176,8 @@ fun AgendaTaskCard(
     /** Show the due date too (overdue lists); otherwise only the time. */
     showDate: Boolean = false,
     actions: List<CustomAccessibilityAction> = emptyList(),
+    /** Long-press: the item menu (edit, complete, delete). */
+    onLongClick: (() -> Unit)? = null,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
@@ -189,7 +192,7 @@ fun AgendaTaskCard(
             .fillMaxWidth()
             .clip(CardShape)
             .background(c.surfaceVariant)
-            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.action_open), onClick = onClick)
+            .itemClick(onClick, onLongClick)
             .semantics { if (actions.isNotEmpty()) customActions = actions }
             .padding(start = Space.xxs, end = Space.l, top = Space.xs, bottom = Space.xs),
         verticalAlignment = Alignment.Top,

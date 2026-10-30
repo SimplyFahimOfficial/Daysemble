@@ -203,6 +203,10 @@ interface TaskSeriesDao {
     @Query("SELECT * FROM task_series WHERE id = :id")
     fun observe(id: String): Flow<TaskSeriesEntity?>
 
+    /** Every stored occurrence (task row) of series [seriesId], deleted ones included. */
+    @Query("SELECT * FROM task WHERE seriesId = :seriesId")
+    fun observeOccurrences(seriesId: String): Flow<List<TaskEntity>>
+
     @Upsert suspend fun upsert(series: TaskSeriesEntity)
 
     @Query("DELETE FROM task_series WHERE id = :id")
@@ -211,6 +215,46 @@ interface TaskSeriesDao {
     /** Ended series none of whose occurrences are left (all purged or hard-deleted). */
     @Query("DELETE FROM task_series WHERE endedAt IS NOT NULL AND endedAt < :before AND id NOT IN (SELECT seriesId FROM task WHERE seriesId IS NOT NULL)")
     suspend fun purgeEnded(before: Long)
+}
+
+@Dao
+interface TaskOccurrenceSkipDao {
+    @Query("SELECT * FROM task_occurrence_skip")
+    fun observeAll(): Flow<List<TaskOccurrenceSkipEntity>>
+
+    @Query("SELECT * FROM task_occurrence_skip WHERE seriesId = :seriesId")
+    suspend fun forSeries(seriesId: String): List<TaskOccurrenceSkipEntity>
+
+    @Query("SELECT * FROM task_occurrence_skip WHERE seriesId = :seriesId")
+    fun observeForSeries(seriesId: String): Flow<List<TaskOccurrenceSkipEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(skip: TaskOccurrenceSkipEntity)
+
+    @Query("DELETE FROM task_occurrence_skip WHERE seriesId = :seriesId AND occurrenceDate = :date")
+    suspend fun delete(seriesId: String, date: Long)
+}
+
+@Dao
+interface SleepDao {
+    /** Newest first, by the later of the two times. */
+    @Query("SELECT * FROM sleep_session ORDER BY COALESCE(endUtc, startUtc) DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<SleepSessionEntity>>
+
+    @Query("SELECT * FROM sleep_session ORDER BY COALESCE(endUtc, startUtc) DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<SleepSessionEntity>
+
+    @Query("SELECT * FROM sleep_session WHERE id = :id")
+    suspend fun get(id: String): SleepSessionEntity?
+
+    /** Complete records that overlap [start, end), at any age (for the overlap check of an edit). */
+    @Query("SELECT * FROM sleep_session WHERE startUtc IS NOT NULL AND endUtc IS NOT NULL AND startUtc < :end AND endUtc > :start")
+    suspend fun overlapping(start: Long, end: Long): List<SleepSessionEntity>
+
+    @Upsert suspend fun upsert(session: SleepSessionEntity)
+
+    @Query("DELETE FROM sleep_session WHERE id = :id")
+    suspend fun delete(id: String)
 }
 
 @Dao

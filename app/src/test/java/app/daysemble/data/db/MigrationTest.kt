@@ -37,8 +37,11 @@ class MigrationTest {
 
     @Before @After fun clean() { app.deleteDatabase(name) }
 
-    private fun createV1(fill: (SQLiteDatabase) -> Unit) {
-        val schema = Json.parseToJsonElement(File("schemas/app.daysemble.data.db.DaysembleDatabase/1.json").readText())
+    private fun createV1(fill: (SQLiteDatabase) -> Unit) = createAt(1, fill)
+
+    /** A real database at schema [version] (from its exported schema), filled by [fill]. */
+    private fun createAt(version: Int, fill: (SQLiteDatabase) -> Unit) {
+        val schema = Json.parseToJsonElement(File("schemas/app.daysemble.data.db.DaysembleDatabase/$version.json").readText())
             .jsonObject.getValue("database").jsonObject
         val file = app.getDatabasePath(name).apply { parentFile?.mkdirs() }
         SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
@@ -51,7 +54,7 @@ class MigrationTest {
             schema.getValue("setupQueries").jsonArray.forEach { db.execSQL(it.jsonPrimitive.content) }
             db.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '${schema.getValue("identityHash").jsonPrimitive.content}')")
             fill(db)
-            db.version = 1
+            db.version = version
         }
     }
 
@@ -113,6 +116,55 @@ class MigrationTest {
                 // One-off tasks (no series) are unaffected: NULLs never collide.
                 room.tasks().insert(row.copy(id = "c", seriesId = null, occurrenceDate = null))
                 room.tasks().insert(row.copy(id = "d", seriesId = null, occurrenceDate = null))
+            }
+        } finally {
+            room.close()
+        }
+    }
+
+    /**
+     * v2 → v3 keeps repeating tasks, their completed history and countdowns exactly, adds no task
+     * duration to any existing task (so none takes free time it didn't before), and the new
+     * tables work: skipped dates (cascading with their series) and sleep records.
+     */
+    @Test fun v2_to_v3_keepsSeriesAndHistory_andAddsDurationsSkipsAndSleep() {
+        createAt(2) { db ->
+            db.execSQL("INSERT INTO task_list (id, kind, title, sortOrder, isSyncEnabled) VALUES ('l1', 'LOCAL', 'My tasks', 0, 1)")
+            db.execSQL(
+                "INSERT INTO task_series (id, listId, rrule, anchorDate, title, notes, dueTimeMinutes, priority, countdownEnabled, reminders, endedAt, createdAt, updatedAt) " +
+                    "VALUES ('s1', 'l1', 'RRULE:FREQ=DAILY', 20750, 'Stretch', '', 450, 0, 1, '10', NULL, 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO task (id, listId, title, notes, dueDate, dueTimeMinutes, priority, isCompleted, completedAt, sortKey, " +
+                    "createdAt, updatedAt, syncState, isDeleted, countdownEnabled, seriesId, occurrenceDate) VALUES " +
+                    "('s1:a', 'l1', 'Stretch', '', 20750, 450, 0, 1, 999, 1, 1, 2, 'LOCAL', 0, 1, 's1', 20750)," +
+                    "('s1:b', 'l1', 'Stretch', '', 20751, 450, 0, 0, NULL, 2, 1, 1, 'LOCAL', 0, 1, 's1', 20751)," +
+                    "('one', 'l1', 'Exam', '', 20800, 600, 2, 0, NULL, 3, 1, 1, 'LOCAL', 0, 1, NULL, NULL)",
+            )
+        }
+        val room = openCurrent()
+        try {
+            runBlocking {
+                val done = room.tasks().get("s1:a")!!
+                assertThat(done.isCompleted).isTrue()
+                assertThat(done.completedAt).isEqualTo(999)
+                assertThat(done.occurrenceDate).isEqualTo(20750)
+                val current = room.tasks().get("s1:b")!!
+                assertThat(current.seriesId).isEqualTo("s1")
+                assertThat(current.countdownEnabled).isTrue()
+                assertThat(listOf(done, current, room.tasks().get("one")!!).map { it.durationMinutes }).containsExactly(null, null, null)
+                val series = room.taskSeries().get("s1")!!
+                assertThat(series.rrule).isEqualTo("RRULE:FREQ=DAILY")
+                assertThat(series.reminders).isEqualTo("10")
+                assertThat(series.durationMinutes).isNull()
+                // New tables.
+                room.skips().insert(TaskOccurrenceSkipEntity("s1", 20752, 5))
+                assertThat(room.skips().forSeries("s1").map { it.occurrenceDate }).containsExactly(20752L)
+                room.sleep().upsert(SleepSessionEntity("z", startUtc = 1, endUtc = 2, createdAt = 1, updatedAt = 1))
+                assertThat(room.sleep().get("z")!!.endUtc).isEqualTo(2)
+                // Skips go with their series.
+                room.taskSeries().delete("s1")
+                assertThat(room.skips().forSeries("s1")).isEmpty()
             }
         } finally {
             room.close()

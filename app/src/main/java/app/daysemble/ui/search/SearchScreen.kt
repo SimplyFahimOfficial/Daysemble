@@ -158,13 +158,13 @@ fun SearchRoute(onBack: () -> Unit, onOpenEvent: (String, String) -> Unit, onOpe
                 if (state.events.isNotEmpty()) {
                     item(key = "eh") { SectionHeader(stringResource(R.string.search_events), Modifier.padding(top = Space.s)) }
                     items(state.events, key = { "e" + it.stableKey }) { e ->
-                        EventRow(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showDate = true, modifier = Modifier.then(itemMotion()))
+                        EventRow(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showDate = true, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onEventLongPress(e) } })
                     }
                 }
                 if (state.tasks.isNotEmpty()) {
                     item(key = "th") { SectionHeader(stringResource(R.string.search_tasks), Modifier.padding(top = Space.m)) }
                     items(state.tasks, key = { "t" + it.id }) { t ->
-                        TaskRow(t, now, onToggle = { done -> vm.setCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()))
+                        TaskRow(t, now, onToggle = { done -> vm.setCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(t) } })
                     }
                 }
             }

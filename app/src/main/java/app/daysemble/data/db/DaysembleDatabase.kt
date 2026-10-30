@@ -25,8 +25,9 @@ class Converters {
         CalendarSourceEntity::class, EventEntity::class, TaskListEntity::class, TaskEntity::class,
         ReminderEntity::class, ScheduledAlarmEntity::class, DeliveredReminderEntity::class,
         OutboxEntity::class, ConflictLogEntity::class, SyncStateEntity::class, TaskSeriesEntity::class,
+        TaskOccurrenceSkipEntity::class, SleepSessionEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -39,6 +40,8 @@ abstract class DaysembleDatabase : RoomDatabase() {
     abstract fun reminders(): ReminderDao
     abstract fun alarms(): AlarmDao
     abstract fun sync(): SyncDao
+    abstract fun skips(): TaskOccurrenceSkipDao
+    abstract fun sleep(): SleepDao
 
     companion object {
         const val NAME = "daysemble.db"

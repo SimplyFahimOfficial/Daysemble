@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -225,6 +226,19 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                 )
             }
 
+            SectionHeader(stringResource(R.string.field_duration), Modifier.padding(top = Space.l))
+            DurationPicker(f.durationMinutes, onChange = { v -> vm.update { it.copy(durationMinutes = v) } })
+            Note(
+                when {
+                    f.durationMinutes == null -> stringResource(R.string.duration_none_note)
+                    f.dueDate != null && f.dueTime != null -> {
+                        val start = f.dueTime!!
+                        stringResource(R.string.duration_block_note, Fmt.time(start, p), Fmt.time(start.plusMinutes(f.durationMinutes.toLong()), p))
+                    }
+                    else -> stringResource(R.string.duration_estimate_note)
+                },
+            )
+
             SectionHeader(stringResource(R.string.field_countdown), Modifier.padding(top = Space.l))
             DsSwitchRow(
                 title = stringResource(R.string.countdown_show),
@@ -362,6 +376,29 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
             confirm = stringResource(R.string.action_delete), onConfirm = vm::delete,
             onDismiss = { confirmDelete = false }, destructive = true,
         )
+    }
+}
+
+/** "Time needed": common lengths as chips, then 15-minute steps. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DurationPicker(minutes: Int?, onChange: (Int?) -> Unit) {
+    val c = DsTheme.colors
+    FlowRow(
+        Modifier.padding(horizontal = Space.gutter - Space.xs),
+        horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalArrangement = Arrangement.spacedBy(Space.xs),
+    ) {
+        DsChip(stringResource(R.string.duration_none), minutes == null, { onChange(null) })
+        listOf(15, 30, 60, 90, 120, 180).forEach { m ->
+            DsChip(app.daysemble.ui.format.durationText(m.toLong()), minutes == m, { onChange(m) })
+        }
+    }
+    if (minutes != null) {
+        Row(Modifier.padding(horizontal = Space.gutter - Space.s), verticalAlignment = Alignment.CenterVertically) {
+            DsIconButton(androidx.compose.material.icons.Icons.Rounded.Remove, stringResource(R.string.cd_decrease), { onChange((minutes - 15).coerceAtLeast(5)) }, enabled = minutes > 5)
+            Text(app.daysemble.ui.format.durationText(minutes.toLong()), style = DsTheme.type.bodyStrong, color = c.textPrimary)
+            DsIconButton(Icons.Rounded.Add, stringResource(R.string.cd_increase), { onChange((minutes + 15).coerceAtMost(24 * 60)) })
+        }
     }
 }
 

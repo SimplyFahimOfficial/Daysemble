@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import app.daysemble.core.time.DaySchedulePrefs
+import app.daysemble.core.time.SleepSchedule
 import java.io.IOException
 import java.time.DayOfWeek
 
@@ -71,6 +73,8 @@ data class AppSettings(
     val onboardingDone: Boolean = false,
     /** Optional name shown beside the logo on Today. null = not set (the app name is shown instead). */
     val displayName: String? = null,
+    /** Intended waking hours (wake-up and bedtime), used for free time and the scheduled sleep. */
+    val schedule: DaySchedulePrefs = DaySchedulePrefs(),
 )
 
 /** Longest display name kept; longer input is cut (the header also truncates visually). */
@@ -98,6 +102,10 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         val defaultList = stringPreferencesKey("default_task_list")
         val onboarding = booleanPreferencesKey("onboarding_done")
         val displayName = stringPreferencesKey("display_name")
+        val wake = intPreferencesKey("schedule_wake_minute")
+        val bed = intPreferencesKey("schedule_bed_minute")
+        val perWeekday = booleanPreferencesKey("schedule_per_weekday")
+        val weekdayOverrides = stringPreferencesKey("schedule_weekday_overrides")
     }
 
     val settings: Flow<AppSettings> = store.data
@@ -130,7 +138,26 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
             defaultTaskListId = this[Keys.defaultList],
             onboardingDone = this[Keys.onboarding] ?: false,
             displayName = normalizeDisplayName(this[Keys.displayName]),
+            schedule = schedule(),
         )
+    }
+
+    private fun Preferences.schedule(): DaySchedulePrefs {
+        val wake = minuteOrNull(this[Keys.wake]) ?: SleepSchedule.DEFAULT.wakeMinute
+        val bed = minuteOrNull(this[Keys.bed])?.takeIf { it != wake } ?: defaultBedtime(wake)
+        return DaySchedulePrefs(
+            default = SleepSchedule(wake, bed),
+            perWeekday = this[Keys.perWeekday] ?: false,
+            overrides = DaySchedulePrefs.decodeOverrides(this[Keys.weekdayOverrides]),
+        )
+    }
+
+    private fun minuteOrNull(v: Int?): Int? = v?.takeIf { it in 0 until SleepSchedule.MINUTES_PER_DAY }
+
+    /** The default bedtime, or 16 h after [wake] when that is the default bedtime's own minute. */
+    private fun defaultBedtime(wake: Int): Int {
+        val d = SleepSchedule.DEFAULT.bedMinute
+        return if (d != wake) d else (wake + SleepSchedule.DEFAULT.awakeMinutes) % SleepSchedule.MINUTES_PER_DAY
     }
 
     suspend fun setThemeMode(mode: ThemeMode) = store.edit { it[Keys.theme] = mode.key }
@@ -154,6 +181,37 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         if (id == null) it.remove(Keys.defaultList) else it[Keys.defaultList] = id
     }
     suspend fun setOnboardingDone() = store.edit { it[Keys.onboarding] = true }
+
+    /**
+     * Sets the default waking hours. Refused (returns false, nothing saved) when wake-up and bedtime
+     * are the same minute: that day would have no sleep or no waking hours.
+     */
+    suspend fun setDefaultSchedule(wakeMinute: Int, bedMinute: Int): Boolean {
+        if (!validSchedule(wakeMinute, bedMinute)) return false
+        store.edit { it[Keys.wake] = wakeMinute; it[Keys.bed] = bedMinute }
+        return true
+    }
+
+    suspend fun setPerWeekdaySchedule(on: Boolean) = store.edit { it[Keys.perWeekday] = on }
+
+    /** Sets (or with null clears) the hours of one weekday. Same rule as [setDefaultSchedule]. */
+    suspend fun setWeekdaySchedule(day: DayOfWeek, schedule: SleepSchedule?): Boolean {
+        if (schedule != null && !validSchedule(schedule.wakeMinute, schedule.bedMinute)) return false
+        store.edit {
+            val current = DaySchedulePrefs.decodeOverrides(it[Keys.weekdayOverrides]).toMutableMap()
+            if (schedule == null) current.remove(day) else current[day] = schedule
+            if (current.isEmpty()) it.remove(Keys.weekdayOverrides) else it[Keys.weekdayOverrides] = DaySchedulePrefs.encodeOverrides(current)
+        }
+        return true
+    }
+
+    /** Back to 07:00–23:00 every day, without weekday schedules. Sleep records are not touched. */
+    suspend fun resetSchedule() = store.edit {
+        it.remove(Keys.wake); it.remove(Keys.bed); it.remove(Keys.perWeekday); it.remove(Keys.weekdayOverrides)
+    }
+
+    private fun validSchedule(wake: Int, bed: Int) =
+        wake in 0 until SleepSchedule.MINUTES_PER_DAY && bed in 0 until SleepSchedule.MINUTES_PER_DAY && wake != bed
 
     suspend fun setDisplayName(name: String?) = store.edit {
         val n = normalizeDisplayName(name)

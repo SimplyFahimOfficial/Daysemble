@@ -136,6 +136,7 @@ import app.daysemble.ui.navigation.NavMotion
 import app.daysemble.ui.navigation.SearchRoute
 import app.daysemble.ui.navigation.SettingsPageRoute
 import app.daysemble.ui.navigation.SettingsRoute
+import app.daysemble.ui.navigation.TaskDetailRoute
 import app.daysemble.ui.navigation.TaskEditorRoute
 import app.daysemble.ui.search.SearchRoute as SearchScreenRoute
 import app.daysemble.ui.settings.AboutRoute
@@ -335,6 +336,14 @@ private fun AppContent(
     LaunchedEffect(onMain) { if (!onMain && mainHasFocus) focusManager.clearFocus(force = true) }
 
     val bottomPadding = remember { PaddingValues(bottom = Sizes.bottomBar + Space.xl + 24.dp) }
+    // Long-press on any task or agenda item (main tabs and Search) opens one shared menu.
+    app.daysemble.ui.actions.ItemActionsHost(
+        container,
+        onOpenTask = { id -> TaskDetailRoute(id).let { if (!nav.isShowing(it)) nav.navigate(it) } },
+        onEditTask = { id -> nav.navigate(TaskEditorRoute(taskId = id)) },
+        onOpenEvent = { id, key -> EventDetailRoute(id, key).let { if (!nav.isShowing(it)) nav.navigate(it) } },
+        onEditEvent = { id -> nav.navigate(EventEditorRoute(eventId = id)) },
+    ) {
     Box(Modifier.fillMaxSize().background(c.background)) {
         MainScreen(
             tab = tab,
@@ -361,13 +370,15 @@ private fun AppContent(
                 .then(if (mainShown == 0) Modifier.clearAndSetSemantics { } else Modifier),
         ) { t ->
             val openEvent: (String, String) -> Unit = { id, key -> nav.openFromMain(EventDetailRoute(id, key)) }
-            val openTask: (String) -> Unit = { id -> nav.openFromMain(TaskEditorRoute(taskId = id)) }
+            // A tap opens the detail view; editing is the long-press menu or the detail's pencil.
+            val openTask: (String) -> Unit = { id -> nav.openFromMain(TaskDetailRoute(id)) }
             when (t) {
                 Tab.TODAY -> TodayScreenRoute(
                     bottomPadding, onOpenEvent = openEvent, onOpenTask = openTask,
                     onFocusedDate = { todayFocus = it.toEpochDay() },
                     onAddEvent = { d -> nav.openFromMain(EventEditorRoute(dateEpochDay = d.toEpochDay())) },
                     onAddTask = { d -> nav.openFromMain(TaskEditorRoute(dueEpochDay = d.toEpochDay())) },
+                    onOpenSchedule = { nav.openFromMain(SettingsPageRoute(SettingsPage.SCHEDULE.name)) },
                 )
                 Tab.CALENDAR -> CalendarScreenRoute(
                     bottomPadding, onOpenEvent = openEvent, onOpenTask = openTask,
@@ -383,7 +394,7 @@ private fun AppContent(
         LaunchedEffect(open) {
             val r = open ?: return@LaunchedEffect
             val route: Any = when (r.type) {
-                app.daysemble.data.db.OwnerType.TASK -> TaskEditorRoute(taskId = r.id)
+                app.daysemble.data.db.OwnerType.TASK -> TaskDetailRoute(r.id)
                 app.daysemble.data.db.OwnerType.EVENT -> EventDetailRoute(r.id, r.occurrenceKey)
             }
             // Tapping the notification of the item that's already open (or tapping it twice) doesn't
@@ -416,6 +427,7 @@ private fun AppContent(
             )
         }
     }
+    }
 
     if (showAdd) {
         QuickAddSheet(
@@ -444,6 +456,7 @@ private fun NavHostController.isShowing(route: Any): Boolean {
     val top = currentBackStackEntry ?: return false
     return when (route) {
         is TaskEditorRoute -> top.destination.hasRoute<TaskEditorRoute>() && top.toRoute<TaskEditorRoute>() == route
+        is TaskDetailRoute -> top.destination.hasRoute<TaskDetailRoute>() && top.toRoute<TaskDetailRoute>() == route
         is EventDetailRoute -> top.destination.hasRoute<EventDetailRoute>() && top.toRoute<EventDetailRoute>() == route
         else -> false
     }
@@ -524,6 +537,15 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
             }
             Box(Modifier.fillMaxSize().drawBehind { drawLayer(mainLayer) })
         }
+        composable<TaskDetailRoute> { e ->
+            val r = e.toRoute<TaskDetailRoute>()
+            Page {
+                app.daysemble.ui.task.TaskDetailRoute(
+                    r.taskId, onEdit = { id -> nav.openFrom(e, TaskEditorRoute(taskId = id)) },
+                    onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) },
+                )
+            }
+        }
         composable<TaskEditorRoute> { e ->
             val r = e.toRoute<TaskEditorRoute>()
             Page { TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) }) }
@@ -551,7 +573,7 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
                 SearchScreenRoute(
                     onBack = { nav.backFrom(e) },
                     onOpenEvent = { id, key -> nav.openFrom(e, EventDetailRoute(id, key)) },
-                    onOpenTask = { id -> nav.openFrom(e, TaskEditorRoute(taskId = id)) },
+                    onOpenTask = { id -> nav.openFrom(e, TaskDetailRoute(id)) },
                 )
             }
         }
@@ -571,6 +593,7 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
                     SettingsPage.TASKS -> TaskSettingsRoute(onBack = back)
                     SettingsPage.DATA -> DataSettingsRoute(onBack = back)
                     SettingsPage.ABOUT -> AboutRoute(onBack = back)
+                    SettingsPage.SCHEDULE -> app.daysemble.ui.settings.ScheduleSettingsRoute(onBack = back)
                     null -> LaunchedEffect(Unit) { nav.popBackStack(e.destination.id, inclusive = true) }
                 }
             }

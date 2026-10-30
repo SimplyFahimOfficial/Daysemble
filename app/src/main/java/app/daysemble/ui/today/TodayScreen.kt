@@ -141,11 +141,15 @@ fun TodayRoute(
     onFocusedDate: (LocalDate) -> Unit = {},
     onAddEvent: (LocalDate) -> Unit = {},
     onAddTask: (LocalDate) -> Unit = {},
+    onOpenSchedule: () -> Unit = {},
 ) {
-    val vm = daysembleViewModel { c, h -> TodayViewModel(c.events, c.tasks, c.settings, c.clock, c.timeContext, h) }
+    val vm = daysembleViewModel { c, h -> TodayViewModel(c.events, c.tasks, c.settings, c.clock, c.timeContext, h, sleepRepo = c.sleep, seriesReader = c.taskSeries) }
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()
     val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
+    val container = (androidx.compose.ui.platform.LocalContext.current.applicationContext as app.daysemble.DaysembleApp).container
+    val records by container.sleep.recent.collectAsStateWithLifecycle(initialValue = emptyList())
+    val sleepActions = app.daysemble.ui.sleep.rememberSleepActions()
     LaunchedEffect(now) { vm.onTick(now) }
     LaunchedEffect(state.date) { onFocusedDate(state.date) }
     TodayScreen(
@@ -154,8 +158,18 @@ fun TodayRoute(
         onSelectDate = vm::select, onToday = vm::goToToday,
         onToggleTask = { id, done -> vm.setCompleted(id, done) { r -> if (done) onCompleted(id, r) } }, onOpenEvent = onOpenEvent, onOpenTask = onOpenTask,
         onAddEvent = onAddEvent, onAddTask = onAddTask,
+        sleep = TodaySleep(sleepActions, records, onOpenSchedule),
     )
+    app.daysemble.ui.sleep.SleepPrompts(sleepActions)
 }
+
+/** Sleep and waking-hours hooks of Today: the sleep buttons, recent records, and Settings → Daily schedule. */
+@androidx.compose.runtime.Immutable
+class TodaySleep(
+    val actions: app.daysemble.ui.sleep.SleepActions? = null,
+    val records: List<app.daysemble.core.time.SleepRecord> = emptyList(),
+    val onOpenSchedule: () -> Unit = {},
+)
 
 /** Test tags for the Today layout (gesture tests and visual QA). */
 object TodayTags {
@@ -196,9 +210,19 @@ fun TodayScreen(
     displayName: String? = null,
     onAddEvent: (LocalDate) -> Unit = {},
     onAddTask: (LocalDate) -> Unit = {},
+    sleep: TodaySleep = TodaySleep(),
 ) {
+    val sleepActions = sleep.actions
+    val onOpenSchedule = sleep.onOpenSchedule
+    val sleepRecords = sleep.records
     val c = DsTheme.colors
     val panel = rememberOverviewPanel()
+    var showBreakdown by rememberSaveable { mutableStateOf(false) }
+    var showSleep by rememberSaveable { mutableStateOf(false) }
+    if (showBreakdown) FreeTimeSheet(state, LocalTimePrefs.current, onDismiss = { showBreakdown = false }, onChangeHours = onOpenSchedule)
+    if (showSleep && sleepActions != null) {
+        SleepSheet(sleepRecords, asleep = state.sleep.open != null, actions = sleepActions, onDismiss = { showSleep = false }, onOpenSettings = onOpenSchedule)
+    }
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val minPanel = with(density) { (contentPadding.calculateBottomPadding() + 196.dp).roundToPx() }
@@ -229,7 +253,12 @@ fun TodayScreen(
                         .nestedScroll(overviewScroll)
                         .verticalScroll(overviewScrollState, overscrollEffect = null)
                         .graphicsLayer { alpha = ((panel.progress() - 0.35f) / 0.65f).coerceIn(0f, 1f) },
-                ) { ExpandedOverview(state, now, displayName) }
+                ) {
+                    ExpandedOverview(
+                        state, now, displayName, interactive = expandedTarget,
+                        onInfo = { showBreakdown = true }, onSleep = { showSleep = true }, sleepActions = sleepActions,
+                    )
+                }
             }
             // 2: the agenda panel.
             AgendaPanel(
@@ -295,7 +324,15 @@ private fun CompactOverview(state: TodayUiState) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ExpandedOverview(state: TodayUiState, now: Instant, name: String?) {
+private fun ExpandedOverview(
+    state: TodayUiState,
+    now: Instant,
+    name: String?,
+    interactive: Boolean = false,
+    onInfo: () -> Unit = {},
+    onSleep: () -> Unit = {},
+    sleepActions: app.daysemble.ui.sleep.SleepActions? = null,
+) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     val p = LocalTimePrefs.current
@@ -323,7 +360,7 @@ private fun ExpandedOverview(state: TodayUiState, now: Instant, name: String?) {
             Spacer(Modifier.height(Space.xl))
             val (text, icons) = briefing(s, now, name, p)
             Text(text, style = DsTheme.type.summary, inlineContent = icons)
-            Metrics(s, p)
+            DayBalance(s, now, p, interactive, onInfo, onSleep, sleepActions)
         }
     }
 }
@@ -478,40 +515,6 @@ private fun AnnotatedString.Builder.appendTemplate(template: String, args: List<
     append(template.substring(last))
 }
 
-/** Free and booked time from the day's events, and what's next; with the window it counts. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun Metrics(s: TodayUiState, p: TimePrefs) {
-    val c = DsTheme.colors
-    val a = s.availability ?: return
-    Spacer(Modifier.height(Space.l))
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.l), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-        Metric(Icons.Rounded.Schedule, c.success, stringResource(R.string.metric_free, durationText(a.free.roundToMinutes())))
-        if (!a.isFree) Metric(Icons.Rounded.EventBusy, c.violet, stringResource(R.string.metric_booked, durationText(a.busy.roundToMinutes())))
-        s.nextEvent?.let { e ->
-            Metric(
-                Icons.AutoMirrored.Rounded.ArrowForward, c.accent,
-                stringResource(R.string.metric_next, e.title.ifBlank { stringResource(R.string.untitled_event) }, Fmt.time(e.start, p)),
-            )
-        }
-    }
-    Spacer(Modifier.height(Space.xs))
-    Text(
-        stringResource(R.string.metric_window_note, Fmt.time(Availability.DAY_START, p), Fmt.time(Availability.DAY_END, p)),
-        style = DsTheme.type.label, color = c.textTertiary,
-    )
-}
-
-private fun Duration.roundToMinutes(): Long = (toMillis() + 30_000) / 60_000
-
-@Composable
-private fun Metric(icon: ImageVector, tint: Color, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs)) {
-        Icon(icon, null, tint = tint, modifier = Modifier.size(Sizes.iconSmall - 2.dp))
-        Text(text, style = DsTheme.type.label, color = DsTheme.colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
 // ---- Agenda panel -----------------------------------------------------------------------------
 
 private val PanelShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
@@ -534,6 +537,7 @@ private fun AgendaPanel(
     val c = DsTheme.colors
     val m = DsTheme.motion
     val fling = AnchoredDraggableDefaults.flingBehavior(panel.state, positionalThreshold = { it / 2f }, animationSpec = panel.spec)
+    val itemActions = app.daysemble.ui.actions.LocalItemActions.current
     Column(
         Modifier
             .fillMaxSize()
@@ -597,6 +601,7 @@ private fun AgendaPanel(
                 AgendaEventCard(
                     item.event, now, onClick = { onOpenEvent(item.event.eventId, item.event.occurrenceKey) },
                     modifier = Modifier.then(itemMotion()),
+                    onLongClick = itemActions?.let { a -> { a.onEventLongPress(item.event) } },
                 )
             }
             items(state.timeline, key = { it.key }) { item ->
@@ -606,12 +611,14 @@ private fun AgendaPanel(
                         onClick = { onOpenEvent(item.event.eventId, item.event.occurrenceKey) },
                         focused = item.event.stableKey == state.focusEventKey,
                         modifier = Modifier.then(itemMotion()),
+                        onLongClick = itemActions?.let { a -> { a.onEventLongPress(item.event) } },
                     )
                     is TimelineItem.TaskItem -> AgendaTaskCard(
                         item.task, now,
                         onToggle = { onToggleTask(item.task.id, it) },
                         onClick = { onOpenTask(item.task.id) },
                         modifier = Modifier.then(itemMotion()),
+                        onLongClick = itemActions?.let { a -> { a.onTaskLongPress(item.task) } },
                     )
                 }
             }
@@ -620,7 +627,7 @@ private fun AgendaPanel(
                     SectionHeader(stringResource(R.string.section_overdue), Modifier.padding(top = Space.l).then(itemMotion()))
                 }
                 items(state.overdue, key = { "o:" + it.id }) { t ->
-                    AgendaTaskCard(t, now, onToggle = { onToggleTask(t.id, it) }, onClick = { onOpenTask(t.id) }, showDate = true, modifier = Modifier.then(itemMotion()))
+                    AgendaTaskCard(t, now, onToggle = { onToggleTask(t.id, it) }, onClick = { onOpenTask(t.id) }, showDate = true, modifier = Modifier.then(itemMotion()), onLongClick = itemActions?.let { a -> { a.onTaskLongPress(t) } })
                 }
             }
             if (state.completed.isNotEmpty()) {
@@ -631,7 +638,7 @@ private fun AgendaPanel(
                     AnimatedVisibility(visible = showCompleted, enter = m.expandIn(), exit = m.collapseOut()) {
                         Column {
                             state.completed.forEach { t ->
-                                TaskRow(t, now, onToggle = { onToggleTask(t.id, it) }, onClick = { onOpenTask(t.id) }, showDue = false)
+                                TaskRow(t, now, onToggle = { onToggleTask(t.id, it) }, onClick = { onOpenTask(t.id) }, showDue = false, onLongClick = itemActions?.let { a -> { a.onTaskLongPress(t) } })
                             }
                         }
                     }

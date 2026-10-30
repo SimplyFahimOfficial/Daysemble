@@ -173,6 +173,12 @@ data class TaskEntity(
      * from here.
      */
     val occurrenceDate: Long? = null,
+    /**
+     * Minutes the task takes. Local only. With a due time it is a time block (due time → + duration)
+     * that takes free time on Today; without one it counts as estimated work and is never placed on
+     * the clock. Null = no estimate: the task takes no time.
+     */
+    val durationMinutes: Int? = null,
 )
 
 /**
@@ -208,6 +214,48 @@ data class TaskSeriesEntity(
     @ColumnInfo(defaultValue = "''") val reminders: String = "",
     /** Set when the series stops repeating (deleted from here on, or repeat turned off). */
     val endedAt: Long? = null,
+    val createdAt: Long,
+    val updatedAt: Long,
+    /** Duration new occurrences copy (see [TaskEntity.durationMinutes]). */
+    val durationMinutes: Int? = null,
+)
+
+/**
+ * A scheduled date of a repeating task that was skipped (its occurrence deleted on its own), kept
+ * after the deleted row itself is purged, so the history shows it as skipped rather than missed.
+ * One row per series date; removed again if the delete is undone. Goes with its series.
+ */
+@Entity(
+    tableName = "task_occurrence_skip",
+    primaryKeys = ["seriesId", "occurrenceDate"],
+    foreignKeys = [
+        ForeignKey(
+            entity = TaskSeriesEntity::class,
+            parentColumns = ["id"], childColumns = ["seriesId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+data class TaskOccurrenceSkipEntity(
+    val seriesId: String,
+    /** Epoch day of the skipped scheduled date. */
+    val occurrenceDate: Long,
+    val skippedAt: Long,
+)
+
+/**
+ * A manually recorded sleep period: "I'm going to sleep" sets [startUtc], "I just woke up" sets
+ * [endUtc]. Either can be missing (a wake-up recorded without a bedtime, or a bedtime still open or
+ * never closed); only a record with both has a duration. The zones are the device zone at each tap,
+ * so the times read the same after travelling. Not health or sensor data.
+ */
+@Entity(tableName = "sleep_session", indices = [Index("startUtc"), Index("endUtc")])
+data class SleepSessionEntity(
+    @PrimaryKey val id: String,
+    val startUtc: Long? = null,
+    val endUtc: Long? = null,
+    val startZone: String? = null,
+    val endZone: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
 )

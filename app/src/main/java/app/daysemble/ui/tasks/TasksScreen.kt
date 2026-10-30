@@ -81,7 +81,6 @@ import java.time.Instant
 
 @Composable
 fun TasksRoute(contentPadding: PaddingValues, onOpenTask: (String) -> Unit) {
-    val prefs = LocalTimePrefs.current
     val vm = daysembleViewModel { c, h -> TasksViewModel(c.tasks, c.settings, c.clock, c.timeContext, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()
@@ -211,6 +210,7 @@ fun TasksScreen(
                         Box(Modifier.weight(1f)) {
                             TaskRow(
                                 task, now, onToggle = { onToggle(task.id, it) }, onClick = { onOpen(task.id) },
+                                onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(task) } },
                                 actions = buildList {
                                     if (index > 0) add(CustomAccessibilityAction(moveUp) { manual.swap(index, index - 1); onReorder(manual.map { it.id }); true })
                                     if (index < manual.lastIndex) add(CustomAccessibilityAction(moveDown) { manual.swap(index, index + 1); onReorder(manual.map { it.id }); true })
@@ -335,6 +335,7 @@ private fun SwipeableTaskRow(
         Box(Modifier.background(c.background)) {
             TaskRow(
                 task, now, onToggle = onToggle, onClick = onOpen,
+                onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(task) } },
                 actions = listOf(
                     CustomAccessibilityAction(completeLabel) { onToggle(!task.isCompleted); true },
                     CustomAccessibilityAction(deleteLabel) { delete(); true },

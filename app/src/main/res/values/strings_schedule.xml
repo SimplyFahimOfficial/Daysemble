@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Daily schedule, free time, sleep records, task detail and occurrence history. -->
+<resources>
+    <!-- Today: free time -->
+    <string name="metric_busy">%1$s booked</string>
+    <string name="metric_sleep_planned">%1$s sleep planned</string>
+    <string name="metric_window">Waking hours %1$s – %2$s</string>
+    <string name="metric_window_from_now">Rest of waking hours %1$s – %2$s</string>
+    <string name="metric_window_over">Waking hours %1$s – %2$s are over</string>
+    <string name="metric_after_estimates">About %1$s free after %2$s of estimated task work</string>
+    <string name="cd_free_time_breakdown">How free time is calculated</string>
+    <string name="breakdown_title">How your free time is calculated</string>
+    <string name="breakdown_window">Waking hours</string>
+    <string name="breakdown_from_now">Counted from now (%1$s)</string>
+    <string name="breakdown_over">These waking hours are over, so there is no free time left to count.</string>
+    <string name="breakdown_events">Events</string>
+    <string name="breakdown_task_blocks">Tasks with a time and duration</string>
+    <string name="breakdown_overlap">Overlaps, counted once</string>
+    <string name="breakdown_free">Free</string>
+    <string name="breakdown_nothing_busy">Nothing in this time is booked.</string>
+    <string name="breakdown_estimates">Estimated task work</string>
+    <string name="breakdown_estimates_sub">Tasks with a duration but no time. Not placed on your day.</string>
+    <string name="breakdown_after_estimates">Free after estimated work</string>
+    <plurals name="breakdown_unestimated">
+        <item quantity="one">%d task has no duration, so it takes no time here.</item>
+        <item quantity="other">%d tasks have no duration, so they take no time here.</item>
+    </plurals>
+    <string name="breakdown_sleep">Planned sleep last night</string>
+    <string name="breakdown_items">Counted</string>
+    <string name="breakdown_kind_event">Event</string>
+    <string name="breakdown_kind_task">Task</string>
+    <string name="breakdown_kind_repeat">Repeating task (next occurrence)</string>
+    <string name="breakdown_kind_estimate">Estimate, no time</string>
+    <string name="breakdown_rules">Only your waking hours count. Events and timed tasks that overlap are counted once, and the parts outside your waking hours aren’t counted. All-day events and tasks without a duration don’t take time.</string>
+    <string name="breakdown_change_hours">Change waking hours</string>
+
+    <!-- Settings: daily schedule -->
+    <string name="settings_schedule">Daily schedule &amp; sleep</string>
+    <string name="settings_schedule_sub">Waking hours, free time and sleep records</string>
+    <string name="schedule_waking_hours">Waking hours</string>
+    <string name="schedule_wake">Wake-up</string>
+    <string name="schedule_bed">Bedtime</string>
+    <string name="schedule_summary">Awake %1$s (%2$s – %3$s) · %4$s of planned sleep</string>
+    <string name="schedule_error_same">Wake-up and bedtime can’t be the same time.</string>
+    <string name="schedule_per_weekday">Different hours on some days</string>
+    <string name="schedule_per_weekday_on">Each day uses its own hours, or the default</string>
+    <string name="schedule_per_weekday_off">The same hours every day</string>
+    <string name="schedule_uses_default">default</string>
+    <string name="schedule_use_default">Use default hours</string>
+    <string name="schedule_reset">Restore defaults</string>
+    <string name="schedule_reset_title">Restore the default hours?</string>
+    <string name="schedule_reset_body">Wake-up 7:00, bedtime 23:00, every day. Your sleep records stay as they are.</string>
+    <string name="schedule_free_time_note">Today counts free time between your wake-up and bedtime. A bedtime earlier than the wake-up is the next morning.</string>
+
+    <!-- Sleep records -->
+    <string name="sleep_section">Sleep</string>
+    <string name="sleep_woke_up">I just woke up</string>
+    <string name="sleep_going_to_sleep">I’m going to sleep</string>
+    <string name="sleep_manual_note">These are the times you enter. Daysemble doesn’t measure sleep or its quality.</string>
+    <string name="sleep_history">Recorded sleep</string>
+    <string name="sleep_history_empty">Nothing recorded yet.</string>
+    <string name="sleep_bedtime_saved">Bedtime recorded · %1$s</string>
+    <string name="sleep_wake_saved">Good morning · you slept %1$s</string>
+    <string name="sleep_saved">Saved</string>
+    <string name="sleep_deleted">Sleep record deleted</string>
+    <string name="sleep_already_asleep_title">You’re already marked as asleep</string>
+    <string name="sleep_already_asleep_body">Bedtime was recorded at %1$s. Move it to now, or edit the times.</string>
+    <string name="sleep_already_awake_title">Wake-up already recorded</string>
+    <string name="sleep_already_awake_body">You recorded waking up at %1$s. Move it to now, or edit the times.</string>
+    <string name="sleep_update_to_now">Move to now</string>
+    <string name="sleep_edit_times">Edit times</string>
+    <string name="sleep_edit_title">Edit sleep</string>
+    <string name="sleep_add_title">Add sleep</string>
+    <string name="sleep_delete_title">Delete this sleep record?</string>
+    <string name="sleep_bedtime">Bedtime</string>
+    <string name="sleep_wake">Wake-up</string>
+    <string name="sleep_not_recorded">Not recorded</string>
+    <string name="sleep_duration_line">%1$s of sleep</string>
+    <string name="sleep_no_wake">%1$s – no wake-up recorded</string>
+    <string name="sleep_no_bedtime">No bedtime recorded – %1$s</string>
+    <string name="sleep_error_order">The wake-up has to be after the bedtime.</string>
+    <string name="sleep_error_long">That’s more than 24 hours. Check the dates.</string>
+    <string name="sleep_error_future">Times can’t be in the future.</string>
+    <string name="sleep_error_overlap">This overlaps another sleep record.</string>
+    <string name="sleep_error_empty">Enter a bedtime or a wake-up.</string>
+    <string name="sleep_asleep_since">Asleep since %1$s</string>
+    <string name="sleep_slept">Slept %1$s</string>
+    <string name="sleep_woke_at">Woke up at %1$s</string>
+    <string name="sleep_none_recorded">No sleep recorded for last night</string>
+    <string name="sleep_more_than_planned">%1$s more than planned</string>
+    <string name="sleep_less_than_planned">%1$s less than planned</string>
+    <string name="sleep_as_planned">as planned</string>
+    <string name="sleep_open">Open sleep</string>
+    <string name="sleep_schedule_settings">Waking hours and all records</string>
+
+    <!-- Item menu (long-press) -->
+    <string name="menu_more_actions">More actions</string>
+    <string name="menu_open_details">Open details</string>
+    <string name="menu_skip_occurrence">Skip this one</string>
+
+    <!-- Task detail -->
+    <string name="task_missing">This task no longer exists</string>
+    <string name="detail_complete">Complete</string>
+    <string name="detail_completed_at">Completed %1$s</string>
+    <string name="detail_overdue">Overdue</string>
+    <string name="detail_open">Open</string>
+    <string name="detail_no_due">No due date</string>
+    <string name="detail_countdown_on">Show countdown</string>
+    <string name="detail_countdown_off">Hide countdown</string>
+    <string name="detail_duration_block">Blocks %1$s – %2$s</string>
+    <string name="detail_duration_estimate">Estimated work, not placed on your day</string>
+    <string name="detail_next_after">Next after this one: %1$s</string>
+    <string name="detail_current_occurrence">Current occurrence: %1$s</string>
+    <string name="detail_last_occurrence">This is the last one</string>
+    <string name="detail_repeat_ended">No longer repeats</string>
+    <string name="cd_hero_remaining">Time left</string>
+    <string name="cd_hero_overdue">Overdue by</string>
+
+    <!-- Task editor: duration -->
+    <string name="field_duration">Time needed</string>
+    <string name="duration_none">No estimate</string>
+    <string name="duration_none_note">Without a duration the task takes no time from your day.</string>
+    <string name="duration_block_note">Blocks %1$s – %2$s in Today’s free time.</string>
+    <string name="duration_estimate_note">Without a due time this counts as estimated work. It isn’t placed on your day.</string>
+
+    <!-- Occurrence history -->
+    <string name="history_title">History</string>
+    <string name="history_completed">completed</string>
+    <string name="history_missed">missed</string>
+    <string name="history_skipped">skipped</string>
+    <string name="history_upcoming">next 4 weeks</string>
+    <string name="history_left">left</string>
+    <plurals name="history_streak">
+        <item quantity="one">in a row</item>
+        <item quantity="other">in a row</item>
+    </plurals>
+    <string name="history_empty">No history yet. Completed and missed occurrences will appear here.</string>
+    <string name="history_show_earlier">Show earlier</string>
+    <string name="history_completed_at">done %1$s</string>
+    <string name="history_status_completed">Completed</string>
+    <string name="history_status_missed">Missed</string>
+    <string name="history_status_skipped">Skipped</string>
+    <string name="history_status_overdue">Overdue</string>
+    <string name="history_status_due">Due</string>
+    <string name="history_status_upcoming">Upcoming</string>
+    <string name="history_status_not_scheduled">Not scheduled</string>
+    <string name="history_policy">One occurrence is active at a time. Past its due time it is overdue, and you can still complete it. A scheduled date counts as missed once the repeat has moved past it without it being done. Skipped ones don’t count as missed.</string>
+</resources>

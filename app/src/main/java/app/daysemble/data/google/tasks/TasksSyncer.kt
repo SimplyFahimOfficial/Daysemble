@@ -275,6 +275,7 @@ class TasksSyncer(
                 countdownEnabled = local?.countdownEnabled ?: false,
                 seriesId = local?.seriesId,
                 occurrenceDate = local?.occurrenceDate,
+                durationMinutes = local?.durationMinutes,
             ),
         )
     }
