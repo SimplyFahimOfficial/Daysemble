@@ -8,6 +8,7 @@ Branch: `feature/motion-rework-audit`, from `main` at `0d6b2d5` (PR #14 merged).
 ## A. Repository audit
 
 ### A1. Architecture (confirmed)
+
 - **Layers:** a single module with a manual DI container (`AppContainer`, everything lazy).
 - **Data path:** Room → repositories → screen ViewModels (`stateIn`, `WhileSubscribed(5s)`, `flowOn(Default)`) → Compose.
 - **Navigation:** the main screen (header, tabs, bottom bar) is always composed. The NavHost hosts only the pages opened over it; its `MainRoute` is a placeholder that draws the main screen's recorded picture. This is a sound design and I kept it.
@@ -36,6 +37,7 @@ Branch: `feature/motion-rework-audit`, from `main` at `0d6b2d5` (PR #14 merged).
 | F14 | Completing a recurring task in a **Google** list creates no next occurrence. It is by design (Google stores no rule), but the UI doesn't say so. | `TaskRepository.kt:253` | Confirm the intent |
 
 **Verified correct (not re-checked further):**
+
 - Task series: completion, duplicate prevention, undo, skips, this/future/all scopes (tests).
 - Sleep records and free-time interval arithmetic (tests from PR #14).
 - Room migrations v1→v3 (tests).
@@ -45,7 +47,9 @@ Branch: `feature/motion-rework-audit`, from `main` at `0d6b2d5` (PR #14 merged).
 - 401 refresh, 410 full resync, 409 adopt, 412 conflict log.
 
 ### A3. Performance
+
 These are code-based findings. No device profiling was possible (see B6).
+
 - **Confirmed, fixed:** whole-app recomposition on every settings change; hidden tabs and covered screens doing work; the Today panel re-measured every frame. Details in B1.
 - **Suspected, P2:** `TaskDao.observeAll` returns every non-deleted task, completed ones included, forever. Every task write re-emits the whole table to Today, Calendar, Tasks and Search. It needs scoped queries (open tasks, a date range).
 - **P3:**
@@ -56,7 +60,9 @@ These are code-based findings. No device profiling was possible (see B6).
   - No `contentType` in lazy lists.
 
 ### A4. Security and privacy (confirmed clean unless listed)
+
 **Clean:**
+
 - MainActivity and all receivers are `exported=false`. Only the launcher aliases are exported.
 - PendingIntents use `FLAG_IMMUTABLE`.
 - No cleartext traffic; only system CAs are trusted.
@@ -66,11 +72,13 @@ These are code-based findings. No device profiling was possible (see B6).
 - CI: `contents: read`, `persist-credentials: false`, actions pinned to SHAs, signing secrets only in the `release` environment on `main`.
 
 **Open items:**
+
 - Notification action PendingIntents differ only by request code (`Notifications.kt:50`). A hash collision could act on the wrong task. Add a data URI. P3.
 - R8 release builds are assembled in CI but never run. A stripped serializer would only show up at runtime. Add a minified smoke test. P3.
 - `WorkManager` is initialised on the main thread in `Application.onCreate`. P3.
 
 ### A5. UI/UX
+
 - **Consistency:**
   - 11 literal `RoundedCornerShape(n.dp)` instead of `Radii`.
   - 6 ad-hoc shadow elevations with no elevation token. The Tasks drag shadow is `8f` px, not dp.
@@ -83,7 +91,9 @@ These are code-based findings. No device profiling was possible (see B6).
 - **Clean:** every settings field has a reader; there are no empty handlers or TODOs in `ui/`; there are no hard-coded `Color(0x…)` outside the theme; every clickable has a role.
 
 ### A6. Missing tests
+
 Untested behaviours:
+
 - The notification Complete/Snooze actions.
 - A 412 conflict end to end.
 - Disconnect (cascade delete, outbox cleared).
@@ -99,6 +109,7 @@ Untested behaviours:
 ## B. Motion and navigation rework (implemented)
 
 ### B1. Root causes found in the code
+
 1. **Every settings change recomposed the entire app.**
    - `LocalAppSettings` was a `staticCompositionLocalOf`, provided at the root with the whole `AppSettings`. Any change invalidates the whole subtree, and settings change on every switch in Settings.
    - Each toggle therefore recomposed the Settings page, the NavHost, and the three tabs kept composed under it, on the main thread, while the switch was animating.
@@ -120,6 +131,7 @@ Untested behaviours:
 7. **The item menu sheet vanished** instead of sliding away after an in-place action. Now the action runs at once, the sheet hides, and only then leaves the composition. Actions that open a page still close it at once, since the page arrives over it.
 
 Checked and left unchanged because they are sound:
+
 - **TabHost:** cross-fade over the still old tab, draw-phase alpha, interruptible Animatables; the rapid-switch test passes.
 - **Bottom-bar indicator:** spring read in the draw phase.
 - **NavHost transitions:** one container, page over a still page, predictive back that matches.
@@ -129,6 +141,7 @@ Checked and left unchanged because they are sound:
 - **Reduced-motion support.**
 
 ### B2. Motion system
+
 - `DsMotion` (theme/Motion.kt) remains the single place for durations and curves.
 - Added `swapShift` and documented five rules in the role table:
   - Animated values are read in draw or placement.
@@ -139,7 +152,9 @@ Checked and left unchanged because they are sound:
 - `itemMotion(fadeOut)` and `ContentSwap` / `ItemsAppearInstantly` live in components/Motion.kt.
 
 ### B3. Files changed
+
 **Main:**
+
 - `ui/components/VisibilityLifecycle.kt` (new)
 - `ui/components/Motion.kt`
 - `ui/theme/Motion.kt`
@@ -154,12 +169,14 @@ Checked and left unchanged because they are sound:
 - `data/google/sync/SyncManager.kt`
 
 **Tests:**
+
 - `ui/VisibilityLifecycleTest.kt` (new)
 - `ui/MotionContinuityTest.kt` (new)
 - `data/google/CalendarSyncTest.kt` (+1)
 - `ui/FirstUseAndNavigationTest.kt`: the month-cell helper now picks the on-screen page, because six rows show boundary dates on both pages.
 
 ### B4. Verification actually run
+
 - `./gradlew assembleDebug testDebugUnitTest lintDebug --stacktrace` passes: 382 tests, 348 passed, 34 skipped, 0 failed. Lint shows the same 14 warnings as before, none new.
 - `./gradlew assembleRelease` passes.
 - To show the new tests detect the defects, I ran them against the old code: the search, panel-height and month-height tests fail on it and pass with the fixes.
@@ -167,10 +184,12 @@ Checked and left unchanged because they are sound:
 - The existing blank-frame tests (tabs, Settings open/close/back, theme), the gesture tests, rapid tab switches and the Settings double-back test all still pass.
 
 ### B5. Not done in this pass
+
 - No shared-element transition from a list item into its detail screen. It is possible with Compose 1.9 `SharedTransitionLayout`, but the main screen is drawn as a recorded layer under the NavHost, so the shared bounds would need their own design. Roadmap P2.
 - Tab composition in the background still composes a whole tab in one idle frame. Pausable composition is experimental; this is left as it is.
 
 ### B6. Not tested
+
 No emulator or device is available in this sandbox. **Nothing in the manual matrix was run**: rapid tabs on hardware, predictive-back feel, background and resume mid-transition, large text, real frame timings. No Macrobenchmark or Perfetto data exists for this project, so I report no frame timings. The Robolectric tests prove behaviour and layout, not smoothness.
 
 ---
