@@ -98,7 +98,7 @@ fun SkeletonRows(modifier: Modifier = Modifier, count: Int = 4) {
     val m = DsTheme.motion
     val alpha = if (m.reduced) 0.6f else {
         val t = rememberInfiniteTransition(label = "skeleton")
-        val a by t.animateFloat(0.45f, 0.85f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse), label = "a")
+        val a by t.animateFloat(0.45f, 0.85f, infiniteRepeatable(tween(m.skeletonPulse, easing = LinearEasing), RepeatMode.Reverse), label = "a")
         a
     }
     val loading = androidx.compose.ui.res.stringResource(app.daysemble.R.string.loading)
@@ -151,7 +151,7 @@ fun SyncBadge(state: SyncIndicator, label: String, modifier: Modifier = Modifier
         ) {
             val rotation = if (s == SyncIndicator.Syncing && !m.reduced) {
                 val t = rememberInfiniteTransition(label = "spin")
-                val r by t.animateFloat(360f, 0f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "r")
+                val r by t.animateFloat(360f, 0f, infiniteRepeatable(tween(m.spinnerTurn, easing = LinearEasing)), label = "r")
                 r
             } else 0f
             Icon(icon, null, tint = tint, modifier = Modifier.size(14.dp).graphicsLayer { rotationZ = rotation })

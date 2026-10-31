@@ -82,6 +82,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -851,12 +852,33 @@ private suspend fun awaitMainThreadIdle(timeoutMs: Long) {
 
 // ---- Bottom bar -----------------------------------------------------------------------------
 
+/** How far above the bottom bar's row the scroll-edge fade begins. */
+private val ScrollEdgeFade = 28.dp
+
 @Composable
 private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     Row(
         modifier
+            // Scroll edge: content dissolves into the background as it reaches the floating bar,
+            // rather than showing sliced cards and dividers around and under the pills. It starts
+            // a little above the bar and is opaque from the pills' middle down. One static draw,
+            // no layer, no blur.
+            .drawBehind {
+                val above = ScrollEdgeFade.toPx()
+                drawRect(
+                    Brush.verticalGradient(
+                        0f to c.background.copy(alpha = 0f),
+                        0.45f to c.background.copy(alpha = 0.9f),
+                        1f to c.background,
+                        startY = -above,
+                        endY = size.height,
+                    ),
+                    topLeft = Offset(0f, -above),
+                    size = Size(size.width, size.height + above),
+                )
+            }
             .navigationBarsPadding()
             .padding(horizontal = Space.gutter, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,

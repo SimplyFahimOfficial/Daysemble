@@ -38,8 +38,14 @@ import androidx.compose.ui.unit.dp
  * | List for another day      | ContentSwap: at once + [swapShift]     | Today agenda, selected day in Month view |
  * | Rows changing in a list   | itemMotion (animateItem)               | completion, delete, add, reorder         |
  * | Expand / collapse         | [expandIn]/[collapseOut]               | subtasks, field errors, repeat options   |
- * | Overview panel drag       | finger, then [indicator]-like spring   | Today (moved in placement, not measured) |
- * | Task completion           | `standard(medium)` (check, strike)     | TaskRow, DsCheck                         |
+ * | Overview panel drag       | finger, then [settle] with its velocity| Today (moved in placement, not measured) |
+ * | Reordered row drop        | [settle] from where it was let go      | Tasks › List order                       |
+ * | Swipe actions             | finger; icon and fill arm at threshold | Tasks rows (complete / delete)           |
+ * | Task completion           | `standard(short)` check, strike        | TaskRow, DsCheck                         |
+ * | Bottom scroll edge        | static fade, no motion                 | content under the floating bottom bar    |
+ *
+ * Haptics (system haptic setting applies) are only for commits: completing or reopening a task,
+ * a swipe crossing its threshold, a reordered row being picked up and changing place, long press.
  * | Calendar date             | [indicator] (colour only, no movement) | month cells, week header, date strip     |
  * | Dialogs and sheets        | Material's own motion                  | AlertDialog, ModalBottomSheet            |
  * | Onboarding entrance       | [entrance], played once                | OnboardingScreen                         |
@@ -90,6 +96,29 @@ data class DsMotion(val reduced: Boolean = false) {
     /** Selection indicators (bottom-bar pill, segmented control, step dots): critically damped, no bounce. */
     fun <T> indicator(): FiniteAnimationSpec<T> =
         if (reduced) tween(short, easing = Standard) else spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)
+
+    /**
+     * Something the finger let go of, settling into place (the Today panel, a reordered row): a
+     * critically damped spring with a response of about 0.25 s. It starts from the live value and
+     * keeps the release velocity, so there is no seam between the drag and the settle. Reduced
+     * motion: a short tween.
+     */
+    fun <T> settle(): FiniteAnimationSpec<T> =
+        if (reduced) tween(short, easing = Standard) else spring(dampingRatio = 1f, stiffness = SETTLE_STIFFNESS)
+
+    /**
+     * Press scale: 3 % for controls, 1.5 % for full-width cards (the same visual depth; a card
+     * moving its edges by 3 % reads as a jump). No scaling with reduced motion.
+     */
+    fun pressScale(large: Boolean): Float = when {
+        reduced -> 1f
+        large -> PRESS_SCALE_LARGE
+        else -> PRESS_SCALE
+    }
+
+    /** Loops of the loading placeholders. They stop with reduced motion. */
+    val skeletonPulse: Int get() = 900
+    val spinnerTurn: Int get() = 1100
 
     // ---- Primary tabs (see TabHost in DaysembleRoot) --------------------------------------------
 
@@ -189,6 +218,10 @@ data class DsMotion(val reduced: Boolean = false) {
         const val PAGE_FADE = 150
         /** Drift of a page closing. */
         const val PAGE_OUT = 200
+        /** Stiffness of [settle]. With mass 1, response = 2π / √650 ≈ 0.25 s. */
+        const val SETTLE_STIFFNESS = 650f
+        const val PRESS_SCALE = 0.97f
+        const val PRESS_SCALE_LARGE = 0.985f
         val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
         val EmphasizedAccelerate = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
         val Standard = CubicBezierEasing(0.2f, 0f, 0f, 1f)
