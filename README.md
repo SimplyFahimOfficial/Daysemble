@@ -60,6 +60,7 @@ taken with [`scripts/capture_screenshots.sh`](scripts/capture_screenshots.sh) an
 
 **Google Calendar & Google Tasks (two-way)**
 - Sign-in via Google Identity Services `AuthorizationClient`. No client secret, no stored tokens.
+- Narrow access: events in your calendars and a read-only calendar list (not full calendar access, which could also delete calendars or change sharing), plus Google Tasks. If you allow only Calendar or only Tasks on Google's consent screen, that one syncs and the other stays off.
 - Calendar: incremental sync with `syncToken`, a full resync on HTTP 410, recurring series with exceptions, and duplicate-free creates using client-supplied ids.
 - Tasks: incremental sync with `updatedMin` and subtasks. Priority and due time stay local, because Google Tasks has no such fields.
 - Offline edits are queued and pushed later with exponential backoff.

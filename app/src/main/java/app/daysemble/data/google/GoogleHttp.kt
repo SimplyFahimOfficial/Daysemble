@@ -82,6 +82,8 @@ class GoogleHttp(
             410 -> ApiError.Gone()
             412 -> ApiError.Precondition()
             429 -> ApiError.RateLimited(code)
+            // The token lacks a scope (a service the user didn't allow): that needs consent, not a retry.
+            403 if body.contains("insufficientPermissions") || body.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT") -> ApiError.Auth()
             403 -> if (reason != null && (reason.contains("RateLimit", true) || reason.contains("quota", true))) ApiError.RateLimited(code) else ApiError.Client(code, reason)
             in 500..599 -> ApiError.Server(code)
             else -> ApiError.Client(code, reason)
