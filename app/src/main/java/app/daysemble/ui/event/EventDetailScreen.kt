@@ -77,7 +77,9 @@ import java.time.Duration
 
 @Composable
 fun EventDetailRoute(
-    eventId: String, occurrenceKey: String?, onEdit: (String) -> Unit,
+    eventId: String, occurrenceKey: String?,
+    /** Opens the editor: with an occurrence key for that occurrence only, without for the whole event or series. */
+    onEdit: (String, String?) -> Unit,
     /** Called when the screen closes itself (after saving, deleting, or when its item is gone). Defaults to [onClose]. */
     onDone: (() -> Unit)? = null,
     onClose: () -> Unit,
@@ -94,6 +96,7 @@ fun EventDetailRoute(
         value = loaded.second?.calendarId?.let { container.events.calendar(it)?.name }
     }
     val scope = rememberCoroutineScope()
+    var chooseEditScope by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val onDeleted = app.daysemble.ui.LocalEventDeleted.current
     val (isLoaded, event) = loaded
     if (!isLoaded) { Column(Modifier.fillMaxSize().background(DsTheme.colors.background)) {}; return }
@@ -105,9 +108,36 @@ fun EventDetailRoute(
         return
     }
     EventDetailScreen(
-        event = event, rrule = rrule, calendarName = calendarName, onClose = onClose, onEdit = { onEdit(eventId) },
+        event = event, rrule = rrule, calendarName = calendarName, onClose = onClose,
+        // A repeating event asks first: this occurrence or the whole series.
+        onEdit = { if (event.isRecurring && rrule != null) chooseEditScope = true else onEdit(eventId, null) },
         onDeleteSeries = { scope.launch { val d = container.events.delete(eventId); onDeleted(d, false); finish() } },
         onDeleteOccurrence = { scope.launch { val d = container.events.deleteOccurrence(eventId, event.occurrenceKey); onDeleted(d, true); finish() } },
+    )
+    if (chooseEditScope) {
+        EditScopeDialog(
+            onThis = { chooseEditScope = false; onEdit(eventId, event.occurrenceKey) },
+            onAll = { chooseEditScope = false; onEdit(eventId, null) },
+            onDismiss = { chooseEditScope = false },
+        )
+    }
+}
+
+/** "This event" or "All events" before editing a repeating event. */
+@Composable
+fun EditScopeDialog(onThis: () -> Unit, onAll: () -> Unit, onDismiss: () -> Unit) {
+    val c = DsTheme.colors
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss, shape = app.daysemble.ui.theme.Radii.dialog, containerColor = c.surfaceRaised,
+        title = { Text(stringResource(R.string.edit_recurring_title), style = DsTheme.type.titleLarge, color = c.textPrimary) },
+        text = { Text(stringResource(R.string.edit_recurring_body), style = DsTheme.type.body, color = c.textSecondary) },
+        confirmButton = {
+            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                androidx.compose.material3.TextButton(onClick = onThis) { Text(stringResource(R.string.edit_only_this_event), color = c.textPrimary) }
+                androidx.compose.material3.TextButton(onClick = onAll) { Text(stringResource(R.string.edit_all_events), color = c.textPrimary) }
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) }
+            }
+        },
     )
 }
 

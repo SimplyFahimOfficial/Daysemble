@@ -32,7 +32,7 @@ taken with [`scripts/capture_screenshots.sh`](scripts/capture_screenshots.sh) an
 **Events**
 - Title, notes, location, all-day, start/end, **time zone** (searchable picker; changing it keeps the wall-clock time), calendar and reminders.
 - Repeat rules: daily, weekly on chosen days, monthly or yearly, with an interval and an end (never, after N, or until a date).
-- Delete one occurrence or the whole series.
+- Edit or delete one occurrence, or the whole series.
 - The detail screen shows a live countdown ("in 25 min" / "ends in 10 min") and an *Open in Maps* button.
 - Times are stored as UTC instants plus an IANA time zone. Repeats expand in the event's own zone, so they stay correct across DST.
 
@@ -157,7 +157,7 @@ model, sync algorithm, conflict rules, reminders) and the task plan.
 
 ## Known limitations
 
-- You can't edit a single occurrence of a repeating event yet (the whole series can be edited, and single occurrences deleted).
+- A repeating event can be edited for one occurrence or for the whole series, but not "this and following". One occurrence keeps the series' reminders and calendar.
 - Attendees and conferencing aren’t shown. They’re preserved because the app PATCHes only the fields it manages. Per-event Google colours are shown (mapped to the nearest Daysemble swatch) but can’t be changed in Daysemble yet.
 - No travel time or distance, because that would need a Maps API key. *Open in Maps* is offered instead.
 - Reminders are planned 8 days ahead and refreshed automatically. Force-stopping the app cancels alarms until it's opened again (an Android rule).

@@ -116,11 +116,13 @@ fun ItemActionsHost(
     onOpenTask: (String) -> Unit,
     onEditTask: (String) -> Unit,
     onOpenEvent: (String, String) -> Unit,
-    onEditEvent: (String) -> Unit,
+    /** With an occurrence key: edit only that occurrence of a series. */
+    onEditEvent: (String, String?) -> Unit,
     content: @Composable () -> Unit,
 ) {
     var target by rememberSaveable(stateSaver = MenuTargetSaver) { mutableStateOf<MenuTarget?>(null) }
     var confirmDelete by rememberSaveable(stateSaver = MenuTargetSaver) { mutableStateOf<MenuTarget?>(null) }
+    var editScope by rememberSaveable(stateSaver = MenuTargetSaver) { mutableStateOf<MenuTarget?>(null) }
     var reschedule by rememberSaveable(stateSaver = MenuTargetSaver) { mutableStateOf<MenuTarget?>(null) }
     val actions = remember {
         object : ItemActions {
@@ -144,7 +146,14 @@ fun ItemActionsHost(
             t,
             onDismiss = { target = null },
             onOpen = { target = null; if (t.isTask) onOpenTask(t.id) else onOpenEvent(t.id, t.occurrenceKey.orEmpty()) },
-            onEdit = { target = null; if (t.isTask) onEditTask(t.id) else onEditEvent(t.id) },
+            onEdit = {
+                target = null
+                when {
+                    t.isTask -> onEditTask(t.id)
+                    t.recurring -> editScope = t
+                    else -> onEditEvent(t.id, null)
+                }
+            },
             onToggle = {
                 scope.launch {
                     val done = !(container.tasks.get(t.id)?.isCompleted ?: return@launch)
@@ -154,6 +163,13 @@ fun ItemActionsHost(
             onSkip = { scope.launch { container.tasks.delete(t.id, SeriesScope.THIS); onDeleted(t.id) } },
             onReschedule = { target = null; reschedule = t },
             onDelete = { confirmDelete = t },
+        )
+    }
+    editScope?.let { t ->
+        app.daysemble.ui.event.EditScopeDialog(
+            onThis = { editScope = null; onEditEvent(t.id, t.occurrenceKey) },
+            onAll = { editScope = null; onEditEvent(t.id, null) },
+            onDismiss = { editScope = null },
         )
     }
     confirmDelete?.let { t ->

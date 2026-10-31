@@ -19,6 +19,8 @@ import kotlinx.serialization.Serializable
 @Serializable data class EventDetailRoute(val eventId: String, val occurrenceKey: String? = null)
 @Serializable data class EventEditorRoute(
     val eventId: String? = null,
+    /** With [eventId] of a series: edit only this occurrence. */
+    val occurrenceKey: String? = null,
     val dateEpochDay: Long? = null,
     val startMinute: Int? = null,
     val title: String? = null,
