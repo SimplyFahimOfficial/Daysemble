@@ -139,10 +139,13 @@ class SyncManager(
      * [requested] but not granted are turned off, so sync doesn't keep asking for them.
      */
     suspend fun connect(email: String, granted: Set<SyncService> = SyncService.entries.toSet(), requested: Set<SyncService> = SyncService.entries.toSet()) {
+        val sameAccount = accounts.current().email == email
         accounts.setConnected(email)
         applyGrant(granted, requested)
         auth.accountEmail = email
-        db.sync().clearStates()
+        // Another account starts clean. The same one (a service turned on, or Reconnect) starts over
+        // only for the services just authorized: the other one keeps its last sync and error.
+        if (sameAccount && requested.isNotEmpty()) requested.forEach { db.sync().clearState(it) } else db.sync().clearStates()
     }
 
     /** Records which of the [requested] services the user allowed, e.g. after turning one on. */

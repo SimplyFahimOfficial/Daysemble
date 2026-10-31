@@ -82,7 +82,9 @@ class GoogleAuthManager(private val context: Context) : TokenProvider {
         val token = r.accessToken ?: return AuthResult.Failed("no_token")
         val granted = grantedServices(r.grantedScopes)
         if (granted.isEmpty()) return AuthResult.Failed("scopes_denied")
-        cached = token
+        // [services] may have changed while this request ran: keep the token only if it covers what
+        // is synced now, otherwise the next requests would fail with 403 for the missing scopes.
+        if (coversSynced(granted, services)) cached = token
         return AuthResult.Authorized(token, r.toGoogleSignInAccount()?.email, granted)
     }
 
@@ -119,11 +121,12 @@ class GoogleAuthManager(private val context: Context) : TokenProvider {
     suspend fun revoke(email: String) {
         cached?.let { invalidate(it) }
         cached = null
-        runCatching {
-            client.revokeAccess(
-                RevokeAccessRequest.builder().setAccount(Account(email, "com.google")).setScopes(scopesFor(SyncService.entries.toSet()).map(::Scope)).build(),
-            ).await()
-        }
+        // Also the full "calendar" scope that earlier versions asked for: an account connected then
+        // still holds it. If Google refuses the list with that scope, revoke the current ones.
+        val account = Account(email, "com.google")
+        suspend fun revokeOnly(scopes: List<String>) =
+            client.revokeAccess(RevokeAccessRequest.builder().setAccount(account).setScopes(scopes.map(::Scope)).build()).await()
+        runCatching { revokeOnly(scopesToRevoke()) }.recoverCatching { revokeOnly(scopesFor(SyncService.entries.toSet())) }
     }
 
     companion object {
@@ -136,6 +139,8 @@ class GoogleAuthManager(private val context: Context) : TokenProvider {
         const val SCOPE_CALENDAR_LIST = "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
         const val SCOPE_TASKS = "https://www.googleapis.com/auth/tasks"
         private const val SCOPE_EMAIL = "email"
+        /** Full calendar access, requested by versions before the narrow scopes; only ever revoked. */
+        const val LEGACY_SCOPE_CALENDAR = "https://www.googleapis.com/auth/calendar"
 
         private fun scopesOf(service: SyncService) = when (service) {
             SyncService.CALENDAR -> listOf(SCOPE_CALENDAR_EVENTS, SCOPE_CALENDAR_LIST)
@@ -143,6 +148,12 @@ class GoogleAuthManager(private val context: Context) : TokenProvider {
         }
 
         fun scopesFor(services: Set<SyncService>): List<String> = services.sortedBy { it.ordinal }.flatMap(::scopesOf) + SCOPE_EMAIL
+
+        /** What disconnecting revokes: every scope this app asks for now or asked for before. */
+        fun scopesToRevoke(): List<String> = scopesFor(SyncService.entries.toSet()) + LEGACY_SCOPE_CALENDAR
+
+        /** A token is worth keeping only if it was granted every service that is synced. */
+        fun coversSynced(granted: Set<SyncService>, synced: Set<SyncService>) = granted.containsAll(synced)
 
         /** A service counts as allowed only if every scope it needs was granted. */
         fun grantedServices(granted: Collection<String>): Set<SyncService> =

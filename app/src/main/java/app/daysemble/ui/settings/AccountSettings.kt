@@ -96,18 +96,20 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
     val scope = rememberCoroutineScope()
     var ui by remember { mutableStateOf<ConnectUi>(ConnectUi.Idle) }
     var confirmDisconnect by rememberSaveable { mutableStateOf(false) }
-    // The services the current consent asked for; Google may grant fewer.
-    var requested by remember { mutableStateOf(SyncService.entries.toSet()) }
+    // The services whose on/off follows the current consent; Google may grant fewer than asked for.
+    // Saved: consent runs in another activity, and this one may be recreated before it returns.
+    var requestedNames by rememberSaveable { mutableStateOf(SyncService.entries.joinToString(",") { it.name }) }
+    fun requested(): Set<SyncService> = requestedNames.split(',').let { names -> SyncService.entries.filter { it.name in names }.toSet() }
 
     suspend fun handle(r: AuthResult, launch: (IntentSenderRequest) -> Unit) {
         ui = when (r) {
             is AuthResult.Authorized -> {
                 val email = r.email ?: status?.account?.email
                 if (email == null) ConnectUi.Error("no_account") else {
-                    c.sync.connect(email, r.services, requested)
+                    c.sync.connect(email, r.services, requested())
                     c.syncScheduler.enablePeriodic()
                     c.syncScheduler.requestSoon(0)
-                    (requested - r.services).let { if (it.isEmpty()) ConnectUi.Idle else ConnectUi.Partial(it) }
+                    (requested() - r.services).let { if (it.isEmpty()) ConnectUi.Idle else ConnectUi.Partial(it) }
                 }
             }
             is AuthResult.NeedsConsent -> { launch(IntentSenderRequest.Builder(r.intent.intentSender).build()); ConnectUi.Working }
@@ -122,13 +124,19 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
         scope.launch { handle(c.googleAuth.fromIntent(res.data), launcherRef) }
     }
     launcherRef = { launcher.launch(it) }
-    fun authorize(services: Set<SyncService>) {
-        requested = services
+    /** Asks Google for [services]; the result turns on or off only those in [apply]. */
+    fun authorize(services: Set<SyncService>, apply: Set<SyncService> = services) {
+        requestedNames = apply.joinToString(",") { it.name }
         ui = ConnectUi.Working
         scope.launch { handle(c.googleAuth.authorize(status?.account?.email, services), launcherRef) }
     }
-    // Connect asks for everything; reconnecting asks again for what is turned on.
-    val connect: () -> Unit = { authorize(status?.account?.takeIf { it.isConnected }?.services?.ifEmpty { null } ?: SyncService.entries.toSet()) }
+    // Connect asks for everything. Reconnecting asks again for what is turned on; with both services
+    // off it still needs some scope to ask for, but the answer mustn't turn either back on.
+    val connect: () -> Unit = {
+        val account = status?.account?.takeIf { it.isConnected }
+        if (account == null) authorize(SyncService.entries.toSet())
+        else authorize(account.services.ifEmpty { SyncService.entries.toSet() }, apply = account.services)
+    }
     // Turning a service on may need consent for its scopes; turning one off never does.
     fun toggle(service: SyncService, on: Boolean) {
         val current = status?.account?.services.orEmpty()

@@ -89,6 +89,44 @@ class GoogleScopesTest : SyncTestBase() {
         assertThat(accounts.current().services).containsExactly(SyncService.TASKS)
     }
 
+    @Test fun `a token is cached only if it covers every synced service`() {
+        val both = SyncService.entries.toSet()
+        assertThat(GoogleAuthManager.coversSynced(granted = both, synced = setOf(SyncService.TASKS))).isTrue()
+        // Requested before Calendar was turned on: it lacks Calendar's scopes, so it isn't kept.
+        assertThat(GoogleAuthManager.coversSynced(granted = setOf(SyncService.TASKS), synced = both)).isFalse()
+    }
+
+    @Test fun `disconnecting also revokes the full calendar scope earlier versions asked for`() {
+        assertThat(GoogleAuthManager.scopesToRevoke()).containsAtLeast(
+            GoogleAuthManager.LEGACY_SCOPE_CALENDAR, SCOPE_CALENDAR_EVENTS, SCOPE_CALENDAR_LIST, SCOPE_TASKS,
+        )
+    }
+
+    @Test fun `authorizing one more service keeps the other service's sync status`() = runTest {
+        val accounts = accounts()
+        val m = manager(accounts, GoogleAuthManager(ApplicationProvider.getApplicationContext()))
+        m.connect(acct, granted = setOf(SyncService.TASKS), requested = SyncService.entries.toSet())
+        db.sync().upsertState(app.daysemble.data.db.SyncStateEntity(SyncService.TASKS, lastSuccessAt = 42, lastError = "rejected_changes"))
+        db.sync().upsertState(app.daysemble.data.db.SyncStateEntity(SyncService.CALENDAR, needsReauth = true))
+        // The user turns Google Calendar on and allows it.
+        m.connect(acct, granted = SyncService.entries.toSet(), requested = SyncService.entries.toSet() - SyncService.TASKS)
+        assertThat(db.sync().state(SyncService.TASKS)!!.lastSuccessAt).isEqualTo(42)
+        assertThat(db.sync().state(SyncService.CALENDAR)).isNull()
+        // Another account starts clean.
+        m.connect("other@example.com")
+        assertThat(db.sync().state(SyncService.TASKS)).isNull()
+    }
+
+    @Test fun `reconnecting with both services off leaves them off`() = runTest {
+        val accounts = accounts()
+        val m = manager(accounts, GoogleAuthManager(ApplicationProvider.getApplicationContext()))
+        m.connect(acct)
+        m.setCalendarEnabled(false); m.setTasksEnabled(false)
+        // Reconnect asks Google for both (it needs some scope) but applies the answer to neither.
+        m.connect(acct, granted = SyncService.entries.toSet(), requested = emptySet())
+        assertThat(accounts.current().services).isEmpty()
+    }
+
     @Test fun `a 403 for a missing scope asks for consent instead of rejecting the change`() = runTest {
         router.on("GET", "/calendar/v3/users/me/calendarList") {
             json(403, """{"error":{"code":403,"message":"Request had insufficient authentication scopes.",
