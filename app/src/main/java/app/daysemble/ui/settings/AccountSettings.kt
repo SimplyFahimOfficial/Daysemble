@@ -47,6 +47,7 @@ import app.daysemble.BuildConfig
 import app.daysemble.DaysembleApp
 import app.daysemble.R
 import app.daysemble.data.db.SourceKind
+import app.daysemble.data.db.SyncService
 import app.daysemble.data.google.auth.AuthResult
 import app.daysemble.data.google.sync.SyncStatus
 import app.daysemble.ui.components.DsButton
@@ -75,6 +76,21 @@ private sealed interface ConnectUi {
     data object SetupRequired : ConnectUi
     data object NoPlayServices : ConnectUi
     data class Error(val reason: String) : ConnectUi
+    /** Connected, but the user didn't allow these services on Google's consent screen. */
+    data class Partial(val missing: Set<SyncService>) : ConnectUi
+}
+
+/**
+ * Applies a successful consent: connects [email] with the services Google granted (only those in
+ * [requested] follow the answer) and starts syncing. Shows which requested services weren't allowed.
+ */
+private suspend fun onAuthorized(c: app.daysemble.AppContainer, r: AuthResult.Authorized, email: String?, requested: Set<SyncService>): ConnectUi {
+    if (email == null) return ConnectUi.Error("no_account")
+    c.sync.connect(email, r.services, requested)
+    c.syncScheduler.enablePeriodic()
+    c.syncScheduler.requestSoon(0)
+    val missing = requested - r.services
+    return if (missing.isEmpty()) ConnectUi.Idle else ConnectUi.Partial(missing)
 }
 
 @Composable
@@ -93,18 +109,14 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
     val scope = rememberCoroutineScope()
     var ui by remember { mutableStateOf<ConnectUi>(ConnectUi.Idle) }
     var confirmDisconnect by rememberSaveable { mutableStateOf(false) }
+    // The services whose on/off follows the current consent; Google may grant fewer than asked for.
+    // Saved: consent runs in another activity, and this one may be recreated before it returns.
+    var requestedNames by rememberSaveable { mutableStateOf(SyncService.entries.joinToString(",") { it.name }) }
+    fun requested(): Set<SyncService> = requestedNames.split(',').let { names -> SyncService.entries.filter { it.name in names }.toSet() }
 
     suspend fun handle(r: AuthResult, launch: (IntentSenderRequest) -> Unit) {
         ui = when (r) {
-            is AuthResult.Authorized -> {
-                val email = r.email ?: status?.account?.email
-                if (email == null) ConnectUi.Error("no_account") else {
-                    c.sync.connect(email)
-                    c.syncScheduler.enablePeriodic()
-                    c.syncScheduler.requestSoon(0)
-                    ConnectUi.Idle
-                }
-            }
+            is AuthResult.Authorized -> onAuthorized(c, r, r.email ?: status?.account?.email, requested())
             is AuthResult.NeedsConsent -> { launch(IntentSenderRequest.Builder(r.intent.intentSender).build()); ConnectUi.Working }
             AuthResult.SetupRequired -> ConnectUi.SetupRequired
             AuthResult.PlayServicesUnavailable -> ConnectUi.NoPlayServices
@@ -117,9 +129,27 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
         scope.launch { handle(c.googleAuth.fromIntent(res.data), launcherRef) }
     }
     launcherRef = { launcher.launch(it) }
-    val connect: () -> Unit = {
+    /** Asks Google for [services]; the result turns on or off only those in [apply]. */
+    fun authorize(services: Set<SyncService>, apply: Set<SyncService> = services) {
+        requestedNames = apply.joinToString(",") { it.name }
         ui = ConnectUi.Working
-        scope.launch { handle(c.googleAuth.authorize(status?.account?.email), launcherRef) }
+        scope.launch { handle(c.googleAuth.authorize(status?.account?.email, services), launcherRef) }
+    }
+    // Connect asks for everything. Reconnecting asks again for what is turned on; with both services
+    // off it still needs some scope to ask for, but the answer mustn't turn either back on.
+    val connect: () -> Unit = {
+        val account = status?.account?.takeIf { it.isConnected }
+        if (account == null) authorize(SyncService.entries.toSet())
+        else authorize(account.services.ifEmpty { SyncService.entries.toSet() }, apply = account.services)
+    }
+    // Turning a service on may need consent for its scopes; turning one off never does.
+    fun toggle(service: SyncService, on: Boolean) {
+        val current = status?.account?.services.orEmpty()
+        if (on) authorize(current + service)
+        else scope.launch {
+            if (service == SyncService.CALENDAR) c.sync.setCalendarEnabled(false) else c.sync.setTasksEnabled(false)
+            c.syncScheduler.requestSoon(0)
+        }
     }
 
     val colors = DsTheme.colors
@@ -130,8 +160,8 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
             if (!s.account.isConnected) {
                 NotConnected(ui, connect)
             } else {
-                Connected(s, ui, connect, c.syncScheduler::requestSoonNow, onOpenConflicts, onToggleCalendar = { v -> scope.launch { c.sync.setCalendarEnabled(v); c.syncScheduler.requestSoon(0) } },
-                    onToggleTasks = { v -> scope.launch { c.sync.setTasksEnabled(v); c.syncScheduler.requestSoon(0) } },
+                Connected(s, ui, connect, c.syncScheduler::requestSoonNow, onOpenConflicts, onToggleCalendar = { v -> toggle(SyncService.CALENDAR, v) },
+                    onToggleTasks = { v -> toggle(SyncService.TASKS, v) },
                     onRetryParked = { scope.launch { c.sync.retryParked(); c.syncScheduler.requestSoonNow() } })
 
                 if (s.calendar.enabled) {
@@ -215,6 +245,21 @@ private fun Connected(
     val p = LocalTimePrefs.current
     DsRow(s.account.email!!, subtitle = stringResource(R.string.google_account), icon = Icons.Rounded.AccountCircle) {
         SyncBadge(syncIndicator(s), syncLabel(s, p))
+    }
+    when (ui) {
+        is ConnectUi.Partial -> Callout(
+            stringResource(R.string.google_partial_title),
+            listOfNotNull(
+                stringResource(R.string.google_partial_calendar).takeIf { SyncService.CALENDAR in ui.missing },
+                stringResource(R.string.google_partial_tasks).takeIf { SyncService.TASKS in ui.missing },
+            ).joinToString("\n"),
+            Modifier.padding(horizontal = Space.gutter),
+        )
+        is ConnectUi.Error -> Callout(
+            stringResource(R.string.google_connect_failed), stringResource(R.string.google_error_code, ui.reason),
+            Modifier.padding(horizontal = Space.gutter),
+        )
+        else -> Unit
     }
     if (s.needsReauth) {
         Callout(stringResource(R.string.reauth_title), stringResource(R.string.reauth_body), Modifier.padding(horizontal = Space.gutter))

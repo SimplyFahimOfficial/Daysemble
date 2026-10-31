@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
+    alias(libs.plugins.cyclonedx)
 }
 
 android {
@@ -68,6 +69,15 @@ android {
         warningsAsErrors = false
         checkDependencies = false
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
+        // Security checks fail the build instead of being one warning among many. None fires today;
+        // they guard exported components, PendingIntents, TLS, WebView, crypto and debuggable builds.
+        error += setOf(
+            "AddJavascriptInterface", "SetJavaScriptEnabled", "ExportedContentProvider", "ExportedReceiver",
+            "ExportedService", "UnspecifiedImmutableFlag", "MutableImplicitPendingIntent", "UnsafeIntentLaunch",
+            "HardcodedDebugMode", "TrustAllX509TrustManager", "BadHostnameVerifier", "AllowAllHostnameVerifier",
+            "InsecureBaseConfiguration", "UnsafeDynamicallyLoadedCode", "WorldReadableFiles", "WorldWriteableFiles",
+            "PackagedPrivateKey", "GetInstance", "SecureRandom", "AuthLeak", "UseCheckPermission",
+        )
     }
 }
 
@@ -92,6 +102,20 @@ tasks.withType<Test>().configureEach {
 
 room {
     schemaDirectory("$projectDir/schemas")
+}
+
+// Software bill of materials (CycloneDX) of what ships in the release APK: the release runtime
+// classpath only (build tools, lint, KSP and test libraries are not part of the app). Used by CI to
+// scan the shipped dependencies for known vulnerabilities and attached to every GitHub release.
+// ./gradlew :app:cyclonedxDirectBom → app/build/reports/sbom/daysemble-bom.json
+tasks.named<org.cyclonedx.gradle.CyclonedxDirectTask>("cyclonedxDirectBom") {
+    includeConfigs = listOf("releaseRuntimeClasspath")
+    projectType = org.cyclonedx.model.Component.Type.APPLICATION
+    componentName = "daysemble"
+    componentVersion = android.defaultConfig.versionName
+    includeBuildSystem = true
+    jsonOutput = layout.buildDirectory.file("reports/sbom/daysemble-bom.json")
+    xmlOutput.unsetConvention()
 }
 
 dependencies {

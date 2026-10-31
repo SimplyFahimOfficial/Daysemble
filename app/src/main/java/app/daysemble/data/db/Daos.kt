@@ -150,6 +150,16 @@ interface TaskDao {
     @Query("SELECT * FROM task WHERE id = :id")
     fun observe(id: String): Flow<TaskEntity?>
 
+    /**
+     * Local-only fields, written in place. They don't touch updatedAt, which is the edit time that
+     * last-writer-wins compares with Google's: a priority change isn't a newer version of the task.
+     */
+    @Query("UPDATE task SET priority = :priority WHERE id = :id")
+    suspend fun setPriority(id: String, priority: Int)
+
+    @Query("UPDATE task SET countdownEnabled = :enabled WHERE id = :id")
+    suspend fun setCountdown(id: String, enabled: Boolean)
+
     @Query("SELECT * FROM task WHERE parentId = :parentId AND isDeleted = 0 ORDER BY sortKey")
     fun observeSubtasks(parentId: String): Flow<List<TaskEntity>>
 
@@ -365,6 +375,9 @@ interface SyncDao {
 
     @Query("DELETE FROM sync_state")
     suspend fun clearStates()
+
+    @Query("DELETE FROM sync_state WHERE service = :service")
+    suspend fun clearState(service: SyncService)
 
     @Insert suspend fun logConflict(entry: ConflictLogEntity)
 

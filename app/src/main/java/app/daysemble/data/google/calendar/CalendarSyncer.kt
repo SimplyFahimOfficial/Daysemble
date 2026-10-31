@@ -144,7 +144,7 @@ class CalendarSyncer(
                         // A create whose response was lost has no remoteId yet, but used our deterministic client id.
                         val rid = e.remoteId ?: CalendarMapper.clientIdOf(e)
                         try { api.delete(cal.remoteId, rid) } catch (_: ApiError.NotFound) { } catch (_: ApiError.Gone) { }
-                        db.withTransaction { events.hardDelete(e.id); db.reminders().deleteForOwner(OwnerType.EVENT, e.id) }
+                        remoteDeleted(e.id)
                     }
                 }
                 db.sync().remove(op.id)
@@ -183,9 +183,35 @@ class CalendarSyncer(
         throw ApiError.Client(404, "instance_gone")
     }
 
+    /** The pushed delete went through on Google: remove the row, unless the delete was undone meanwhile. */
+    private suspend fun remoteDeleted(id: String) = db.withTransaction {
+        val cur = events.get(id)
+        if (cur == null || cur.syncState == SyncState.PENDING_DELETE) {
+            events.hardDelete(id); db.reminders().deleteForOwner(OwnerType.EVENT, id)
+            return@withTransaction
+        }
+        // Undone while the request ran: the restored row stays. Its Google copy is gone, so it is
+        // created again, with a new client id (the old one may still be held by the deleted copy).
+        events.upsert(
+            cur.copy(
+                remoteId = null, etag = null, remoteUpdatedAt = null,
+                pendingClientId = CalendarMapper.newClientId(), syncState = SyncState.PENDING_CREATE,
+            ),
+        )
+        // Changed occurrences of the deleted Google series can't follow (as in EventRepository.restore).
+        events.overridesFor(listOf(id)).filter { it.remoteId != null }.forEach { o ->
+            events.hardDelete(o.id); db.reminders().deleteForOwner(OwnerType.EVENT, o.id); db.sync().clearFor(OwnerType.EVENT, o.id)
+        }
+        db.sync().clearFor(OwnerType.EVENT, id)
+        db.sync().enqueue(app.daysemble.data.db.OutboxEntity(entityType = OwnerType.EVENT, entityId = id, op = OutboxOp.CREATE, createdAt = now()))
+    }
+
     private suspend fun markSynced(local: EventEntity, remote: EventDto) {
         db.withTransaction {
             val cur = events.get(local.id) ?: return@withTransaction
+            // Moved to another calendar during the request: [remote] is the copy in the old calendar,
+            // which the move's queued delete removes. Don't give the moved row that copy's identity.
+            if (cur.calendarId != local.calendarId) return@withTransaction
             // If the user edited again during the request, keep it pending (outbox still has it next round).
             val editedMeanwhile = cur.updatedAt > local.updatedAt
             events.upsert(
@@ -199,9 +225,19 @@ class CalendarSyncer(
         }
     }
 
-    private suspend fun remoteDeletedWhileEdited(e: EventEntity) {
+    private suspend fun remoteDeletedWhileEdited(snapshot: EventEntity) {
         // Keep the user's edits: re-create remotely with a server-assigned id.
         db.withTransaction {
+            // Re-read: on the push path [snapshot] was read before a network call, and the user may
+            // have edited again since. Writing the snapshot back would drop that edit.
+            val e = events.get(snapshot.id) ?: return@withTransaction
+            // Moved to another calendar meanwhile: the move queued its own ops for the new calendar.
+            if (e.calendarId != snapshot.calendarId) return@withTransaction
+            if (e.syncState == SyncState.PENDING_DELETE) {
+                // Deleted on both sides: nothing to keep.
+                events.hardDelete(e.id); db.reminders().deleteForOwner(OwnerType.EVENT, e.id); db.sync().clearFor(OwnerType.EVENT, e.id)
+                return@withTransaction
+            }
             log(e, "Deleted on Google while edited here. Kept your version and re-created it.", "LOCAL")
             // New stable client id: the old one may still be held by the deleted copy.
             events.upsert(e.copy(remoteId = null, etag = null, pendingClientId = CalendarMapper.newClientId(), syncState = SyncState.PENDING_CREATE))
@@ -357,13 +393,21 @@ class CalendarSyncer(
     }
 
     /** Last-writer-wins between an unpushed local edit and a newer remote version. Returns true (a conflict was logged). */
-    private suspend fun resolveConflict(local: EventEntity, remote: EventDto, cal: CalendarSourceEntity): Boolean {
+    private suspend fun resolveConflict(snapshot: EventEntity, remote: EventDto, cal: CalendarSourceEntity): Boolean {
         val remoteUpdated = remote.updated?.let { CalendarMapper.parseInstant(it).toEpochMilli() } ?: 0L
-        if (local.remoteUpdatedAt != null && remoteUpdated <= local.remoteUpdatedAt) return false // nothing new remotely
         val parent = remote.recurringEventId?.let { events.byRemoteId(cal.id, it) }
-        db.withTransaction {
+        return db.withTransaction {
+            // Decide on the current row, not [snapshot]: after a 412 the snapshot was read before two
+            // network calls, and an edit made meanwhile must neither be overwritten nor lose its push.
+            val local = events.get(snapshot.id) ?: return@withTransaction false
+            // Deleted meanwhile: the local delete stands (its DELETE op is queued).
+            if (local.syncState == SyncState.PENDING_DELETE) return@withTransaction false
+            // Moved to another calendar meanwhile: [remote] and [cal] describe the old copy, which the
+            // move's queued delete removes. Applying either would pull the event back or misplace its etag.
+            if (local.calendarId != cal.id) return@withTransaction false
+            if (local.remoteUpdatedAt != null && remoteUpdated <= local.remoteUpdatedAt) return@withTransaction false // nothing new remotely
             if (remoteUpdated > local.updatedAt) {
-                val incoming = CalendarMapper.toEntity(remote, cal, local, parent, now()) ?: return@withTransaction
+                val incoming = CalendarMapper.toEntity(remote, cal, local, parent, now()) ?: return@withTransaction true
                 log(local, summary(local), "REMOTE")
                 events.upsert(incoming)
                 replaceReminders(local.id, CalendarMapper.reminderMinutes(remote, cal))
@@ -376,8 +420,8 @@ class CalendarSyncer(
                     db.sync().enqueue(app.daysemble.data.db.OutboxEntity(entityType = OwnerType.EVENT, entityId = local.id, op = OutboxOp.UPDATE, createdAt = now()))
                 }
             }
+            true
         }
-        return true
     }
 
     private fun summary(e: EventEntity) = buildString {

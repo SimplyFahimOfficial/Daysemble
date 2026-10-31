@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.EditCalendar
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.SkipNext
@@ -51,8 +52,14 @@ import app.daysemble.domain.model.EventOccurrence
 import app.daysemble.domain.model.SeriesScope
 import app.daysemble.domain.model.Task
 import app.daysemble.ui.LocalTaskCompleted
+import app.daysemble.ui.LocalEventDeleted
 import app.daysemble.ui.LocalTaskDeleted
+import app.daysemble.ui.LocalTaskRescheduled
 import app.daysemble.ui.components.DsConfirmDialog
+import app.daysemble.ui.components.DsDatePickerDialog
+import app.daysemble.ui.format.Fmt
+import app.daysemble.ui.format.LocalAppClock
+import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.task.SeriesScopeDialog
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Radii
@@ -60,6 +67,8 @@ import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 
 /**
  * Long-press on a task or agenda item anywhere in the app opens one shared menu (Open, Edit,
@@ -81,6 +90,7 @@ object ItemMenuTags {
     const val EDIT = "item_menu_edit"
     const val COMPLETE = "item_menu_complete"
     const val SKIP = "item_menu_skip"
+    const val RESCHEDULE = "item_menu_reschedule"
     const val DELETE = "item_menu_delete"
 }
 
@@ -113,6 +123,7 @@ fun ItemActionsHost(
     var target by rememberSaveable(stateSaver = MenuTargetSaver) { mutableStateOf<MenuTarget?>(null) }
     var confirmDelete by rememberSaveable(stateSaver = MenuTargetSaver) { mutableStateOf<MenuTarget?>(null) }
     var editScope by rememberSaveable(stateSaver = MenuTargetSaver) { mutableStateOf<MenuTarget?>(null) }
+    var reschedule by rememberSaveable(stateSaver = MenuTargetSaver) { mutableStateOf<MenuTarget?>(null) }
     val actions = remember {
         object : ItemActions {
             override fun onTaskLongPress(task: Task) {
@@ -128,6 +139,8 @@ fun ItemActionsHost(
     val scope = rememberCoroutineScope()
     val onDeleted = LocalTaskDeleted.current
     val onCompleted = LocalTaskCompleted.current
+    val onEventDeleted = LocalEventDeleted.current
+    val onRescheduled = LocalTaskRescheduled.current
     target?.let { t ->
         ItemMenu(
             t,
@@ -148,6 +161,7 @@ fun ItemActionsHost(
                 }
             },
             onSkip = { scope.launch { container.tasks.delete(t.id, SeriesScope.THIS); onDeleted(t.id) } },
+            onReschedule = { target = null; reschedule = t },
             onDelete = { confirmDelete = t },
         )
     }
@@ -179,9 +193,9 @@ fun ItemActionsHost(
                     Column(horizontalAlignment = Alignment.End) {
                         TextButton(onClick = {
                             confirmDelete = null
-                            scope.launch { container.events.deleteOccurrence(t.id, t.occurrenceKey.orEmpty()) }
+                            scope.launch { onEventDeleted(container.events.deleteOccurrence(t.id, t.occurrenceKey.orEmpty()), true) }
                         }) { Text(stringResource(R.string.delete_this_event), color = c.error) }
-                        TextButton(onClick = { confirmDelete = null; scope.launch { container.events.delete(t.id) } }) {
+                        TextButton(onClick = { confirmDelete = null; scope.launch { onEventDeleted(container.events.delete(t.id), false) } }) {
                             Text(stringResource(R.string.delete_all_events), color = c.error)
                         }
                         TextButton(onClick = { confirmDelete = null }) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) }
@@ -190,11 +204,67 @@ fun ItemActionsHost(
             )
             else -> DsConfirmDialog(
                 stringResource(R.string.delete_event_title), stringResource(R.string.delete_event_body), stringResource(R.string.action_delete),
-                onConfirm = { scope.launch { container.events.delete(t.id) } },
+                onConfirm = { scope.launch { onEventDeleted(container.events.delete(t.id), false) } },
                 onDismiss = { confirmDelete = null }, destructive = true,
             )
         }
     }
+    reschedule?.let { t ->
+        RescheduleDialog(
+            onPick = { date ->
+                reschedule = null
+                scope.launch {
+                    val task = container.tasks.get(t.id) ?: return@launch
+                    if (task.dueDate == date) return@launch
+                    // The time of day stays; only the date moves.
+                    container.tasks.setDue(t.id, date, task.dueTime)
+                    onRescheduled(t.id, date, task.dueDate, task.dueTime)
+                }
+            },
+            onDismiss = { reschedule = null },
+        )
+    }
+}
+
+/** Quick date choices for a task: today, tomorrow, the start of next week, or a picked date. */
+@Composable
+private fun RescheduleDialog(onPick: (LocalDate) -> Unit, onDismiss: () -> Unit) {
+    val c = DsTheme.colors
+    val p = LocalTimePrefs.current
+    val today = LocalAppClock.current.now().atZone(p.zone).toLocalDate()
+    var picking by rememberSaveable { mutableStateOf(false) }
+    if (picking) {
+        DsDatePickerDialog(initial = today, onPick = onPick, onDismiss = { picking = false; onDismiss() })
+        return
+    }
+    val nextWeek = today.with(TemporalAdjusters.next(p.firstDayOfWeek)).let { if (it == today.plusDays(1)) it.plusWeeks(1) else it }
+    val options = listOf(
+        stringResource(R.string.day_today) to today,
+        stringResource(R.string.day_tomorrow) to today.plusDays(1),
+        stringResource(R.string.reschedule_next_week) to nextWeek,
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss, shape = Radii.dialog, containerColor = c.surfaceRaised,
+        title = { Text(stringResource(R.string.reschedule_title), style = DsTheme.type.titleLarge, color = c.textPrimary) },
+        text = {
+            Column {
+                options.forEach { (label, date) ->
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = Sizes.touch).clickable(role = Role.Button) { onPick(date) },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(label, style = DsTheme.type.body, color = c.textPrimary, modifier = Modifier.weight(1f))
+                        Text(Fmt.smartDate(date, today, p), style = DsTheme.type.bodySmall, color = c.textSecondary)
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = Sizes.touch).clickable(role = Role.Button) { picking = true },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) { Text(stringResource(R.string.pick_date), style = DsTheme.type.body, color = c.textPrimary) }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) } },
+    )
 }
 
 private val MenuTargetSaver = androidx.compose.runtime.saveable.Saver<MenuTarget?, String>(
@@ -210,6 +280,7 @@ private fun ItemMenu(
     onEdit: () -> Unit,
     onToggle: () -> Unit,
     onSkip: () -> Unit,
+    onReschedule: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val c = DsTheme.colors
@@ -244,6 +315,9 @@ private fun ItemMenu(
                     stringResource(if (t.completed) R.string.action_mark_incomplete else R.string.action_complete), inPlace(onToggle),
                     Modifier.testTag(ItemMenuTags.COMPLETE),
                 )
+                if (!t.completed) {
+                    MenuRow(Icons.Rounded.EditCalendar, stringResource(R.string.menu_reschedule), onReschedule, Modifier.testTag(ItemMenuTags.RESCHEDULE))
+                }
                 if (t.recurring && !t.completed) MenuRow(Icons.Rounded.SkipNext, stringResource(R.string.menu_skip_occurrence), inPlace(onSkip), Modifier.testTag(ItemMenuTags.SKIP))
             }
             if (!t.readOnly) MenuRow(Icons.Rounded.DeleteOutline, stringResource(R.string.action_delete), inPlace(onDelete), Modifier.testTag(ItemMenuTags.DELETE), tint = c.error)

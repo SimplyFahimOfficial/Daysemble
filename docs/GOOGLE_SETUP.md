@@ -19,7 +19,8 @@ registered in your Google Cloud project, *Connect Google account* shows
 2. Under **Audience**, choose *External*. While the app is in **Testing**, add every Google
    account that will sign in as a **test user** (up to 100).
 3. Under **Data access**, add these scopes:
-   - `https://www.googleapis.com/auth/calendar` (read/write events and calendars)
+   - `https://www.googleapis.com/auth/calendar.events` (read/write events in your calendars)
+   - `https://www.googleapis.com/auth/calendar.calendarlist.readonly` (see which calendars you have)
    - `https://www.googleapis.com/auth/tasks` (read/write tasks)
    - `email`
 

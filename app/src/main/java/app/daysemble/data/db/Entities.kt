@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
 enum class SourceKind { LOCAL, GOOGLE }
 
@@ -21,6 +22,8 @@ enum class OwnerType { EVENT, TASK }
     tableName = "calendar_source",
     indices = [Index(value = ["kind", "accountEmail", "remoteId"], unique = true)],
 )
+// Also the backup file format (data/backup): new fields need a default.
+@Serializable
 data class CalendarSourceEntity(
     @PrimaryKey val id: String,
     val kind: SourceKind,
@@ -65,6 +68,8 @@ data class CalendarSourceEntity(
         Index("recurringParentId"),
     ],
 )
+// Also the backup file format (data/backup): new fields need a default.
+@Serializable
 data class EventEntity(
     @PrimaryKey val id: String,
     val calendarId: String,
@@ -109,6 +114,8 @@ data class EventEntity(
     tableName = "task_list",
     indices = [Index(value = ["kind", "accountEmail", "remoteId"], unique = true)],
 )
+// Also the backup file format (data/backup): new fields need a default.
+@Serializable
 data class TaskListEntity(
     @PrimaryKey val id: String,
     val kind: SourceKind,
@@ -139,6 +146,8 @@ data class TaskListEntity(
         Index(value = ["seriesId", "occurrenceDate"], unique = true),
     ],
 )
+// Also the backup file format (data/backup): new fields need a default.
+@Serializable
 data class TaskEntity(
     @PrimaryKey val id: String,
     val listId: String,
@@ -198,6 +207,8 @@ data class TaskEntity(
     ],
     indices = [Index("listId")],
 )
+// Also the backup file format (data/backup): new fields need a default.
+@Serializable
 data class TaskSeriesEntity(
     @PrimaryKey val id: String,
     val listId: String,
@@ -236,6 +247,8 @@ data class TaskSeriesEntity(
         ),
     ],
 )
+// Also the backup file format (data/backup): new fields need a default.
+@Serializable
 data class TaskOccurrenceSkipEntity(
     val seriesId: String,
     /** Epoch day of the skipped scheduled date. */
@@ -250,6 +263,8 @@ data class TaskOccurrenceSkipEntity(
  * so the times read the same after travelling. Not health or sensor data.
  */
 @Entity(tableName = "sleep_session", indices = [Index("startUtc"), Index("endUtc")])
+// Also the backup file format (data/backup): new fields need a default.
+@Serializable
 data class SleepSessionEntity(
     @PrimaryKey val id: String,
     val startUtc: Long? = null,
@@ -268,6 +283,8 @@ data class SleepSessionEntity(
     tableName = "reminder",
     indices = [Index(value = ["ownerType", "ownerId"]), Index(value = ["ownerType", "ownerId", "minutesBefore"], unique = true)],
 )
+// Also the backup file format (data/backup): new fields need a default.
+@Serializable
 data class ReminderEntity(
     @PrimaryKey val id: String,
     val ownerType: OwnerType,

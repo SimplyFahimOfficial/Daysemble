@@ -97,6 +97,7 @@ fun EventDetailRoute(
     }
     val scope = rememberCoroutineScope()
     var chooseEditScope by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    val onDeleted = app.daysemble.ui.LocalEventDeleted.current
     val (isLoaded, event) = loaded
     if (!isLoaded) { Column(Modifier.fillMaxSize().background(DsTheme.colors.background)) {}; return }
     if (event == null) {
@@ -110,8 +111,8 @@ fun EventDetailRoute(
         event = event, rrule = rrule, calendarName = calendarName, onClose = onClose,
         // A repeating event asks first: this occurrence or the whole series.
         onEdit = { if (event.isRecurring && rrule != null) chooseEditScope = true else onEdit(eventId, null) },
-        onDeleteSeries = { scope.launch { container.events.delete(eventId); finish() } },
-        onDeleteOccurrence = { scope.launch { container.events.deleteOccurrence(eventId, event.occurrenceKey); finish() } },
+        onDeleteSeries = { scope.launch { val d = container.events.delete(eventId); onDeleted(d, false); finish() } },
+        onDeleteOccurrence = { scope.launch { val d = container.events.deleteOccurrence(eventId, event.occurrenceKey); onDeleted(d, true); finish() } },
     )
     if (chooseEditScope) {
         EditScopeDialog(

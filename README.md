@@ -60,6 +60,7 @@ taken with [`scripts/capture_screenshots.sh`](scripts/capture_screenshots.sh) an
 
 **Google Calendar & Google Tasks (two-way)**
 - Sign-in via Google Identity Services `AuthorizationClient`. No client secret, no stored tokens.
+- Narrow access: events in your calendars and a read-only calendar list (not full calendar access, which could also delete calendars or change sharing), plus Google Tasks. If you allow only Calendar or only Tasks on Google's consent screen, that one syncs and the other stays off.
 - Calendar: incremental sync with `syncToken`, a full resync on HTTP 410, recurring series with exceptions, and duplicate-free creates using client-supplied ids.
 - Tasks: incremental sync with `updatedMin` and subtasks. Priority and due time stay local, because Google Tasks has no such fields.
 - Offline edits are queued and pushed later with exponential backoff.
@@ -92,80 +93,20 @@ Release builds are signed only when these environment variables are set, so no k
 `DAYSEMBLE_KEYSTORE_PATH`, `DAYSEMBLE_KEYSTORE_PASSWORD`, `DAYSEMBLE_KEY_ALIAS`, `DAYSEMBLE_KEY_PASSWORD`.
 Otherwise `assembleRelease` produces an unsigned APK.
 
-### Continuous integration
+### Continuous integration and releases
 
-`.github/workflows/android.yml` runs the debug build, unit tests, lint and an R8 release build on every
-push to `main` and on pull requests, using no secrets (the release build is unsigned). It uploads the
-reports and a debug APK as artifacts.
+GitHub Actions checks every pull request and every push to `main`: debug and R8 release builds, unit
+tests, lint (security checks are errors), detekt, an audit of the release APK's manifest and
+permissions, an emulator launch of the release APK, secret scanning, CodeQL, known vulnerabilities
+and licences of the shipped libraries, and an audit of the workflows themselves. No pull request
+workflow has access to secrets.
 
-Which APK is which:
-- **`daysemble-debug-apk` artifact** (`app-debug.apk`): a debug build signed with the CI runner's
-  throwaway Android debug key. Installable for testing, but not a release and not upgrade-compatible
-  with a release install.
-- **Unsigned release build** (`app-release-unsigned.apk`): built in every CI run to check R8 and
-  shrinking. It is not uploaded and can't be installed as is.
-- **Signed release APK** (`app-release.apk`): only produced by the optional `signed-release` job
-  below (or locally with the four signing variables). CI verifies its signature and does not upload it.
+Releases are built, signed and published by GitHub Actions from a `v*` tag on `main`.
 
-#### Signed release builds in CI
-
-The `signed-release` job checks a signed R8 build after each push to `main`. It is optional: unless
-all four secrets below are set, it finishes without building and adds a notice naming the missing
-secrets (names only, never values). When all four are set, it builds the release and then checks
-with `apksigner` that `app-release.apk` really is signed. If the build silently fell back to an
-unsigned APK, the job fails instead of passing. The signed APK is not uploaded. The normal CI above
-(unsigned debug and release builds, tests, lint, artifacts) never needs these secrets.
-
-Configure and protect the `release` environment **before** adding any signing secrets. Signed
-builds are only as safe as that environment's settings.
-
-What is enforced today, and what depends on your settings:
-- **Enforced by the workflow:** the job only runs for `push` events on `main`, so it is never
-  scheduled for a pull request. Every signing step is skipped unless all four secrets are set.
-- **Enforced by GitHub once you store the secrets in the environment:** environment secrets are
-  only given to jobs that declare `environment: release`.
-- **Only after you configure it (step 2 below):** the environment refusing every branch except
-  `main`. Without that rule, a workflow on any branch could declare `environment: release` and
-  receive its secrets.
-- **Recommended, optional:** required reviewers (manual approval before each signed build).
-
-**An environment GitHub creates automatically is not protected.** When a workflow job refers to an
-environment that doesn't exist yet, GitHub creates it with no branch rule and no reviewers. That
-already happened here: the first `main` run after this job was added created `release` with no
-restrictions. Treat it as unprotected until you've completed steps 2–5.
-
-To set it up, go to **Settings → Environments** in this repository:
-1. Open `release`, or create it with **New environment** if it isn't listed (the name must be exactly
-   `release`; the workflow refers to it).
-2. Under **Deployment branches and tags**, choose **Selected branches and tags**, click
-   **Add deployment branch or tag rule**, choose **Branch**, and enter `main`. Don't add any other
-   rule. In particular, don't add `refs/pull/*/merge`, which would let pull-request runs in.
-3. Under **Environment secrets**, add:
-   - `DAYSEMBLE_KEYSTORE_BASE64`: the keystore file, base64-encoded on one line
-     (`base64 -w0 release.jks` on Linux, `base64 -i release.jks` on macOS)
-   - `DAYSEMBLE_KEYSTORE_PASSWORD`
-   - `DAYSEMBLE_KEY_ALIAS`
-   - `DAYSEMBLE_KEY_PASSWORD`
-4. If you previously added these as **repository** secrets (Settings → Secrets and variables →
-   Actions), delete them there. Repository secrets are available to every job, so they shouldn't
-   hold signing keys.
-5. While the repository is private: under **Settings → Actions → General → Fork pull request
-   workflows**, keep **Send secrets to workflows from pull requests** off. (Public repositories
-   never send secrets to workflows from forks, and this option isn't shown.)
-
-Optional: add yourself as a **Required reviewer** on the environment so every signed build waits for
-your approval.
-
-Plan note: environment secrets, deployment branch rules and required reviewers are available for
-public repositories on every plan. For private repositories, environment secrets and branch rules
-need GitHub Pro, Team or Enterprise, and required reviewers need Team or Enterprise. If your plan
-doesn't include them, don't enable signed releases in CI: leave the secrets unset. The normal
-unsigned CI keeps running as usual, and the signed job just posts its "missing secrets" notice.
-Don't put the signing secrets at repository level as a workaround.
-
-For a public repository, also set **Settings → Actions → General → Approval for running fork pull
-request workflows from contributors** to **Require approval for all external contributors**, so
-fork pull-request workflows wait for your approval before using CI runners.
+- [docs/CI_CD.md](docs/CI_CD.md): workflows, what each check blocks on, artifacts, running checks locally
+- [docs/RELEASE.md](docs/RELEASE.md): cutting a release, the signing key, the `release` environment,
+  branch and tag protection, verifying a download
+- [docs/SECURITY.md](docs/SECURITY.md): security controls, permissions, reviewed exceptions, privacy
 
 Never commit a keystore or passwords, and don't paste them into issues, pull requests or logs.
 
