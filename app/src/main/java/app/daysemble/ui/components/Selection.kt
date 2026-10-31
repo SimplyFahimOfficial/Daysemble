@@ -160,6 +160,20 @@ fun <T> DsSegmented(
 }
 
 /**
+ * A checkbox toggle that plays a light tick on the same frame the value changes: completing (or
+ * reopening) a task is a commit.
+ */
+@Composable
+private fun Modifier.hapticCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit): Modifier {
+    val haptics = LocalHapticFeedback.current
+    val change by rememberUpdatedState(onCheckedChange)
+    return toggleable(value = checked, role = Role.Checkbox, onValueChange = {
+        haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+        change(it)
+    })
+}
+
+/**
  * Round task checkbox. Completion fills the circle and draws the tick in 120 ms.
  * [dashed] renders the "optional / habit" style seen in the references (used for subtasks).
  */
@@ -175,18 +189,12 @@ fun DsCheck(
     val c = DsTheme.colors
     val m = DsTheme.motion
     val progress by animateFloatAsState(if (checked) 1f else 0f, m.standard(m.short), label = "check")
-    // Completing (or reopening) is a commit: a light tick on the same frame the circle starts to fill.
-    val haptics = LocalHapticFeedback.current
-    val change by rememberUpdatedState(onCheckedChange)
     Box(
         modifier
             .size(Sizes.touch)
             .clip(androidx.compose.foundation.shape.CircleShape) // round press feedback, like the circle it is
             .semantics { this.contentDescription = contentDescription }
-            .toggleable(value = checked, role = Role.Checkbox, onValueChange = {
-                haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
-                change(it)
-            })
+            .hapticCheckbox(checked, onCheckedChange)
             .padding(13.dp),
         contentAlignment = Alignment.Center,
     ) {

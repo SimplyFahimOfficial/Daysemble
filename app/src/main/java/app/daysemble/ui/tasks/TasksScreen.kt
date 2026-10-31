@@ -414,39 +414,7 @@ private fun SwipeableTaskRow(
                 SwipeToDismissBoxValue.Settled -> Unit
             }
         },
-        backgroundContent = {
-            val dir = state.dismissDirection
-            val bg = app.daysemble.ui.components.animateStateColor(
-                when {
-                    dir == SwipeToDismissBoxValue.Settled -> Color.Transparent
-                    !armed -> c.surfaceVariant
-                    dir == SwipeToDismissBoxValue.StartToEnd -> c.success.copy(alpha = 0.16f)
-                    else -> c.errorContainer
-                },
-                m.standard(m.short),
-                label = "swipeBg",
-            )
-            val iconScale by animateFloatAsState(if (armed || m.reduced) 1f else 0.8f, m.indicator(), label = "swipeIcon")
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(bg)
-                    .padding(horizontal = Space.gutter),
-                contentAlignment = if (dir == SwipeToDismissBoxValue.EndToStart) Alignment.CenterEnd else Alignment.CenterStart,
-            ) {
-                when (dir) {
-                    SwipeToDismissBoxValue.StartToEnd -> Icon(
-                        Icons.Rounded.Check, null, tint = if (armed) c.success else c.textSecondary,
-                        modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale },
-                    )
-                    SwipeToDismissBoxValue.EndToStart -> Icon(
-                        Icons.Rounded.DeleteOutline, null, tint = if (armed) c.error else c.textSecondary,
-                        modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale },
-                    )
-                    else -> Unit
-                }
-            }
-        },
+        backgroundContent = { SwipeBackground(state.dismissDirection, armed) },
     ) {
         Box(Modifier.background(c.background)) {
             TaskRow(
@@ -460,6 +428,49 @@ private fun SwipeableTaskRow(
             HairlineDivider(Modifier.align(Alignment.BottomCenter), inset = true)
         }
     }
+}
+
+/**
+ * Behind a swiped row: neutral until the swipe passes the threshold ([armed]), then the action's
+ * colour (complete: green, delete: red) with its icon at full size.
+ */
+@Composable
+private fun SwipeBackground(dir: SwipeToDismissBoxValue, armed: Boolean) {
+    val c = DsTheme.colors
+    val m = DsTheme.motion
+    val complete = dir == SwipeToDismissBoxValue.StartToEnd
+    val action = if (complete) SwipeAction(c.success.copy(alpha = 0.16f), c.success, Icons.Rounded.Check)
+    else SwipeAction(c.errorContainer, c.error, Icons.Rounded.DeleteOutline)
+    val idle = dir == SwipeToDismissBoxValue.Settled
+    val bg = app.daysemble.ui.components.animateStateColor(
+        action.fill(idle, armed, c.surfaceVariant),
+        m.standard(m.short),
+        label = "swipeBg",
+    )
+    val iconScale by animateFloatAsState(if (armed || m.reduced) 1f else 0.8f, m.indicator(), label = "swipeIcon")
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(bg)
+            .padding(horizontal = Space.gutter),
+        contentAlignment = if (complete) Alignment.CenterStart else Alignment.CenterEnd,
+    ) {
+        if (!idle) {
+            Icon(
+                action.icon, null, tint = action.tint(armed, c.textSecondary),
+                modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale },
+            )
+        }
+    }
+}
+
+private data class SwipeAction(val armedFill: Color, val armedTint: Color, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    fun fill(idle: Boolean, armed: Boolean, neutral: Color) = when {
+        idle -> Color.Transparent
+        armed -> armedFill
+        else -> neutral
+    }
+    fun tint(armed: Boolean, neutral: Color) = if (armed) armedTint else neutral
 }
 
 @Composable

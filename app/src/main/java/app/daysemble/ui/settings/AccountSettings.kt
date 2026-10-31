@@ -263,24 +263,7 @@ private fun Connected(
         )
         else -> Unit
     }
-    // A failed sync gets a clear state with the way forward, not only a red subtitle further down.
-    // Reconnecting (below) has its own message, so it isn't repeated here.
-    when (syncIndicator(s)) {
-        SyncIndicator.Offline -> OfflineState(
-            stringResource(R.string.sync_offline_title),
-            stringResource(R.string.sync_offline_body) +
-                if (s.pendingChanges > 0) "\n" + pluralStringResource(R.plurals.pending_changes, s.pendingChanges, s.pendingChanges) else "",
-        )
-        SyncIndicator.Error -> ErrorState(
-            stringResource(R.string.sync_error_title),
-            listOfNotNull(
-                s.calendar.lastError?.takeIf { s.calendar.enabled },
-                s.tasks.lastError?.takeIf { s.tasks.enabled },
-            ).distinct().map { errorText(it) }.joinToString("\n"),
-            onRetry = syncNow, retryLabel = stringResource(R.string.action_retry),
-        )
-        else -> Unit
-    }
+    SyncProblem(s, syncNow)
     if (s.needsReauth) {
         Callout(stringResource(R.string.reauth_title), stringResource(R.string.reauth_body), Modifier.padding(horizontal = Space.gutter))
         DsButton(stringResource(R.string.reconnect), reconnect, modifier = Modifier.padding(Space.gutter), enabled = ui != ConnectUi.Working)
@@ -300,6 +283,30 @@ private fun Connected(
     }
     DsRow(stringResource(R.string.conflicts_title), subtitle = stringResource(R.string.conflicts_sub), icon = Icons.AutoMirrored.Rounded.CompareArrows, onClick = onOpenConflicts)
 }
+
+/**
+ * A failed sync gets a clear state with the way forward, not only a red subtitle further down.
+ * Reconnecting has its own message (in [Connected]), so it isn't repeated here.
+ */
+@Composable
+private fun SyncProblem(s: SyncStatus, syncNow: () -> Unit) {
+    when (syncIndicator(s)) {
+        SyncIndicator.Offline -> {
+            val pending = if (s.pendingChanges > 0) "\n" + pluralStringResource(R.plurals.pending_changes, s.pendingChanges, s.pendingChanges) else ""
+            OfflineState(stringResource(R.string.sync_offline_title), stringResource(R.string.sync_offline_body) + pending)
+        }
+        SyncIndicator.Error -> ErrorState(
+            stringResource(R.string.sync_error_title),
+            serviceErrors(s).map { errorText(it) }.joinToString("\n"),
+            onRetry = syncNow, retryLabel = stringResource(R.string.action_retry),
+        )
+        else -> Unit
+    }
+}
+
+/** The error codes of the services that are turned on, each once. */
+private fun serviceErrors(s: SyncStatus): List<String> =
+    listOfNotNull(s.calendar.lastError?.takeIf { s.calendar.enabled }, s.tasks.lastError?.takeIf { s.tasks.enabled }).distinct()
 
 @Composable
 fun syncIndicator(s: SyncStatus) = when {
