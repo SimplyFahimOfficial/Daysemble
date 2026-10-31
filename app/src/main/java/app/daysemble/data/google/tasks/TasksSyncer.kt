@@ -107,15 +107,34 @@ class TasksSyncer(
                         val remote = try { api.get(list.remoteId, rid) } catch (_: ApiError.NotFound) { null }
                         if (remote == null || remote.deleted) { remoteDeletedWhileEdited(t); conflicts++; continue }
                         val remoteUpdated = remote.updated?.let(::millis) ?: 0
-                        if (t.remoteUpdatedAt != null && remoteUpdated > t.remoteUpdatedAt && remoteUpdated > t.updatedAt) {
-                            // Newer remote edit wins over our older pending edit.
-                            applyRemoteVersion(t, remote, list, logLocalLoss = true); conflicts++
-                            db.sync().remove(op.id); continue
+                        // Decide on the current row: [t] was read before the GET, and the user may have
+                        // edited or deleted the task during it. Read and write in one transaction.
+                        val decision: UpdateDecision = db.withTransaction {
+                            val cur = tasks.get(t.id)
+                            when {
+                                // Deleted meanwhile: its own DELETE op is queued; don't revive or patch it.
+                                cur == null || cur.syncState == SyncState.PENDING_DELETE -> UpdateDecision.Skip
+                                // Moved to another list meanwhile: the move queued its own delete and create.
+                                // Patching the old Google copy would upload the moved task's contents there.
+                                cur.listId != t.listId -> UpdateDecision.Skip
+                                cur.remoteUpdatedAt != null && remoteUpdated > cur.remoteUpdatedAt && remoteUpdated > cur.updatedAt -> {
+                                    // Newer remote edit wins over our older pending edit.
+                                    applyRemoteVersion(cur, remote, list, logLocalLoss = true)
+                                    db.sync().remove(op.id)
+                                    UpdateDecision.RemoteWon
+                                }
+                                else -> UpdateDecision.Push(cur)
+                            }
                         }
-                        if (t.remoteUpdatedAt != null && remoteUpdated > t.remoteUpdatedAt) {
-                            log(t, "Google version: " + (remote.title ?: ""), "LOCAL"); conflicts++
+                        val cur = when (decision) {
+                            UpdateDecision.Skip -> continue
+                            UpdateDecision.RemoteWon -> { conflicts++; continue }
+                            is UpdateDecision.Push -> decision.row
                         }
-                        markSynced(t, api.patch(list.remoteId, rid, patchOf(t)))
+                        if (cur.remoteUpdatedAt != null && remoteUpdated > cur.remoteUpdatedAt) {
+                            log(cur, "Google version: " + (remote.title ?: ""), "LOCAL"); conflicts++
+                        }
+                        markSynced(cur, api.patch(list.remoteId, rid, patchOf(cur)))
                     }
                     OutboxOp.DELETE -> {
                         db.sync().markAttempt(op.id, now())
@@ -169,6 +188,9 @@ class TasksSyncer(
 
     private suspend fun markSynced(local: TaskEntity, remote: TaskDto) = db.withTransaction {
         val cur = tasks.get(local.id) ?: return@withTransaction
+        // Moved to another list during the request: [remote] is the copy in the old list, which the
+        // move's queued delete removes. Don't give the moved row that copy's identity.
+        if (cur.listId != local.listId) return@withTransaction
         val editedMeanwhile = cur.updatedAt > local.updatedAt
         tasks.upsert(
             cur.copy(
@@ -180,7 +202,22 @@ class TasksSyncer(
         if (editedMeanwhile) db.sync().enqueue(OutboxEntity(entityType = OwnerType.TASK, entityId = cur.id, op = OutboxOp.UPDATE, createdAt = now()))
     }
 
-    private suspend fun remoteDeletedWhileEdited(t: TaskEntity) = db.withTransaction {
+    private sealed interface UpdateDecision {
+        data object Skip : UpdateDecision
+        data object RemoteWon : UpdateDecision
+        data class Push(val row: TaskEntity) : UpdateDecision
+    }
+
+    private suspend fun remoteDeletedWhileEdited(snapshot: TaskEntity) = db.withTransaction {
+        // Re-read: on the push path [snapshot] was read before a network call.
+        val t = tasks.get(snapshot.id) ?: return@withTransaction
+        // Moved to another list meanwhile: the move queued its own ops for the new list.
+        if (t.listId != snapshot.listId) return@withTransaction
+        if (t.syncState == SyncState.PENDING_DELETE) {
+            // Deleted on both sides: nothing to keep.
+            tasks.hardDelete(t.id); db.reminders().deleteForOwner(OwnerType.TASK, t.id); db.sync().clearFor(OwnerType.TASK, t.id)
+            return@withTransaction
+        }
         log(t, "Deleted in Google Tasks while edited here. Kept your version and re-created it.", "LOCAL")
         tasks.upsert(t.copy(remoteId = null, syncState = SyncState.PENDING_CREATE))
         db.sync().clearFor(OwnerType.TASK, t.id)

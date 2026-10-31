@@ -160,6 +160,8 @@ class TodayOverviewTest {
     @Test fun selectingADate_updatesTheAgenda_andKeepsTheOverviewOpen() {
         handle().performClick(); settle()
         val tomorrow = today.plusDays(1)
+        // On the last day of the week, tomorrow is on the strip's next page: show it first.
+        if (!inThisWeek(tomorrow)) { dateCell(today).performTouchInput { swipeLeft(startX = right, endX = left - 900f) }; settle(30) }
         dateCell(tomorrow).performClick(); settle()
         dateCell(tomorrow).assertIsSelected()
         assertOverview("Expanded")
@@ -182,6 +184,12 @@ class TodayOverviewTest {
         dateCell(today.plusWeeks(1)).assertIsSelected()
         compose.onNodeWithText("Back to today").performClick(); settle(30)
         dateCell(today).assertIsSelected()
+    }
+
+    private fun inThisWeek(d: LocalDate): Boolean {
+        val first = java.time.temporal.WeekFields.of(Locale.getDefault()).firstDayOfWeek
+        val start = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(first))
+        return !d.isBefore(start) && d.isBefore(start.plusDays(7))
     }
 
     /** Another day in today's week (the strip shows one week; a later week's cells are off-screen). */
