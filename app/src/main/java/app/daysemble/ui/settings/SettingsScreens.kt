@@ -37,6 +37,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.BuildConfig
@@ -257,6 +258,7 @@ fun DataSettingsRoute(onBack: () -> Unit) {
             pluralStringResource(R.plurals.data_task_count, tasks.size, tasks.size), style = DsTheme.type.bodySmall, color = DsTheme.colors.textTertiary,
             modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.s),
         )
+        BackupSection(container)
         SectionHeader(stringResource(R.string.data_delete_title), Modifier.padding(top = Space.xl))
         Text(
             stringResource(R.string.data_delete_body), style = DsTheme.type.bodySmall, color = DsTheme.colors.textSecondary,
@@ -272,6 +274,105 @@ fun DataSettingsRoute(onBack: () -> Unit) {
             stringResource(R.string.action_delete), onConfirm = {
                 scope.launch { container.clearLocalData(); cleared = true }
             }, onDismiss = { confirm = false }, destructive = true,
+        )
+    }
+}
+
+/**
+ * Export to and import from a file the user picks (Storage Access Framework: no storage permission,
+ * and the app only sees that one file).
+ */
+@Composable
+private fun BackupSection(container: app.daysemble.AppContainer) {
+    val ctx = LocalContext.current
+    val res = androidx.compose.ui.platform.LocalResources.current
+    val scope = rememberCoroutineScope()
+    var message by rememberSaveable { mutableStateOf<String?>(null) }
+    var failed by rememberSaveable { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+
+    fun counts(c: app.daysemble.data.backup.BackupCounts) = Triple(
+        res.getQuantityString(R.plurals.data_count_events, c.events, c.events),
+        res.getQuantityString(R.plurals.data_count_tasks, c.tasks, c.tasks),
+        res.getQuantityString(R.plurals.data_count_sleep, c.sleep, c.sleep),
+    )
+
+    fun run(block: suspend () -> String) {
+        busy = true
+        scope.launch {
+            try {
+                message = block(); failed = false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: app.daysemble.data.backup.BackupFormatException) {
+                failed = true
+                message = res.getString(
+                    when (e.reason) {
+                        app.daysemble.data.backup.BackupFormatException.Reason.NOT_A_BACKUP -> R.string.data_import_not_backup
+                        app.daysemble.data.backup.BackupFormatException.Reason.NEWER_VERSION -> R.string.data_import_newer
+                        app.daysemble.data.backup.BackupFormatException.Reason.TOO_LARGE -> R.string.data_import_too_large
+                    },
+                )
+            } catch (_: Exception) {
+                // IO or permission problems with the chosen file. The message names no file or content.
+                failed = true; message = res.getString(R.string.data_file_error)
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    val exporter = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) run {
+            val out = ctx.contentResolver.openOutputStream(uri, "wt") ?: error("no stream")
+            val (e, t, s) = counts(container.backup.export(out))
+            res.getString(R.string.data_export_done, e, t, s)
+        }
+    }
+    val importer = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) run {
+            val input = ctx.contentResolver.openInputStream(uri) ?: error("no stream")
+            val r = container.backup.import(input)
+            val (e, t, s) = counts(r.added)
+            res.getString(R.string.data_import_done, e, t, s) +
+                if (r.skipped > 0) " " + res.getQuantityString(R.plurals.data_import_skipped, r.skipped, r.skipped) else ""
+        }
+    }
+
+    SectionHeader(stringResource(R.string.data_backup_title), Modifier.padding(top = Space.xl))
+    Text(
+        stringResource(R.string.data_backup_body), style = DsTheme.type.bodySmall, color = DsTheme.colors.textSecondary,
+        modifier = Modifier.padding(horizontal = Space.gutter),
+    )
+    Spacer(Modifier.height(Space.m))
+    androidx.compose.foundation.layout.Row(
+        Modifier.padding(horizontal = Space.gutter),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.s),
+    ) {
+        DsButton(
+            stringResource(R.string.data_export_action),
+            { exporter.launch("daysemble-backup-${container.clock.today()}.json") },
+            style = DsButtonStyle.Primary, enabled = !busy,
+        )
+        DsButton(
+            stringResource(R.string.data_import_action),
+            // Many file managers label .json files as plain text or a generic binary type.
+            { importer.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+            style = DsButtonStyle.Ghost, enabled = !busy,
+        )
+    }
+    Text(
+        stringResource(R.string.data_import_body), style = DsTheme.type.label, color = DsTheme.colors.textTertiary,
+        modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.s),
+    )
+    message?.let {
+        Text(
+            it, style = DsTheme.type.label, color = if (failed) DsTheme.colors.error else DsTheme.colors.success,
+            modifier = Modifier.padding(horizontal = Space.gutter).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
         )
     }
 }

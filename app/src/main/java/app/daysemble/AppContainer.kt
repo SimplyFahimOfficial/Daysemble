@@ -68,6 +68,10 @@ class AppContainer(context: Context) {
         ReminderScheduler(database, settings, AndroidAlarmGateway(appContext), clock) { ReminderScheduler.notificationsAllowed(appContext) }
     }
 
+    val backup: app.daysemble.data.backup.BackupManager by lazy {
+        app.daysemble.data.backup.BackupManager(database, clock) { reminders.rescheduleAll() }
+    }
+
     // ---- Google ----
     val accounts: AccountStore by lazy { AccountStore(appContext.accountDataStore) }
     val googleAuth: GoogleAuthManager by lazy { GoogleAuthManager(appContext) }

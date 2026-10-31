@@ -382,7 +382,34 @@
     <string name="setting_default_sort">Default sort</string>
     <string name="setting_default_list">New tasks go to</string>
     <string name="data_what_stored">What’s stored</string>
-    <string name="data_what_stored_body">Your events, tasks, sleep records and settings are stored only on this device. Daysemble has no analytics and sends nothing anywhere unless you connect a Google account. Backups include your settings only.</string>
+    <string name="data_what_stored_body">Your events, tasks, sleep records and settings are stored only on this device. Daysemble has no analytics and sends nothing anywhere unless you connect a Google account. Android’s automatic backups include your settings only; to keep your events and tasks, export them below.</string>
+    <string name="data_backup_title">Back up to a file</string>
+    <string name="data_backup_body">Saves your on-device calendars, events, task lists, tasks and sleep records to a file you choose. Google calendars and task lists aren’t included; they come back when you connect your account again. The file isn’t encrypted, so keep it somewhere private.</string>
+    <string name="data_export_action">Export</string>
+    <string name="data_import_action">Import</string>
+    <string name="data_import_body">Importing adds what isn’t on this device yet. Nothing here is changed or deleted.</string>
+    <string name="data_export_done">Exported %1$s, %2$s and %3$s.</string>
+    <string name="data_import_done">Imported %1$s, %2$s and %3$s.</string>
+    <plurals name="data_import_skipped">
+        <item quantity="one">%d item was already here or couldn’t be used.</item>
+        <item quantity="other">%d items were already here or couldn’t be used.</item>
+    </plurals>
+    <plurals name="data_count_events">
+        <item quantity="one">%d event</item>
+        <item quantity="other">%d events</item>
+    </plurals>
+    <plurals name="data_count_tasks">
+        <item quantity="one">%d task</item>
+        <item quantity="other">%d tasks</item>
+    </plurals>
+    <plurals name="data_count_sleep">
+        <item quantity="one">%d sleep record</item>
+        <item quantity="other">%d sleep records</item>
+    </plurals>
+    <string name="data_import_not_backup">This file isn’t a Daysemble backup, or it’s damaged.</string>
+    <string name="data_import_newer">This backup is from a newer version of Daysemble. Update the app, then import it.</string>
+    <string name="data_import_too_large">This file is too large to be a Daysemble backup.</string>
+    <string name="data_file_error">The file couldn’t be read or written.</string>
     <string name="data_delete_title">Delete local data</string>
     <string name="data_delete_body">Removes every event, task and sleep record stored on this device. Your settings are kept.</string>
     <string name="data_delete_action">Delete all local data</string>
