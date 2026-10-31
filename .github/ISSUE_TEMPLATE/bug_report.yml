@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in Daysemble doesn't work as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't report security problems here; follow SECURITY.md instead.
+        Don't include real personal data, account details or tokens.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Tap …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: Settings → About
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: Pixel 8, Android 15
+    validations:
+      required: true
+  - type: dropdown
+    id: google
+    attributes:
+      label: Google account connected?
+      options:
+        - "No"
+        - "Yes, Calendar and Tasks"
+        - "Yes, Calendar only"
+        - "Yes, Tasks only"
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, or logs with personal content removed.
