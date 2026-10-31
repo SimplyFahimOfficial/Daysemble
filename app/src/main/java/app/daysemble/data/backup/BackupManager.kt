@@ -14,6 +14,7 @@ import app.daysemble.data.db.TaskEntity
 import app.daysemble.data.db.TaskListEntity
 import app.daysemble.data.db.TaskOccurrenceSkipEntity
 import app.daysemble.data.db.TaskSeriesEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -57,8 +58,11 @@ class BackupFormatException(val reason: Reason, cause: Throwable? = null) : Exce
 
 data class BackupCounts(val events: Int, val tasks: Int, val sleep: Int)
 
-/** What an import added, and how many items were skipped (already here, or unusable). */
-data class ImportResult(val added: BackupCounts, val skipped: Int)
+/**
+ * What an import added, and how many items were skipped (already here, or unusable). [changed] is
+ * true when anything at all was written, also reminders or skipped dates for items already here.
+ */
+data class ImportResult(val added: BackupCounts, val skipped: Int, val changed: Boolean = added != BackupCounts(0, 0, 0))
 
 class BackupManager(
     private val db: DaysembleDatabase,
@@ -96,101 +100,152 @@ class BackupManager(
 
     /** Reads a backup; throws [BackupFormatException] for a file it can't use. Nothing is written then. */
     suspend fun import(input: InputStream): ImportResult {
-        val text = withContext(Dispatchers.IO) { readLimited(input) }
-        val file = try {
-            json.decodeFromString(BackupFile.serializer(), text)
-        } catch (e: SerializationException) {
-            throw BackupFormatException(BackupFormatException.Reason.NOT_A_BACKUP, e)
-        } catch (e: IllegalArgumentException) {
-            throw BackupFormatException(BackupFormatException.Reason.NOT_A_BACKUP, e)
-        }
+        // Reading and parsing (up to MAX_FILE_BYTES) stay off the caller's thread, which is the main one.
+        val file = withContext(Dispatchers.IO) { parse(readLimited(input)) }
         if (file.format != BackupFile.FORMAT) throw BackupFormatException(BackupFormatException.Reason.NOT_A_BACKUP)
         if (file.version > BackupFile.VERSION) throw BackupFormatException(BackupFormatException.Reason.NEWER_VERSION)
         val result = merge(file)
-        if (result.added != BackupCounts(0, 0, 0)) onImported()
+        if (result.changed) {
+            // The data is in. A failure while re-planning mustn't report the import as failed: reminders
+            // are planned again at the next app start and by the periodic refresh.
+            runCatching { onImported() }.onFailure { if (it is CancellationException) throw it }
+        }
         return result
+    }
+
+    private fun parse(text: String): BackupFile = try {
+        json.decodeFromString(BackupFile.serializer(), text)
+    } catch (e: SerializationException) {
+        throw BackupFormatException(BackupFormatException.Reason.NOT_A_BACKUP, e)
+    } catch (e: IllegalArgumentException) {
+        throw BackupFormatException(BackupFormatException.Reason.NOT_A_BACKUP, e)
     }
 
     /**
      * Adds what isn't here yet; never changes or removes anything that is. Every row is stored as
      * on-device data, whatever the file says, and rows that point at something missing are skipped.
+     * Only on-device rows count as "here" for references: an id that matches a Google calendar, list
+     * or item must not pull imported rows into synced data, so rows pointing at one are skipped too.
      */
     suspend fun merge(file: BackupFile): ImportResult = db.withTransaction {
-        var skipped = 0
-        fun added(rowId: Long): Boolean = (rowId != -1L).also { if (!it) skipped++ }
+        val tally = Tally()
+        mergeContainers(file, tally)
+        val calendars = dao.localCalendars().mapTo(HashSet()) { it.id }
+        val lists = dao.localLists().mapTo(HashSet()) { it.id }
+        file.series.filter { validId(it.id) }.forEach { s ->
+            if (s.listId in lists && validDay(s.anchorDate) && validMinute(s.dueTimeMinutes)) tally.added(dao.insertSeries(s)) else tally.skipped++
+        }
+        val series = dao.localSeries().mapTo(HashSet()) { it.id }
+        mergeEvents(file.events, calendars, tally)
+        mergeTasks(file.tasks, lists, series, tally)
+        // Skipped dates and reminders belong to an item: one whose item was skipped isn't counted again.
+        file.skips.forEach { s -> if (s.seriesId in series) tally.addedOther(dao.insertSkip(s)) }
+        mergeReminders(file.reminders, tally)
+        file.sleep.filter { validId(it.id) }.forEach { s ->
+            if (s.startUtc == null && s.endUtc == null) tally.skipped++ else if (tally.added(dao.insertSleep(s))) tally.sleep++
+        }
+        ImportResult(BackupCounts(tally.events, tally.tasks, tally.sleep), tally.skipped, tally.changed)
+    }
 
+    /** Counts of one merge. [added] and [addedOther] take an insert's row id (-1: already here). */
+    private class Tally {
+        var skipped = 0
+        var events = 0
+        var tasks = 0
+        var sleep = 0
+        var changed = false
+        fun added(rowId: Long): Boolean = (rowId != -1L).also { if (it) changed = true else skipped++ }
+        fun addedOther(rowId: Long) { if (rowId != -1L) changed = true }
+    }
+
+    private suspend fun mergeContainers(file: BackupFile, tally: Tally) {
         for (c in file.calendars.filter { validId(it.id) }) {
-            added(dao.insertCalendar(c.copy(kind = SourceKind.LOCAL, remoteId = null, accountEmail = null, isPrimary = false, accessRole = "owner", syncToken = null, isSyncEnabled = true)))
+            val row = c.copy(
+                kind = SourceKind.LOCAL, remoteId = null, accountEmail = null, isPrimary = false,
+                accessRole = "owner", syncToken = null, isSyncEnabled = true,
+            )
+            tally.added(dao.insertCalendar(row))
         }
         for (l in file.lists.filter { validId(it.id) }) {
-            added(dao.insertList(l.copy(kind = SourceKind.LOCAL, remoteId = null, accountEmail = null, isSyncEnabled = true, lastPulledAt = null)))
+            tally.added(dao.insertList(l.copy(kind = SourceKind.LOCAL, remoteId = null, accountEmail = null, isSyncEnabled = true, lastPulledAt = null)))
         }
-        val calendars = dao.calendarIds().toSet()
-        val lists = dao.listIds().toSet()
+    }
 
-        for (s in file.series.filter { validId(it.id) }) {
-            if (s.listId !in lists) { skipped++; continue }
-            added(dao.insertSeries(s))
-        }
-        val series = dao.seriesIds().toSet()
-
-        var events = 0
-        // Series and single events before the occurrences changed from them.
-        val existingEvents = dao.eventIds().toSet()
-        val (overrides, masters) = file.events.filter { validId(it.id) }.partition { it.recurringParentId != null }
-        val keptMasters = HashSet<String>()
+    private suspend fun mergeEvents(events: List<EventEntity>, calendars: Set<String>, tally: Tally) {
+        // Series before the occurrences changed from them. A changed occurrence needs an on-device
+        // series to belong to: one of a single event would never be shown.
+        val seriesIds = dao.localEvents().filter { it.rrule != null && it.recurringParentId == null }.mapTo(HashSet()) { it.id }
+        val (overrides, masters) = events.filter { validId(it.id) }.partition { it.recurringParentId != null }
         for (e in masters + overrides) {
-            val usable = e.calendarId in calendars && validZone(e.timeZone) &&
-                (e.recurringParentId == null || e.recurringParentId in keptMasters || e.recurringParentId in existingEvents)
-            if (!usable) { skipped++; continue }
-            val row = e.copy(remoteId = null, etag = null, remoteUpdatedAt = null, syncState = SyncState.LOCAL, isDeleted = false, pendingClientId = null, instancesUntil = null)
-            if (added(dao.insertEvent(row))) { events++; if (e.recurringParentId == null) keptMasters += e.id }
+            val usable = e.calendarId in calendars && validZone(e.timeZone) && validEventDays(e) &&
+                (e.recurringParentId == null || e.recurringParentId in seriesIds)
+            if (!usable) { tally.skipped++; continue }
+            val row = e.copy(
+                remoteId = null, etag = null, remoteUpdatedAt = null, syncState = SyncState.LOCAL,
+                isDeleted = false, pendingClientId = null, instancesUntil = null,
+            )
+            if (tally.added(dao.insertEvent(row))) {
+                tally.events++
+                if (e.recurringParentId == null && e.rrule != null) seriesIds += e.id
+            }
         }
+    }
 
-        var tasks = 0
-        for (t in file.tasks.filter { validId(it.id) }) {
-            if (t.listId !in lists || (t.seriesId != null && t.seriesId !in series)) { skipped++; continue }
-            val row = t.copy(remoteId = null, etag = null, remotePosition = null, remoteUpdatedAt = null, syncState = SyncState.LOCAL, isDeleted = false, deletedAt = null)
-            if (added(dao.insertTask(row))) tasks++
+    private suspend fun mergeTasks(tasks: List<TaskEntity>, lists: Set<String>, series: Set<String>, tally: Tally) {
+        // A parent that is here but not on-device (a Google task) doesn't adopt an imported subtask.
+        val foreign = dao.taskIds().toHashSet().apply { removeAll(dao.localTasks().mapTo(HashSet()) { it.id }) }
+        for (t in tasks.filter { validId(it.id) }) {
+            val usable = t.listId in lists && (t.seriesId == null || t.seriesId in series) && validTaskTimes(t)
+            if (!usable) { tally.skipped++; continue }
+            val row = t.copy(
+                parentId = t.parentId?.takeIf { it !in foreign },
+                remoteId = null, etag = null, remotePosition = null, remoteUpdatedAt = null,
+                syncState = SyncState.LOCAL, isDeleted = false, deletedAt = null,
+            )
+            if (tally.added(dao.insertTask(row))) tally.tasks++
         }
         dao.detachOrphanSubtasks()
-
-        for (s in file.skips) if (s.seriesId in series) dao.insertSkip(s)
-
-        // Reminders only for items that are here now, with the deterministic id rebuilt from its parts.
-        val eventIds = dao.eventIds().toSet()
-        val taskIds = dao.taskIds().toSet()
-        for (r in file.reminders) {
-            val owned = if (r.ownerType == OwnerType.EVENT) r.ownerId in eventIds else r.ownerId in taskIds
-            if (owned && r.minutesBefore in 0..MAX_REMINDER_MINUTES) dao.insertReminder(ReminderEntity.of(r.ownerType, r.ownerId, r.minutesBefore))
-        }
-
-        var sleep = 0
-        for (s in file.sleep.filter { validId(it.id) }) {
-            if (s.startUtc == null && s.endUtc == null) { skipped++; continue }
-            if (added(dao.insertSleep(s))) sleep++
-        }
-        ImportResult(BackupCounts(events, tasks, sleep), skipped)
     }
+
+    /** Reminders only for on-device items that are here now, with the deterministic id rebuilt from its parts. */
+    private suspend fun mergeReminders(reminders: List<ReminderEntity>, tally: Tally) {
+        val eventIds = dao.localEvents().mapTo(HashSet()) { it.id }
+        val taskIds = dao.localTasks().mapTo(HashSet()) { it.id }
+        for (r in reminders) {
+            val owned = if (r.ownerType == OwnerType.EVENT) r.ownerId in eventIds else r.ownerId in taskIds
+            if (owned && r.minutesBefore in 0..MAX_REMINDER_MINUTES) {
+                tally.addedOther(dao.insertReminder(ReminderEntity.of(r.ownerType, r.ownerId, r.minutesBefore)))
+            }
+        }
+    }
+
+    /** Dates and times the app reads back with LocalDate/LocalTime: out of range, they would throw. */
+    private fun validTaskTimes(t: TaskEntity) =
+        (t.dueDate == null || validDay(t.dueDate)) && (t.occurrenceDate == null || validDay(t.occurrenceDate)) && validMinute(t.dueTimeMinutes)
+
+    private fun validEventDays(e: EventEntity) = !e.isAllDay || (validDay(e.startDate) && validDay(e.endDateExclusive))
+
+    private fun validDay(epochDay: Long) = epochDay in MIN_EPOCH_DAY..MAX_EPOCH_DAY
+
+    private fun validMinute(m: Int?) = m == null || m in 0 until MINUTES_PER_DAY
 
     private fun validId(id: String) = id.isNotBlank() && id.length <= MAX_ID_LENGTH
 
     private fun validZone(id: String) = runCatching { ZoneId.of(id) }.isSuccess
 
-    private fun readLimited(input: InputStream): String {
-        val bytes = input.use { s ->
+    private fun readLimited(input: InputStream): String =
+        input.use { s ->
             val buf = java.io.ByteArrayOutputStream()
-            val chunk = ByteArray(64 * 1024)
+            val chunk = ByteArray(CHUNK_BYTES)
             while (true) {
                 val n = s.read(chunk)
                 if (n < 0) break
                 buf.write(chunk, 0, n)
                 if (buf.size() > MAX_FILE_BYTES) throw BackupFormatException(BackupFormatException.Reason.TOO_LARGE)
             }
-            buf.toByteArray()
+            // Decoded straight from the buffer: no second copy of up to MAX_FILE_BYTES.
+            buf.toString(Charsets.UTF_8.name())
         }
-        return bytes.toString(Charsets.UTF_8)
-    }
 
     companion object {
         /** Far above any real backup (about 1 KB per item), small enough to read into memory. */
@@ -198,5 +253,9 @@ class BackupManager(
         private const val MAX_ID_LENGTH = 200
         /** Four weeks: Google Calendar's longest reminder lead (the editors offer up to a day). */
         private const val MAX_REMINDER_MINUTES = 4 * 7 * 24 * 60
+        private const val CHUNK_BYTES = 64 * 1024
+        private const val MINUTES_PER_DAY = 24 * 60
+        private val MIN_EPOCH_DAY = java.time.LocalDate.MIN.toEpochDay()
+        private val MAX_EPOCH_DAY = java.time.LocalDate.MAX.toEpochDay()
     }
 }

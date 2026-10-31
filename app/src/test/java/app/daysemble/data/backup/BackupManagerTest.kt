@@ -187,6 +187,77 @@ class BackupManagerTest {
         assertThat(reminders.single().ownerType).isEqualTo(OwnerType.EVENT)
     }
 
+    private suspend fun importText(text: String) = manager(db).import(ByteArrayInputStream(text.trimIndent().toByteArray()))
+
+    @Test fun `ids that match a google calendar, list or task don't bring imported rows into them`() = runTest {
+        db.calendars().upsert(CalendarSourceEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "primary", accountEmail = "a@example.com", name = "G", colorArgb = 0))
+        db.taskLists().upsert(TaskListEntity(id = "gl", kind = SourceKind.GOOGLE, remoteId = "L1", accountEmail = "a@example.com", title = "G"))
+        val gTask = tasks(db).create(TaskDraft(title = "Google task"), "gl")
+        val r = importText(
+            """
+            {"format":"daysemble-backup","version":1,
+             "calendars":[{"id":"g","kind":"LOCAL","name":"Mine","colorArgb":1}],
+             "events":[{"id":"e1","calendarId":"g","title":"Into Google?","isAllDay":false,"timeZone":"UTC","rangeStartUtc":1,"rangeEndUtc":2,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"}],
+             "taskLists":[{"id":"gl","kind":"LOCAL","title":"Mine"},{"id":"l1","kind":"LOCAL","title":"L"}],
+             "tasks":[
+               {"id":"t1","listId":"gl","title":"Into Google?","sortKey":1,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"},
+               {"id":"t2","listId":"l1","parentId":"$gTask","title":"Under a Google task?","sortKey":2,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"}
+             ]}
+            """,
+        )
+        assertThat(db.events().get("e1")).isNull()
+        assertThat(db.tasks().get("t1")).isNull()
+        assertThat(db.tasks().get("t2")!!.parentId).isNull()
+        assertThat(db.calendars().get("g")!!.kind).isEqualTo(SourceKind.GOOGLE)
+        assertThat(r.added).isEqualTo(BackupCounts(events = 0, tasks = 1, sleep = 0))
+    }
+
+    @Test fun `a file that only adds reminders re-plans reminders`() = runTest {
+        seed()
+        val snap = manager(db).snapshot()
+        val trip = snap.tasks.single { it.title == "Trip" }
+        val withMore = snap.copy(reminders = snap.reminders + app.daysemble.data.db.ReminderEntity.of(OwnerType.TASK, trip.id, 120))
+        val bytes = kotlinx.serialization.json.Json.encodeToString(BackupFile.serializer(), withMore).toByteArray()
+        val r = manager(db).import(ByteArrayInputStream(bytes))
+        assertThat(r.added).isEqualTo(BackupCounts(0, 0, 0))
+        assertThat(r.changed).isTrue()
+        assertThat(imported).isEqualTo(1)
+        assertThat(db.reminders().forOwner(OwnerType.TASK, trip.id).map { it.minutesBefore }).containsExactly(30, 120)
+    }
+
+    @Test fun `out-of-range dates and times, and changes to a single event, are skipped`() = runTest {
+        val r = importText(
+            """
+            {"format":"daysemble-backup","version":1,
+             "calendars":[{"id":"c1","kind":"LOCAL","name":"Mine","colorArgb":1}],
+             "events":[
+               {"id":"single","calendarId":"c1","title":"Single","isAllDay":false,"timeZone":"UTC","rangeStartUtc":1,"rangeEndUtc":2,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"},
+               {"id":"change","calendarId":"c1","title":"Change of a single","isAllDay":false,"timeZone":"UTC","recurringParentId":"single","originalStartKey":"x","rangeStartUtc":1,"rangeEndUtc":2,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"},
+               {"id":"day","calendarId":"c1","title":"Bad day","isAllDay":true,"startDate":9999999999999,"endDateExclusive":9999999999999,"timeZone":"UTC","rangeStartUtc":1,"rangeEndUtc":2,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"}
+             ],
+             "taskLists":[{"id":"l1","kind":"LOCAL","title":"L"}],
+             "tasks":[
+               {"id":"t1","listId":"l1","title":"Bad date","dueDate":9999999999999,"sortKey":1,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"},
+               {"id":"t2","listId":"l1","title":"Bad time","dueDate":20000,"dueTimeMinutes":2000,"sortKey":2,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"},
+               {"id":"t3","listId":"l1","title":"Fine","dueDate":20000,"dueTimeMinutes":1439,"sortKey":3,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"}
+             ]}
+            """,
+        )
+        assertThat(r.added).isEqualTo(BackupCounts(events = 1, tasks = 1, sleep = 0))
+        assertThat(r.skipped).isEqualTo(4) // change, day, t1, t2
+        // What was stored can be read back.
+        assertThat(tasks(db).get("t3")!!.dueTime).isEqualTo(LocalTime.of(23, 59))
+    }
+
+    @Test fun `a failure while re-planning reminders doesn't fail the import`() = runTest {
+        seed()
+        val bytes = export(db)
+        val fresh = newDb()
+        val r = BackupManager(fresh, clock) { error("alarm service unavailable") }.import(ByteArrayInputStream(bytes))
+        assertThat(r.added.events).isEqualTo(2)
+        assertThat(fresh.backup().eventIds()).hasSize(2)
+    }
+
     @Test fun `a file over the size limit is refused before parsing`() = runTest {
         val huge = object : java.io.InputStream() {
             var left = BackupManager.MAX_FILE_BYTES + 1
