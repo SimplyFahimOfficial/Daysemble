@@ -80,6 +80,19 @@ private sealed interface ConnectUi {
     data class Partial(val missing: Set<SyncService>) : ConnectUi
 }
 
+/**
+ * Applies a successful consent: connects [email] with the services Google granted (only those in
+ * [requested] follow the answer) and starts syncing. Shows which requested services weren't allowed.
+ */
+private suspend fun onAuthorized(c: app.daysemble.AppContainer, r: AuthResult.Authorized, email: String?, requested: Set<SyncService>): ConnectUi {
+    if (email == null) return ConnectUi.Error("no_account")
+    c.sync.connect(email, r.services, requested)
+    c.syncScheduler.enablePeriodic()
+    c.syncScheduler.requestSoon(0)
+    val missing = requested - r.services
+    return if (missing.isEmpty()) ConnectUi.Idle else ConnectUi.Partial(missing)
+}
+
 @Composable
 fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
     val ctx = LocalContext.current
@@ -103,15 +116,7 @@ fun AccountSettingsRoute(onBack: () -> Unit, onOpenConflicts: () -> Unit) {
 
     suspend fun handle(r: AuthResult, launch: (IntentSenderRequest) -> Unit) {
         ui = when (r) {
-            is AuthResult.Authorized -> {
-                val email = r.email ?: status?.account?.email
-                if (email == null) ConnectUi.Error("no_account") else {
-                    c.sync.connect(email, r.services, requested())
-                    c.syncScheduler.enablePeriodic()
-                    c.syncScheduler.requestSoon(0)
-                    (requested() - r.services).let { if (it.isEmpty()) ConnectUi.Idle else ConnectUi.Partial(it) }
-                }
-            }
+            is AuthResult.Authorized -> onAuthorized(c, r, r.email ?: status?.account?.email, requested())
             is AuthResult.NeedsConsent -> { launch(IntentSenderRequest.Builder(r.intent.intentSender).build()); ConnectUi.Working }
             AuthResult.SetupRequired -> ConnectUi.SetupRequired
             AuthResult.PlayServicesUnavailable -> ConnectUi.NoPlayServices
@@ -250,7 +255,10 @@ private fun Connected(
             ).joinToString("\n"),
             Modifier.padding(horizontal = Space.gutter),
         )
-        is ConnectUi.Error -> Callout(stringResource(R.string.google_connect_failed), stringResource(R.string.google_error_code, ui.reason), Modifier.padding(horizontal = Space.gutter))
+        is ConnectUi.Error -> Callout(
+            stringResource(R.string.google_connect_failed), stringResource(R.string.google_error_code, ui.reason),
+            Modifier.padding(horizontal = Space.gutter),
+        )
         else -> Unit
     }
     if (s.needsReauth) {

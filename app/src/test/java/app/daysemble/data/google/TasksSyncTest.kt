@@ -149,6 +149,30 @@ class TasksSyncTest : SyncTestBase() {
         assertThat(router.count("PATCH", "/tasks/v1/lists/L1/tasks/T1")).isEqualTo(0)
     }
 
+    @Test fun `changing a local-only field doesn't make an older pending edit win over Google`() = runTest {
+        router.on("GET", "/tasks/v1/users/@me/lists") { lists() }
+        router.on("GET", "/tasks/v1/lists/L1/tasks") { json(body = """{"items":[$t1]}""") }
+        syncer().sync(acct)
+        val l = listId()
+        val local = db.tasks().byRemoteId(l, "T1")!!
+        clock.instant = java.time.Instant.parse("2026-10-21T00:00:00Z")
+        tasks.update(local.id, TaskDraft(title = "Mine", dueDate = LocalDate.parse("2026-10-25")))
+        val editedAt = db.tasks().get(local.id)!!.updatedAt
+        // After Google's edit (21 Oct 12:00), the user only changes the priority and the countdown.
+        clock.instant = java.time.Instant.parse("2026-10-22T08:00:00Z")
+        tasks.setPriority(local.id, Priority.HIGH)
+        tasks.setCountdown(local.id, true)
+        assertThat(db.tasks().get(local.id)!!.updatedAt).isEqualTo(editedAt)
+
+        router.on("GET", "/tasks/v1/lists/L1/tasks/T1") { json(body = t1.replace("Pay rent", "Theirs").replace("2026-10-20T10", "2026-10-21T12")) }
+        syncer().sync(acct)
+        val after = db.tasks().get(local.id)!!
+        assertThat(after.title).isEqualTo("Theirs")
+        assertThat(after.priority).isEqualTo(Priority.HIGH.level) // local-only fields survive
+        assertThat(after.countdownEnabled).isTrue()
+        assertThat(router.count("PATCH", "/tasks/v1/lists/L1/tasks/T1")).isEqualTo(0)
+    }
+
     @Test fun `an edit made while Google's version is fetched is kept and pushed`() = runTest {
         router.on("GET", "/tasks/v1/users/@me/lists") { lists() }
         router.on("GET", "/tasks/v1/lists/L1/tasks") { json(body = """{"items":[$t1]}""") }

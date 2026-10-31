@@ -151,4 +151,25 @@ class EventRepositoryTest {
         assertThat(db.sync().outbox().map { it.op }).containsExactly(OutboxOp.CREATE)
         assertThat(runCatching { repo.create(draft().copy(calendarId = "ro"), cal) }.isFailure).isTrue()
     }
+
+    @Test
+    fun `moving to another calendar and editing are saved together`() = runTest {
+        db.calendars().upsert(CalendarSourceEntity(id = "work", kind = SourceKind.LOCAL, name = "Work", colorArgb = 0))
+        val id = repo.create(draft(), cal)
+        repo.update(id, draft(title = "Planning").copy(calendarId = "work"))
+        val row = repo.get(id)!!
+        assertThat(row.calendarId).isEqualTo("work")
+        assertThat(row.title).isEqualTo("Planning")
+    }
+
+    @Test
+    fun `saving into a calendar that is gone fails and changes nothing`() = runTest {
+        val id = repo.create(draft(), cal)
+        val result = runCatching { repo.update(id, draft(title = "Planning").copy(calendarId = "gone")) }
+        // The editor reports the failure and stays open with the user's edits.
+        assertThat(result.isFailure).isTrue()
+        val row = repo.get(id)!!
+        assertThat(row.calendarId).isEqualTo(cal)
+        assertThat(row.title).isEqualTo("Standup")
+    }
 }

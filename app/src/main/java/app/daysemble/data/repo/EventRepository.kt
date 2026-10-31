@@ -74,10 +74,12 @@ class EventRepository(
         val c = calendars.get(id) ?: return false
         if (c.kind != SourceKind.LOCAL) return false
         if (calendars.byKind(SourceKind.LOCAL).size <= 1) return false
-        val ids = events.allIn(id).map { it.id }
-        db.withTransaction {
+        // Read the ids in the transaction, so an event added in between doesn't leave reminder rows behind.
+        val ids = db.withTransaction {
+            val ids = events.allIn(id).map { it.id }
             ids.forEach { db.reminders().deleteForOwner(OwnerType.EVENT, it) }
             calendars.delete(id)
+            ids
         }
         ids.forEach(listener::onEventChanged)
         return true
@@ -206,12 +208,23 @@ class EventRepository(
     /** Updates the event (whole series for recurring events). */
     suspend fun update(id: String, draft: EventDraft) {
         require(draft.validationError == null) { "Invalid event: ${draft.validationError}" }
-        val target = draft.calendarId?.takeIf { it != get(id)?.calendarId }
-        if (target != null) {
-            moveToCalendar(id, target)
-            return update(id, draft.copy(calendarId = target))
-        }
+        // Moving to another calendar and editing are one transaction, so a failure can't leave the
+        // event moved but not edited. (Room joins the nested transactions below to this one.)
         val google = db.withTransaction {
+            val current = get(id) ?: return@withTransaction null
+            val target = draft.calendarId?.takeIf { it != current.calendarId }
+            // The event exists, so a move that doesn't happen means a calendar is gone. Fail the save
+            // (nothing is written) instead of reporting success and dropping the other edits.
+            val moved = if (target != null) checkNotNull(moveRow(id, target)) { "The calendar is no longer available" } else false
+            val edited = updateRow(id, draft) ?: return@withTransaction null
+            moved || edited
+        } ?: return
+        notify(id, google)
+    }
+
+    /** Applies [draft] to the row. Returns whether it is a Google event, or null if it's gone. */
+    private suspend fun updateRow(id: String, draft: EventDraft): Boolean? =
+        db.withTransaction {
             val row = get(id) ?: return@withTransaction null
             val cal = calendars.get(row.calendarId) ?: return@withTransaction null
             val g = cal.kind == SourceKind.GOOGLE
@@ -224,9 +237,7 @@ class EventRepository(
             events.upsert(updated)
             saveReminders(id, draft.reminderMinutesBefore)
             g
-        } ?: return
-        notify(id, google)
-    }
+        }
 
     /** True when an event can change calendar (series with individually changed occurrences can't). */
     suspend fun canMove(id: String): Boolean {
@@ -240,33 +251,54 @@ class EventRepository(
      * copy to resurrect on the next pull.
      */
     suspend fun moveToCalendar(id: String, newCalendarId: String) {
-        val google = db.withTransaction {
+        val google = moveRow(id, newCalendarId) ?: return
+        notify(id, google)
+    }
+
+    /** Moves the row. Returns whether Google is involved, or null if nothing moved. */
+    private suspend fun moveRow(id: String, newCalendarId: String): Boolean? =
+        db.withTransaction {
             val row = get(id) ?: return@withTransaction null
             if (row.calendarId == newCalendarId) return@withTransaction null
             require(canMove(id)) { "Series with changed occurrences can't change calendar" }
             val from = calendars.get(row.calendarId) ?: return@withTransaction null
             val to = calendars.get(newCalendarId) ?: return@withTransaction null
             require(isWritableRole(to.accessRole)) { "Calendar is read-only" }
-            val fromG = from.kind == SourceKind.GOOGLE
-            val toG = to.kind == SourceKind.GOOGLE
-            if (fromG || toG) {
-                // Remote id of a create with a lost response is our deterministic client id.
-                val oldRemote = if (fromG) row.remoteId ?: (if (row.syncState == SyncState.PENDING_CREATE) app.daysemble.data.google.calendar.CalendarMapper.clientIdOf(row) else null) else null
-                outbox.recordMove(OwnerType.EVENT, id, oldRemote, if (fromG) from.remoteId else null, toG)
-            }
-            events.upsert(
-                row.copy(
-                    calendarId = newCalendarId, remoteId = null, etag = null,
-                    // New stable client id per move: the previous one may still be held by the deleted copy,
-                    // and reusing it on retries means a lost create response can't produce a duplicate.
-                    pendingClientId = if (toG) app.daysemble.data.google.calendar.CalendarMapper.newClientId() else null,
-                    remoteUpdatedAt = null, updatedAt = clock.now().toEpochMilli(),
-                    syncState = if (toG) SyncState.PENDING_CREATE else SyncState.LOCAL,
-                ),
-            )
-            fromG || toG
-        } ?: return
-        notify(id, google)
+            val google = recordMoveForSync(row, from, to)
+            events.upsert(movedRow(row, to))
+            google
+        }
+
+    /**
+     * Queues the remote side of moving [row] from [from] to [to]: delete the old Google copy, create
+     * the new one. Call inside [moveRow]'s transaction. Returns whether Google is involved.
+     */
+    private suspend fun recordMoveForSync(row: EventEntity, from: CalendarSourceEntity, to: CalendarSourceEntity): Boolean {
+        val fromG = from.kind == SourceKind.GOOGLE
+        val toG = to.kind == SourceKind.GOOGLE
+        if (!fromG && !toG) return false
+        // Remote id of a create with a lost response is our deterministic client id.
+        val oldRemote = when {
+            !fromG -> null
+            row.remoteId != null -> row.remoteId
+            row.syncState == SyncState.PENDING_CREATE -> app.daysemble.data.google.calendar.CalendarMapper.clientIdOf(row)
+            else -> null
+        }
+        outbox.recordMove(OwnerType.EVENT, row.id, oldRemote, if (fromG) from.remoteId else null, toG)
+        return true
+    }
+
+    /** [row] as it is stored in [to]: no remote identity yet, to be created there if [to] is a Google calendar. */
+    private fun movedRow(row: EventEntity, to: CalendarSourceEntity): EventEntity {
+        val toG = to.kind == SourceKind.GOOGLE
+        return row.copy(
+            calendarId = to.id, remoteId = null, etag = null,
+            // New stable client id per move: the previous one may still be held by the deleted copy,
+            // and reusing it on retries means a lost create response can't produce a duplicate.
+            pendingClientId = if (toG) app.daysemble.data.google.calendar.CalendarMapper.newClientId() else null,
+            remoteUpdatedAt = null, updatedAt = clock.now().toEpochMilli(),
+            syncState = if (toG) SyncState.PENDING_CREATE else SyncState.LOCAL,
+        )
     }
 
     /** Deletes a whole event / series (soft delete for Google until the remote delete succeeds). */

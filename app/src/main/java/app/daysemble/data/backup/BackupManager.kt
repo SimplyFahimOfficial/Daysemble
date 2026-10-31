@@ -71,6 +71,7 @@ class BackupManager(
     private val onImported: suspend () -> Unit,
 ) {
     private val dao = db.backup()
+    private val writes = db.backupImport()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }
 
     suspend fun snapshot(): BackupFile = db.withTransaction {
@@ -137,16 +138,16 @@ class BackupManager(
         val calendars = dao.localCalendars().mapTo(HashSet()) { it.id }
         val lists = dao.localLists().mapTo(HashSet()) { it.id }
         file.series.filter { validId(it.id) }.forEach { s ->
-            if (s.listId in lists && validDay(s.anchorDate) && validMinute(s.dueTimeMinutes)) tally.added(dao.insertSeries(s)) else tally.skipped++
+            if (s.listId in lists && validDay(s.anchorDate) && validMinute(s.dueTimeMinutes)) tally.added(writes.insertSeries(s)) else tally.skipped++
         }
         val series = dao.localSeries().mapTo(HashSet()) { it.id }
         mergeEvents(file.events, calendars, tally)
         mergeTasks(file.tasks, lists, series, tally)
         // Skipped dates and reminders belong to an item: one whose item was skipped isn't counted again.
-        file.skips.forEach { s -> if (s.seriesId in series) tally.addedOther(dao.insertSkip(s)) }
+        file.skips.forEach { s -> if (s.seriesId in series) tally.addedOther(writes.insertSkip(s)) }
         mergeReminders(file.reminders, tally)
         file.sleep.filter { validId(it.id) }.forEach { s ->
-            if (s.startUtc == null && s.endUtc == null) tally.skipped++ else if (tally.added(dao.insertSleep(s))) tally.sleep++
+            if (s.startUtc == null && s.endUtc == null) tally.skipped++ else if (tally.added(writes.insertSleep(s))) tally.sleep++
         }
         ImportResult(BackupCounts(tally.events, tally.tasks, tally.sleep), tally.skipped, tally.changed)
     }
@@ -168,10 +169,10 @@ class BackupManager(
                 kind = SourceKind.LOCAL, remoteId = null, accountEmail = null, isPrimary = false,
                 accessRole = "owner", syncToken = null, isSyncEnabled = true,
             )
-            tally.added(dao.insertCalendar(row))
+            tally.added(writes.insertCalendar(row))
         }
         for (l in file.lists.filter { validId(it.id) }) {
-            tally.added(dao.insertList(l.copy(kind = SourceKind.LOCAL, remoteId = null, accountEmail = null, isSyncEnabled = true, lastPulledAt = null)))
+            tally.added(writes.insertList(l.copy(kind = SourceKind.LOCAL, remoteId = null, accountEmail = null, isSyncEnabled = true, lastPulledAt = null)))
         }
     }
 
@@ -182,7 +183,7 @@ class BackupManager(
         val (overrides, masters) = events.filter { validId(it.id) }.partition { it.recurringParentId != null }
         for (e in masters + overrides) {
             if (!usableEvent(e, calendars, seriesIds)) { tally.skipped++; continue }
-            if (tally.added(dao.insertEvent(asLocalEvent(e)))) {
+            if (tally.added(writes.insertEvent(asLocalEvent(e)))) {
                 tally.events++
                 if (e.recurringParentId == null && e.rrule != null) seriesIds += e.id
             }
@@ -211,9 +212,9 @@ class BackupManager(
                 remoteId = null, etag = null, remotePosition = null, remoteUpdatedAt = null,
                 syncState = SyncState.LOCAL, isDeleted = false, deletedAt = null,
             )
-            if (tally.added(dao.insertTask(row))) tally.tasks++
+            if (tally.added(writes.insertTask(row))) tally.tasks++
         }
-        dao.detachOrphanSubtasks()
+        writes.detachOrphanSubtasks()
     }
 
     /** Reminders only for on-device items that are here now, with the deterministic id rebuilt from its parts. */
@@ -223,7 +224,7 @@ class BackupManager(
         for (r in reminders) {
             val owned = if (r.ownerType == OwnerType.EVENT) r.ownerId in eventIds else r.ownerId in taskIds
             if (owned && r.minutesBefore in 0..MAX_REMINDER_MINUTES) {
-                tally.addedOther(dao.insertReminder(ReminderEntity.of(r.ownerType, r.ownerId, r.minutesBefore)))
+                tally.addedOther(writes.insertReminder(ReminderEntity.of(r.ownerType, r.ownerId, r.minutesBefore)))
             }
         }
     }
