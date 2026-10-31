@@ -1,78 +1,43 @@
-name: Android CI
+# Main branch CI. The same build as pull requests (android-build.yml), on the merged commit,
+# plus an optional signed release check. release.yml only publishes a tag whose commit passed
+# this workflow, so runs on main are never cancelled.
+name: CI
 
 on:
   push:
     branches: [main]
-  pull_request:
+  workflow_dispatch:
 
-# Least privilege: checkout of this (private) repo is the only thing that needs the token.
-# Artifact upload uses the runner's own Actions token, not GITHUB_TOKEN.
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
-  # Routine CI for pushes and pull requests. Uses no secrets: the R8 release build is unsigned.
-  build:
-    # Pinned image instead of ubuntu-latest, which moves to Ubuntu 26.04 from 2026-10-19
-    # (actions/runner-images#14748). Move deliberately once 26.04 has been verified.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
+  android:
+    name: Android
+    uses: ./.github/workflows/android-build.yml
+    permissions:
+      contents: read
 
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Install Android platform 37
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
-
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        with:
-          # MIT-licensed caching. The default 'enhanced' provider is a proprietary component
-          # with separate terms (see gradle/actions DISTRIBUTION.md); opt in deliberately if wanted.
-          cache-provider: basic
-
-      - name: Build, unit tests and lint
-        run: ./gradlew assembleDebug testDebugUnitTest lintDebug --stacktrace
-
-      - name: Release build (R8, unsigned)
-        run: ./gradlew assembleRelease
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: reports
-          path: |
-            app/build/reports/
-            app/build/test-results/
-          retention-days: 7
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: daysemble-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 14
-
-  # Optional signed release check, only for pushes to main (already-reviewed code).
+  # Optional signed release check for pushes to main (already-reviewed code).
   # Two independent guards keep signing away from pull requests:
-  #   1. this `if` means the job is never scheduled for pull_request runs;
-  #   2. the signing secrets live only in the `release` environment, which should allow
-  #      deployments from `main` only (see README, "Signed release builds in CI").
-  # Unless all four environment secrets are set, the job finishes without building. The signed APK is not uploaded.
+  #   1. this workflow has no pull_request trigger, and the `if` limits the job to main;
+  #   2. the signing secrets live only in the `release` environment, which allows deployments
+  #      from `main` (and release tags) only. See docs/RELEASE.md.
+  # Unless all four environment secrets are set, the job finishes without building.
+  # The signed APK is not uploaded; release.yml builds and publishes releases.
   signed-release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    name: Signed release check
+    if: github.ref == 'refs/heads/main'
+    needs: android
     environment: release
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
       # Signing runs only when all four secrets are set. Only secret names are ever printed.
       - name: Check for signing secrets
@@ -111,7 +76,7 @@ jobs:
         if: steps.keys.outputs.present == 'true'
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0" > /dev/null
 
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         if: steps.keys.outputs.present == 'true'
         with:
           cache-provider: basic

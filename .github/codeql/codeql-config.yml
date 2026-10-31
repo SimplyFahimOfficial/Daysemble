@@ -1,0 +1,23 @@
+# CodeQL configuration for .github/workflows/codeql.yml.
+# Exclusions here are reviewed security exceptions; each one is also listed in docs/SECURITY.md.
+name: Daysemble CodeQL config
+
+queries:
+  - uses: security-extended
+
+paths:
+  - app/src/main
+paths-ignore:
+  - app/src/test
+  - "**/build/**"
+
+query-filters:
+  # java/android/backup-enabled (security-severity 7.5) fires on android:allowBackup="true" in
+  # app/src/main/AndroidManifest.xml. Backups are deliberate and restricted: res/xml/backup_rules.xml
+  # (Android 11 and lower) and res/xml/data_extraction_rules.xml (Android 12+) include only the
+  # settings DataStore (settings.preferences_pb), which holds no account data or tokens. The Room
+  # database, the sync outbox and account state are excluded; OAuth tokens are never stored on disk.
+  # Compensating control: scripts/ci/apk_audit.py fails the build if the APK enables backups without
+  # both rule files. Revisit this exclusion whenever backup rules or stored data change.
+  - exclude:
+      id: java/android/backup-enabled

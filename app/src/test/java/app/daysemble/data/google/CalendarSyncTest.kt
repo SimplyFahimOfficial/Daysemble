@@ -170,6 +170,85 @@ class CalendarSyncTest : SyncTestBase() {
         assertThat(db.sync().outbox().map { it.op }).containsExactly(OutboxOp.CREATE)
     }
 
+    @Test fun `an edit made while a 412 is being resolved is kept and still pushed`() = runTest {
+        router.on("GET", "/calendar/v3/users/me/calendarList") { calendarList() }
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$ev1],"nextSyncToken":"tok1"}""") }
+        syncer().sync(acct)
+        val cal = db.calendars().byKind(SourceKind.GOOGLE).single()
+        val localId = db.events().byRemoteId(cal.id, "ev1")!!.id
+        clock.instant = java.time.Instant.parse("2026-10-21T00:00:00Z")
+        events.update(localId, events.draftFor(localId, zone)!!.copy(title = "Dentist (mine)"))
+        clock.instant = java.time.Instant.parse("2026-10-22T08:00:00Z")
+
+        val theirs = ev1.replace("Dentist", "Dentist (theirs)").replace("2026-10-20T08:00:00.000Z", "2026-10-21T12:00:00.000Z")
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$theirs],"nextSyncToken":"tok2"}""") }
+        router.on("PATCH", "/calendar/v3/calendars/primary@x/events/ev1") { json(412, """{"error":{"code":412}}""") }
+        router.on("GET", "/calendar/v3/calendars/primary@x/events/ev1") {
+            // The user edits again while the sync is fetching Google's version.
+            kotlinx.coroutines.runBlocking { events.update(localId, events.draftFor(localId, zone)!!.copy(title = "Dentist (edited during sync)")) }
+            json(body = theirs)
+        }
+        syncer().sync(acct)
+        val row = db.events().get(localId)!!
+        assertThat(row.title).isEqualTo("Dentist (edited during sync)")
+        assertThat(row.syncState).isEqualTo(SyncState.PENDING_UPDATE)
+        assertThat(db.sync().outbox().map { it.op }).contains(OutboxOp.UPDATE)
+        assertThat(db.sync().observeConflicts().first().single().resolvedWith).isEqualTo("LOCAL")
+    }
+
+    @Test fun `an event deleted while a 412 is being resolved stays deleted`() = runTest {
+        router.on("GET", "/calendar/v3/users/me/calendarList") { calendarList() }
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$ev1],"nextSyncToken":"tok1"}""") }
+        syncer().sync(acct)
+        val cal = db.calendars().byKind(SourceKind.GOOGLE).single()
+        val localId = db.events().byRemoteId(cal.id, "ev1")!!.id
+        clock.instant = java.time.Instant.parse("2026-10-21T00:00:00Z")
+        events.update(localId, events.draftFor(localId, zone)!!.copy(title = "Dentist (mine)"))
+        clock.instant = java.time.Instant.parse("2026-10-22T08:00:00Z")
+
+        val theirs = ev1.replace("Dentist", "Dentist (theirs)").replace("2026-10-20T08:00:00.000Z", "2026-10-21T12:00:00.000Z")
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$theirs],"nextSyncToken":"tok2"}""") }
+        router.on("PATCH", "/calendar/v3/calendars/primary@x/events/ev1") { json(412, """{"error":{"code":412}}""") }
+        router.on("GET", "/calendar/v3/calendars/primary@x/events/ev1") {
+            kotlinx.coroutines.runBlocking { events.delete(localId) }
+            json(body = theirs)
+        }
+        syncer().sync(acct)
+        val row = db.events().get(localId)
+        assertThat(row == null || row.syncState == SyncState.PENDING_DELETE).isTrue()
+        assertThat(db.sync().outbox().map { it.op }).containsExactly(OutboxOp.DELETE)
+    }
+
+    @Test fun `an event moved to another calendar while a 412 is being resolved stays moved`() = runTest {
+        router.on("GET", "/calendar/v3/users/me/calendarList") { calendarList() }
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$ev1],"nextSyncToken":"tok1"}""") }
+        syncer().sync(acct)
+        val cal = db.calendars().byKind(SourceKind.GOOGLE).single()
+        db.calendars().upsert(app.daysemble.data.db.CalendarSourceEntity(id = "local", kind = SourceKind.LOCAL, name = "On this phone", colorArgb = 0))
+        val localId = db.events().byRemoteId(cal.id, "ev1")!!.id
+        clock.instant = java.time.Instant.parse("2026-10-21T00:00:00Z")
+        events.update(localId, events.draftFor(localId, zone)!!.copy(title = "Dentist (mine)"))
+        clock.instant = java.time.Instant.parse("2026-10-22T08:00:00Z")
+
+        // Google's version is newer than the move, so without the move check it would win and pull the event back.
+        val theirs = ev1.replace("Dentist", "Dentist (theirs)").replace("2026-10-20T08:00:00.000Z", "2026-10-22T09:00:00.000Z")
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$theirs],"nextSyncToken":"tok2"}""") }
+        router.on("PATCH", "/calendar/v3/calendars/primary@x/events/ev1") { json(412, """{"error":{"code":412}}""") }
+        router.on("GET", "/calendar/v3/calendars/primary@x/events/ev1") {
+            kotlinx.coroutines.runBlocking { events.moveToCalendar(localId, "local") }
+            json(body = theirs)
+        }
+        syncer().pushOutbox()
+        val row = db.events().get(localId)!!
+        assertThat(row.calendarId).isEqualTo("local")
+        assertThat(row.title).isEqualTo("Dentist (mine)")
+        assertThat(row.remoteId).isNull()
+        assertThat(row.etag).isNull()
+        assertThat(row.syncState).isEqualTo(SyncState.LOCAL)
+        // The old Google copy is still queued for deletion.
+        assertThat(db.sync().outbox().single().snapshotRemoteId).isEqualTo("ev1")
+    }
+
     @Test fun `remote delete of an item with unpushed local edits keeps the local version`() = runTest {
         router.on("GET", "/calendar/v3/users/me/calendarList") { calendarList() }
         router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$ev1],"nextSyncToken":"tok1"}""") }

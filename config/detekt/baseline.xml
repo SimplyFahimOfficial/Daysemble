@@ -1,0 +1,376 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:CalendarSyncer.kt$CalendarSyncer$e == null || cal == null || cal.kind != SourceKind.GOOGLE || cal.remoteId == null</ID>
+    <ID>ComplexCondition:EventForm.kt$RepeatForm.Companion$!rule.isSupported || rule.byMonthDay.isNotEmpty() || rule.byDay.any { it.ordinal != 0 } || (rule.freq != Freq.WEEKLY &amp;&amp; rule.byDay.isNotEmpty()) || rule.byMonth != null</ID>
+    <ID>ComplexCondition:EventRepository.kt$EventRepository$updated.startUtc != row.startUtc || updated.startDate != row.startDate || updated.isAllDay != row.isAllDay || updated.rrule != row.rrule</ID>
+    <ID>ComplexCondition:QuickAddSheet.kt$s.defaultEventReminderMinutes != null &amp;&amp; s.remindersEnabled &amp;&amp; android.os.Build.VERSION.SDK_INT &gt;= 33 &amp;&amp; androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED</ID>
+    <ID>ComplexCondition:RecurrenceExpander.kt$RecurrenceExpander$s &lt; windowEnd &amp;&amp; e &gt; windowStart || (duration.isZero &amp;&amp; s &gt;= windowStart &amp;&amp; s &lt; windowEnd)</ID>
+    <ID>ComplexCondition:ReminderPlanner.kt$ReminderPlanner$event.isDeleted || event.isCancelled || reminders.isEmpty() || event.recurringParentId != null</ID>
+    <ID>ComplexCondition:Reminders.kt$!on &amp;&amp; selected.isEmpty() &amp;&amp; health == ReminderHealth.NOTIFICATIONS_BLOCKED &amp;&amp; Build.VERSION.SDK_INT &gt;= 33</ID>
+    <ID>ComplexCondition:TaskRepeat.kt$TaskRepeatForm$picksDays &amp;&amp; old != null &amp;&amp; new != null &amp;&amp; weekdays == setOf(old.dayOfWeek.value)</ID>
+    <ID>ComplexCondition:TaskRepository.kt$TaskRepository$all.any { it.id != row.id &amp;&amp; !it.isDeleted &amp;&amp; it.isCompleted &amp;&amp; (it.occurrenceDate ?: Long.MIN_VALUE) &gt; date }</ID>
+    <ID>ComplexCondition:TasksSyncer.kt$TasksSyncer$t == null || list == null || list.kind != SourceKind.GOOGLE || list.remoteId == null</ID>
+    <ID>ComplexCondition:TodayScreen.kt$!state.isLoading &amp;&amp; state.allDay.isEmpty() &amp;&amp; state.timeline.isEmpty() &amp;&amp; state.overdue.isEmpty() &amp;&amp; state.completed.isEmpty()</ID>
+    <ID>ComplexCondition:TodayScreen.kt$OverviewPanel$o.isNaN() || c.isNaN() || e.isNaN() || e &lt;= c</ID>
+    <ID>CyclomaticComplexMethod:CalendarMapper.kt$CalendarMapper$fun toEntity( dto: EventDto, calendar: CalendarSourceEntity, existing: EventEntity?, parent: EventEntity?, now: Long, ): EventEntity?</ID>
+    <ID>CyclomaticComplexMethod:CalendarSyncer.kt$CalendarSyncer$private suspend fun applyRemote(dto: EventDto, cal: CalendarSourceEntity): Boolean</ID>
+    <ID>CyclomaticComplexMethod:CalendarSyncer.kt$CalendarSyncer$suspend fun pullCalendar(cal: CalendarSourceEntity): Pair&lt;Int, Int&gt;</ID>
+    <ID>CyclomaticComplexMethod:CalendarSyncer.kt$CalendarSyncer$suspend fun pushOutbox(): Triple&lt;Int, Int, Int&gt;</ID>
+    <ID>CyclomaticComplexMethod:CalendarSyncer.kt$CalendarSyncer$suspend fun refreshInstances(cal: CalendarSourceEntity, master: EventEntity)</ID>
+    <ID>CyclomaticComplexMethod:EventRepository.kt$EventRepository$suspend fun moveToCalendar(id: String, newCalendarId: String)</ID>
+    <ID>CyclomaticComplexMethod:EventRepository.kt$EventRepository.Companion$fun expand( rows: List&lt;EventEntity&gt;, overrides: List&lt;EventEntity&gt;, cals: Map&lt;String, CalendarSourceEntity&gt;, from: LocalDate, toInclusive: LocalDate, windowStart: Instant, windowEnd: Instant, zone: ZoneId, ): List&lt;EventOccurrence&gt;</ID>
+    <ID>CyclomaticComplexMethod:Receivers.kt$AlarmReceiver$override fun onReceive(context: Context, intent: Intent)</ID>
+    <ID>CyclomaticComplexMethod:RecurrenceExpander.kt$RecurrenceExpander$fun dates( rule: RRule, dtStart: LocalDate, fromDate: LocalDate, toDate: LocalDate, untilCheck: (LocalDate) -&gt; Boolean = { d -&gt; rule.untilDate == null || !d.isAfter(rule.untilDate) }, ): List&lt;LocalDate&gt;</ID>
+    <ID>CyclomaticComplexMethod:ReminderPlanner.kt$ReminderPlanner$fun forEvent( event: EventEntity, reminders: List&lt;ReminderEntity&gt;, overrides: List&lt;EventEntity&gt;, now: Instant, deviceZone: ZoneId, defaultMinuteOfDay: Int, ): List&lt;PlannedAlarm&gt;</ID>
+    <ID>CyclomaticComplexMethod:TaskRepository.kt$TaskRepository$private suspend fun removeUntouchedSuccessors(s: TaskSeriesEntity, row: TaskEntity): List&lt;String&gt;</ID>
+    <ID>CyclomaticComplexMethod:TaskRepository.kt$TaskRepository$suspend fun delete(id: String, scope: SeriesScope = SeriesScope.THIS)</ID>
+    <ID>CyclomaticComplexMethod:TaskRepository.kt$TaskRepository$suspend fun moveToList(id: String, newListId: String, scope: SeriesScope = SeriesScope.THIS)</ID>
+    <ID>CyclomaticComplexMethod:TaskRepository.kt$TaskRepository$suspend fun restore(id: String)</ID>
+    <ID>CyclomaticComplexMethod:TaskRepository.kt$TaskRepository$suspend fun update(id: String, draft: TaskDraft, scope: SeriesScope = SeriesScope.THIS)</ID>
+    <ID>CyclomaticComplexMethod:TasksSyncer.kt$TasksSyncer$private suspend fun applyRemote(dto: TaskDto, list: TaskListEntity): Boolean</ID>
+    <ID>CyclomaticComplexMethod:TasksSyncer.kt$TasksSyncer$suspend fun pushOutbox(): Triple&lt;Int, Int, Int&gt;</ID>
+    <ID>EmptyElseBlock:CalendarViewModel.kt$CalendarViewModel.Companion$if (o.startDate in from..to) out.getOrPut(o.startDate) { mutableListOf() } += o</ID>
+    <ID>EmptyElseBlock:DaysembleRoot.kt$if (cont.isActive) cont.resumeWith(Result.success(Unit))</ID>
+    <ID>EmptyElseBlock:RecurringTaskUiTest.kt$RecurringTaskUiTest$if (compose.onAllNodesWithText("Daily").fetchSemanticsNodes().isNotEmpty()) return@repeat</ID>
+    <ID>EmptyElseBlock:RecurringTaskUiTest.kt$RecurringTaskUiTest$if (compose.onAllNodesWithText("Delete a repeating task").fetchSemanticsNodes().isNotEmpty()) return@repeat</ID>
+    <ID>EmptyElseBlock:RepeatCompletionFlowTest.kt$RepeatCompletionFlowTest$if (compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()) return</ID>
+    <ID>EmptyElseBlock:RepeatCompletionFlowTest.kt$RepeatCompletionFlowTest$if (open().singleOrNull()?.id == id) return@repeat</ID>
+    <ID>EmptyElseBlock:SyncTestBase.kt$FakeTokens$if (current == null) current = tokens.removeFirstOrNull()</ID>
+    <ID>EmptyFunctionBlock:FreeTimeAndSleepTest.kt$FreeTimeAndSleepTest.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:OccurrenceTrackingTest.kt$OccurrenceTrackingTest.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:RecurringTaskRepositoryTest.kt$RecurringTaskRepositoryTest.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:RestartPersistenceTest.kt$RestartPersistenceTest.&lt;no name provided&gt;${}</ID>
+    <ID>ExplicitItLambdaParameter:DayLayout.kt$DayLayout${ i, it -&gt; val c = columnsEnd.indexOfFirst { end -&gt; end &lt;= it.startMin } if (c &gt;= 0) { columnsEnd[c] = it.endMin; colOf[i] = c } else { columnsEnd += it.endMin; colOf[i] = columnsEnd.size - 1 } }</ID>
+    <ID>ExplicitItLambdaParameter:DayLayout.kt$DayLayout${ i, it -&gt; var span = 1 while (colOf[i] + span &lt; n) { val next = colOf[i] + span val blocked = cluster.indices.any { j -&gt; colOf[j] == next &amp;&amp; cluster[j].startMin &lt; it.endMin &amp;&amp; cluster[j].endMin &gt; it.startMin } if (blocked) break span++ } Placed(it.key, it.startMin, it.endMin, colOf[i], span, n) }</ID>
+    <ID>ForEachOnRange:CalendarScreen.kt$0 until 7</ID>
+    <ID>ForEachOnRange:OnboardingScreen.kt$0 until 7</ID>
+    <ID>InstanceOfCheckForException:CalendarSyncer.kt$CalendarSyncer$e is ApiError.Auth</ID>
+    <ID>InstanceOfCheckForException:CalendarSyncer.kt$CalendarSyncer$err is ApiError.Auth</ID>
+    <ID>InstanceOfCheckForException:SyncManager.kt$SyncManager$e is ApiError.Auth</ID>
+    <ID>InstanceOfCheckForException:TasksSyncer.kt$TasksSyncer$err is ApiError.Auth</ID>
+    <ID>LongMethod:CalendarSyncer.kt$CalendarSyncer$suspend fun pushOutbox(): Triple&lt;Int, Int, Int&gt;</ID>
+    <ID>LongMethod:TaskRepository.kt$TaskRepository$suspend fun update(id: String, draft: TaskDraft, scope: SeriesScope = SeriesScope.THIS)</ID>
+    <ID>LongMethod:TasksSyncer.kt$TasksSyncer$suspend fun pushOutbox(): Triple&lt;Int, Int, Int&gt;</ID>
+    <ID>LongParameterList:CountdownTest.kt$CountdownTest$(y: Long, mo: Long, d: Long, h: Long, mi: Long, s: Long)</ID>
+    <ID>LongParameterList:EventEditorViewModel.kt$(date: LocalDate, startMinute: Int, durationMinutes: Int, zone: ZoneId, title: String, reminder: Int?)</ID>
+    <ID>LongParameterList:EventRepository.kt$EventRepository.Companion$( rows: List&lt;EventEntity&gt;, overrides: List&lt;EventEntity&gt;, cals: Map&lt;String, CalendarSourceEntity&gt;, from: LocalDate, toInclusive: LocalDate, windowStart: Instant, windowEnd: Instant, zone: ZoneId, )</ID>
+    <ID>LongParameterList:EventRepository.kt$EventRepository.Companion$(row: EventEntity, cal: CalendarSourceEntity, zone: ZoneId, key: String, s: Instant, e: Instant, recurring: Boolean)</ID>
+    <ID>LongParameterList:LogoVariant.kt$LogoVariant$( val key: String, @param:DrawableRes val artwork: Int, @param:BoolRes val suppliedFlag: Int, @param:StringRes val label: Int, @param:StringRes val description: Int, /** Fully-qualified activity-alias that carries this launcher icon. */ val launcherAlias: String, /** True when the tile itself is dark (used to pick contrasting chrome around it). */ val isDarkTile: Boolean, )</ID>
+    <ID>LongParameterList:RecurrenceExpander.kt$RecurrenceExpander$( rule: RRule, seriesStart: Instant, duration: java.time.Duration, zone: ZoneId, windowStart: Instant, windowEnd: Instant, )</ID>
+    <ID>LongParameterList:ReminderPlanner.kt$ReminderPlanner$( event: EventEntity, reminders: List&lt;ReminderEntity&gt;, overrides: List&lt;EventEntity&gt;, now: Instant, deviceZone: ZoneId, defaultMinuteOfDay: Int, )</ID>
+    <ID>LongParameterList:SyncManager.kt$SyncManager$( private val db: DaysembleDatabase, private val accounts: AccountStore, private val auth: GoogleAuthManager, private val calendar: CalendarSyncer, private val tasks: TasksSyncer, private val clock: AppClock, private val onLocalDataChanged: suspend () -&gt; Unit, )</ID>
+    <ID>LoopWithTooManyJumpStatements:CalendarSyncer.kt$CalendarSyncer$for</ID>
+    <ID>LoopWithTooManyJumpStatements:EventRepository.kt$EventRepository.Companion$for</ID>
+    <ID>LoopWithTooManyJumpStatements:RecurrenceExpander.kt$RecurrenceExpander$for</ID>
+    <ID>LoopWithTooManyJumpStatements:TasksSyncer.kt$TasksSyncer$for</ID>
+    <ID>MagicNumber:CalendarMapper.kt$CalendarMapper$0xFF000000</ID>
+    <ID>MagicNumber:CalendarMapper.kt$CalendarMapper$16</ID>
+    <ID>MagicNumber:CalendarMapper.kt$CalendarMapper$5</ID>
+    <ID>MagicNumber:CalendarMapper.kt$CalendarMapper$6</ID>
+    <ID>MagicNumber:CalendarSyncer.kt$CalendarSyncer$2000</ID>
+    <ID>MagicNumber:CalendarSyncer.kt$CalendarSyncer$300L</ID>
+    <ID>MagicNumber:CalendarSyncer.kt$CalendarSyncer$30L</ID>
+    <ID>MagicNumber:CalendarSyncer.kt$CalendarSyncer$365L</ID>
+    <ID>MagicNumber:CalendarSyncer.kt$CalendarSyncer$410</ID>
+    <ID>MagicNumber:CalendarSyncer.kt$CalendarSyncer$5</ID>
+    <ID>MagicNumber:CalendarSyncer.kt$CalendarSyncer$60_000</ID>
+    <ID>MagicNumber:CalendarSyncer.kt$CalendarSyncer$86400</ID>
+    <ID>MagicNumber:CalendarViewModel.kt$CalendarViewModel$41</ID>
+    <ID>MagicNumber:CalendarViewModel.kt$CalendarViewModel$7</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.AMBER$0xFF9A5B00</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.AMBER$0xFFF2B44B</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.CORAL$0xFFB8381F</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.CORAL$0xFFFF7A5C</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.Companion$0.11f</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.Companion$0.3f</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.Companion$0.59f</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.GRAPHITE$0xFF55524D</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.GRAPHITE$0xFFB9B5AE</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.INDIGO$0xFF2F4FA8</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.INDIGO$0xFF8AA6FF</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.ROSE$0xFFB0306A</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.ROSE$0xFFFF8CC0</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.SAGE$0xFF4C7A3A</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.SAGE$0xFFA3D58D</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.TEAL$0xFF0F7A72</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.TEAL$0xFF5CCFC4</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.VIOLET$0xFF5B3FE0</ID>
+    <ID>MagicNumber:Color.kt$EventSwatch.VIOLET$0xFF9B87FF</ID>
+    <ID>MagicNumber:Countdown.kt$Countdown$1_000L</ID>
+    <ID>MagicNumber:Countdown.kt$Countdown$60</ID>
+    <ID>MagicNumber:DayBalance.kt$30_000</ID>
+    <ID>MagicNumber:DayBalance.kt$60_000</ID>
+    <ID>MagicNumber:DaySchedule.kt$DaySchedulePrefs.Companion$7</ID>
+    <ID>MagicNumber:DaysembleApp.kt$DaysembleApp.&lt;no name provided&gt;$15</ID>
+    <ID>MagicNumber:DaysembleApp.kt$DaysembleApp.&lt;no name provided&gt;$60_000</ID>
+    <ID>MagicNumber:Event.kt$EventDraft$10</ID>
+    <ID>MagicNumber:Event.kt$EventDraft$9</ID>
+    <ID>MagicNumber:EventEditorViewModel.kt$60</ID>
+    <ID>MagicNumber:EventForm.kt$RepeatForm$99</ID>
+    <ID>MagicNumber:EventForm.kt$RepeatForm$999</ID>
+    <ID>MagicNumber:EventRepository.kt$0.5f</ID>
+    <ID>MagicNumber:EventRepository.kt$16</ID>
+    <ID>MagicNumber:EventRepository.kt$24</ID>
+    <ID>MagicNumber:EventRepository.kt$255</ID>
+    <ID>MagicNumber:EventRepository.kt$8</ID>
+    <ID>MagicNumber:EventRepository.kt$EventRepository$15</ID>
+    <ID>MagicNumber:EventRepository.kt$EventRepository$365</ID>
+    <ID>MagicNumber:EventRepository.kt$EventRepository$5</ID>
+    <ID>MagicNumber:EventRepository.kt$EventRepository.Companion$10</ID>
+    <ID>MagicNumber:EventRepository.kt$EventRepository.Companion$14</ID>
+    <ID>MagicNumber:Formatting.kt$Fmt$7</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp$401</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp$403</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp$404</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp$409</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp$410</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp$412</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp$429</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp$500</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp$599</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp.Companion$15</ID>
+    <ID>MagicNumber:GoogleHttp.kt$GoogleHttp.Companion$30</ID>
+    <ID>MagicNumber:Motion.kt$DsMotion$100</ID>
+    <ID>MagicNumber:Motion.kt$DsMotion$24</ID>
+    <ID>MagicNumber:Motion.kt$DsMotion$48</ID>
+    <ID>MagicNumber:Motion.kt$DsMotion$90</ID>
+    <ID>MagicNumber:NavMotion.kt$NavMotion$0.6f</ID>
+    <ID>MagicNumber:Notifications.kt$Notifications$31</ID>
+    <ID>MagicNumber:Notifications.kt$Notifications$33</ID>
+    <ID>MagicNumber:OnboardingScreen.kt$0.18f</ID>
+    <ID>MagicNumber:QuickAddSheet.kt$24</ID>
+    <ID>MagicNumber:QuickAddSheet.kt$30</ID>
+    <ID>MagicNumber:QuickAddSheet.kt$60</ID>
+    <ID>MagicNumber:RRule.kt$RRule.Companion$31</ID>
+    <ID>MagicNumber:RRule.kt$RRule.Companion$5</ID>
+    <ID>MagicNumber:RRule.kt$RRule.Companion$8</ID>
+    <ID>MagicNumber:RRule.kt$Recurrence.Companion$8</ID>
+    <ID>MagicNumber:Receivers.kt$9_000</ID>
+    <ID>MagicNumber:Receivers.kt$AlarmReceiver$3600</ID>
+    <ID>MagicNumber:Receivers.kt$AlarmReceiver$60L</ID>
+    <ID>MagicNumber:RecurrenceExpander.kt$RecurrenceExpander$500</ID>
+    <ID>MagicNumber:RecurrenceExpander.kt$RecurrenceExpander$7</ID>
+    <ID>MagicNumber:RelativeTime.kt$RelativeTime$12</ID>
+    <ID>MagicNumber:RelativeTime.kt$RelativeTime$59</ID>
+    <ID>MagicNumber:RelativeTime.kt$RelativeTime$60</ID>
+    <ID>MagicNumber:RelativeTime.kt$RelativeTime$60_000</ID>
+    <ID>MagicNumber:ReminderPlanner.kt$ReminderPlanner$60</ID>
+    <ID>MagicNumber:ReminderRefreshWorker.kt$ReminderRefreshWorker.Companion$12</ID>
+    <ID>MagicNumber:ReminderScheduler.kt$ReminderScheduler$0x7FFFFFFF</ID>
+    <ID>MagicNumber:ReminderScheduler.kt$ReminderScheduler$14L</ID>
+    <ID>MagicNumber:ReminderScheduler.kt$ReminderScheduler$1_000</ID>
+    <ID>MagicNumber:ReminderScheduler.kt$ReminderScheduler$24</ID>
+    <ID>MagicNumber:ReminderScheduler.kt$ReminderScheduler$3600</ID>
+    <ID>MagicNumber:ReminderScheduler.kt$ReminderScheduler$60</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$10</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$11</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$12</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$13</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$15</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$16</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$17</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$18</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$19</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$3</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$30</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$45</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$60</ID>
+    <ID>MagicNumber:SampleData.kt$SampleData$9</ID>
+    <ID>MagicNumber:SettingsRepository.kt$AppSettings$60</ID>
+    <ID>MagicNumber:SettingsRepository.kt$AppSettings$9</ID>
+    <ID>MagicNumber:SettingsRepository.kt$SettingsRepository$24</ID>
+    <ID>MagicNumber:SettingsRepository.kt$SettingsRepository$5</ID>
+    <ID>MagicNumber:SettingsRepository.kt$SettingsRepository$60</ID>
+    <ID>MagicNumber:SettingsRepository.kt$SettingsRepository$7</ID>
+    <ID>MagicNumber:SleepLog.kt$SleepLog$60</ID>
+    <ID>MagicNumber:SleepLog.kt$SleepRecord$12</ID>
+    <ID>MagicNumber:SplashExit.kt$SplashExit$0.96f</ID>
+    <ID>MagicNumber:SyncWorker.kt$SyncScheduler$30</ID>
+    <ID>MagicNumber:SyncWorker.kt$SyncWorker$3</ID>
+    <ID>MagicNumber:SyncWorker.kt$SyncWorker$8</ID>
+    <ID>MagicNumber:Task.kt$Priority.HIGH$3</ID>
+    <ID>MagicNumber:TaskDetailViewModel.kt$TaskDetailViewModel$4</ID>
+    <ID>MagicNumber:TaskEditorViewModel.kt$TaskForm.Companion$60</ID>
+    <ID>MagicNumber:TaskRecurrence.kt$TaskRecurrence$12</ID>
+    <ID>MagicNumber:TaskRecurrence.kt$TaskRecurrence$7</ID>
+    <ID>MagicNumber:TaskRepeat.kt$TaskRepeatForm$99</ID>
+    <ID>MagicNumber:TaskRepeat.kt$TaskRepeatForm$999</ID>
+    <ID>MagicNumber:TaskRepository.kt$5</ID>
+    <ID>MagicNumber:TaskRepository.kt$60</ID>
+    <ID>MagicNumber:TaskRepository.kt$TaskRepository$1000</ID>
+    <ID>MagicNumber:TaskRepository.kt$TaskRepository$5</ID>
+    <ID>MagicNumber:TaskSeriesReader.kt$TaskSeriesReader$60</ID>
+    <ID>MagicNumber:TasksSyncer.kt$TasksSyncer$10</ID>
+    <ID>MagicNumber:TasksSyncer.kt$TasksSyncer$60_000</ID>
+    <ID>MagicNumber:TimeGrid.kt$24</ID>
+    <ID>MagicNumber:TimeGrid.kt$60</ID>
+    <ID>MagicNumber:TodayScreen.kt$OverviewPanel$0.5f</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$0.01</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$0.02</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$0.025</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$0.06</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$11</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$13</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$14</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$15</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$16</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$17</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$18</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$20</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$22</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$26</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$28</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$30</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$34</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$36</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$42</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$44</ID>
+    <ID>MagicNumber:Type.kt$DsTypography$50</ID>
+    <ID>MagicNumber:ZonePicker.kt$Zones$3600</ID>
+    <ID>MagicNumber:ZonePicker.kt$Zones$60</ID>
+    <ID>MaxLineLength:AccountSettings.kt$ConnectUi.SetupRequired -&gt; Callout(stringResource(R.string.google_setup_required_title), stringResource(R.string.google_setup_required_body, BuildConfig.APPLICATION_ID))</ID>
+    <ID>MaxLineLength:AccountSettings.kt$Connected</ID>
+    <ID>MaxLineLength:AccountSettings.kt$DsButton(stringResource(R.string.conflicts_clear), { scope.launch { c.database.sync().clearConflicts() } }, style = DsButtonStyle.Ghost, modifier = Modifier.padding(Space.gutter))</ID>
+    <ID>MaxLineLength:AccountSettings.kt$DsButton(stringResource(R.string.disconnect), { confirmDisconnect = true }, style = DsButtonStyle.Destructive, modifier = Modifier.padding(horizontal = Space.gutter))</ID>
+    <ID>MaxLineLength:AccountSettings.kt$DsRow(stringResource(R.string.conflicts_title), subtitle = stringResource(R.string.conflicts_sub), icon = Icons.AutoMirrored.Rounded.CompareArrows, onClick = onOpenConflicts)</ID>
+    <ID>MaxLineLength:AccountSettings.kt$DsSwitchRow(stringResource(R.string.google_calendar), s.calendar.enabled, onToggleCalendar, subtitle = serviceLine(s.calendar.lastSuccessAt, s.calendar.lastError, p), icon = Icons.Rounded.CalendarMonth)</ID>
+    <ID>MaxLineLength:AccountSettings.kt$DsSwitchRow(stringResource(R.string.google_tasks), s.tasks.enabled, onToggleTasks, subtitle = serviceLine(s.tasks.lastSuccessAt, s.tasks.lastError, p), icon = Icons.Rounded.CheckCircleOutline)</ID>
+    <ID>MaxLineLength:AccountSettings.kt$last != null -&gt; stringResource(R.string.sync_last_success, Fmt.mediumDate(Instant.ofEpochMilli(last).atZone(p.zone).toLocalDate(), p) + " " + Fmt.time(Instant.ofEpochMilli(last), p))</ID>
+    <ID>MaxLineLength:AccountSettings.kt$subtitle</ID>
+    <ID>MaxLineLength:AccountSettings.kt$subtitle = if (s.pendingChanges &gt; 0) pluralStringResource(R.plurals.pending_changes, s.pendingChanges, s.pendingChanges) else stringResource(R.string.sync_up_to_date)</ID>
+    <ID>MaxLineLength:AccountSettings.kt${ v -&gt; scope.launch { c.database.calendars().setSyncEnabled(cal.id, v); c.reminders.rescheduleAll(); if (v) c.syncScheduler.requestSoon(0) } }</ID>
+    <ID>MaxLineLength:AccountSettings.kt${ v -&gt; scope.launch { c.database.taskLists().setSyncEnabled(l.id, v); c.reminders.rescheduleAll(); if (v) c.syncScheduler.requestSoon(0) } }</ID>
+    <ID>MaxLineLength:AppearanceScreen.kt$drawRoundRect(p.outline, topLeft = Offset(u * 0.8f, top), size = Size(size.width - u * 1.6f, size.height), cornerRadius = CornerRadius(u * 2f), style = Stroke(1.dp.toPx()))</ID>
+    <ID>MaxLineLength:AppearanceScreen.kt$drawRoundRect(p.textSecondary.copy(alpha = 0.35f), topLeft = Offset(u * 5f, top + u * 1.7f), size = Size(size.width * 0.4f, u * 0.9f), cornerRadius = CornerRadius(u))</ID>
+    <ID>MaxLineLength:AppearanceScreen.kt$drawRoundRect(p.textSecondary.copy(alpha = 0.5f), topLeft = Offset(u * 1.6f, u * 4.2f), size = Size(size.width * 0.55f, u * 0.9f), cornerRadius = CornerRadius(u))</ID>
+    <ID>MaxLineLength:CalendarApi.kt$CalendarApi$json.decodeFromString(http.send("POST", u("calendars").addPathSegment(calendarId).addPathSegment("events").build(), json.encodeToString(EventDto.serializer(), event)))</ID>
+    <ID>MaxLineLength:CalendarMapper.kt$CalendarMapper$endDateExclusive = if (allDay) LocalDate.parse(end.date ?: start.date).toEpochDay().coerceAtLeast(LocalDate.parse(start.date).toEpochDay() + 1) else 0</ID>
+    <ID>MaxLineLength:CalendarScreen.kt$AgendaEventCard(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showCountdown = d == state.today, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -&gt; { a.onEventLongPress(e) } })</ID>
+    <ID>MaxLineLength:CalendarScreen.kt$AgendaTaskCard(t, now, onToggle = { done -&gt; vm.setTaskCompleted(t.id, done) { r -&gt; if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -&gt; { a.onTaskLongPress(t) } })</ID>
+    <ID>MaxLineLength:CalendarScreen.kt$AgendaTaskCard(t, now, onToggle = { done -&gt; vm.setTaskCompleted(t.id, done) { r -&gt; if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion(fadeOut = false)), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -&gt; { a.onTaskLongPress(t) } })</ID>
+    <ID>MaxLineLength:CalendarScreen.kt$SectionHeader(dayLabel(d, state.today, p) + if (d == state.today || d == state.today.plusDays(1)) " · " + Fmt.mediumDate(d, p) else "", Modifier.padding(top = Space.m))</ID>
+    <ID>MaxLineLength:CalendarScreen.kt$val a11y = Fmt.fullDate(d, p) + (if (isToday) ", " + stringResource(R.string.today_suffix) else "") + ", " + pluralStringResource(R.plurals.n_items, count, count)</ID>
+    <ID>MaxLineLength:CalendarScreen.kt$val selBg = app.daysemble.ui.components.animateStateColor(if (sel) c.inverse else Color.Transparent, DsTheme.motion.indicator(), label = "weekSel")</ID>
+    <ID>MaxLineLength:CalendarSyncer.kt$CalendarSyncer$db.sync().enqueue(app.daysemble.data.db.OutboxEntity(entityType = OwnerType.EVENT, entityId = local.id, op = OutboxOp.UPDATE, createdAt = now()))</ID>
+    <ID>MaxLineLength:CalendarSyncer.kt$CalendarSyncer$if (editedMeanwhile) db.sync().enqueue(app.daysemble.data.db.OutboxEntity(entityType = OwnerType.EVENT, entityId = cur.id, op = OutboxOp.UPDATE, createdAt = now()))</ID>
+    <ID>MaxLineLength:CalendarViewModel.kt$CalendarViewModel$CalendarMode.MONTH -&gt; s.plusMonths(direction.toLong()).withDayOfMonth(1).let { if (YearMonth.from(it) == YearMonth.from(clock.today())) clock.today() else it }</ID>
+    <ID>MaxLineLength:CalendarViewModel.kt$CalendarViewModel$fun setTaskCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -&gt; Unit = {})</ID>
+    <ID>MaxLineLength:Cards.kt$val textColor = app.daysemble.ui.components.animateStateColor(if (task.isCompleted) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskCardText")</ID>
+    <ID>MaxLineLength:DayBalance.kt$Metric(Icons.Rounded.Schedule, c.success, stringResource(R.string.metric_free, durationText(a.free.roundToMinutes())), Modifier.testTag(BalanceTags.FREE))</ID>
+    <ID>MaxLineLength:DayBalance.kt$if (a.taskBusy.roundToMinutes() &gt; 0) Line(stringResource(R.string.breakdown_task_blocks), null, "− " + durationText(a.taskBusy.roundToMinutes()))</ID>
+    <ID>MaxLineLength:DayBalance.kt$internal</ID>
+    <ID>MaxLineLength:DayBalance.kt$is FreeTimeEntry.Event -&gt; Line(e.title.ifBlank { stringResource(R.string.untitled_event) }, stringResource(R.string.breakdown_kind_event), stringResource(R.string.time_range, Fmt.time(e.start, p), Fmt.time(e.end, p)))</ID>
+    <ID>MaxLineLength:DayBalance.kt$morning &amp;&amp; sl.lastNight == null &amp;&amp; sl.wakeOnly == null -&gt; DsChip(stringResource(R.string.sleep_woke_up), false, actions::wakeUp, icon = Icons.Rounded.WbSunny, role = Role.Button)</ID>
+    <ID>MaxLineLength:DayBalance.kt$stringResource(R.string.metric_after_estimates, durationText(a.freeAfterEstimates.roundToMinutes()), durationText(a.estimatedWork.roundToMinutes()))</ID>
+    <ID>MaxLineLength:DaysembleRoot.kt$Page { TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) }) }</ID>
+    <ID>MaxLineLength:DaysembleRoot.kt$SettingsPage.ACCOUNTS -&gt; app.daysemble.ui.settings.AccountSettingsRoute(onBack = back, onOpenConflicts = { nav.openFrom(e, SettingsPageRoute(SettingsPage.CONFLICTS.name)) })</ID>
+    <ID>MaxLineLength:DaysembleRoot.kt$val</ID>
+    <ID>MaxLineLength:EventDetailScreen.kt$DetailLine(null, it, if (event.isGoogle) stringResource(R.string.google_calendar) else stringResource(R.string.on_this_device), marker = color)</ID>
+    <ID>MaxLineLength:EventEditorScreen.kt$DsChip(stringResource(R.string.repeat_forever), r.repeatEnd == RepeatEnd.NEVER, { update { it.copy(repeat = it.repeat.copy(end = RepeatEnd.NEVER.name)) } })</ID>
+    <ID>MaxLineLength:EventEditorScreen.kt$FlowRow</ID>
+    <ID>MaxLineLength:EventEditorScreen.kt$r.untilEpochDay?.takeIf { r.repeatEnd == RepeatEnd.UNTIL }?.let { stringResource(R.string.repeat_until_date, Fmt.mediumDate(LocalDate.ofEpochDay(it), p)) }</ID>
+    <ID>MaxLineLength:EventRepository.kt$EventRepository$val occ = expand(listOf(row), overrides, cals, from, to, from.atStartOfDay(zone).toInstant(), to.plusDays(1).atStartOfDay(zone).toInstant(), zone)</ID>
+    <ID>MaxLineLength:EventRepository.kt$EventRepository$val oldRemote = if (fromG) row.remoteId ?: (if (row.syncState == SyncState.PENDING_CREATE) app.daysemble.data.google.calendar.CalendarMapper.clientIdOf(row) else null) else null</ID>
+    <ID>MaxLineLength:EventRepository.kt$EventRepository.Companion$single(ov, cal, zone)?.let { it.copy(eventId = row.id, occurrenceKey = key, overrideId = ov.id, isRecurring = true, isReadOnly = it.isReadOnly || row.isReadOnlyRecurrence) }</ID>
+    <ID>MaxLineLength:EventRepository.kt$EventRepository.Companion$single(ov, cal, zone)?.let { it.copy(eventId = row.id, occurrenceKey = ov.originalStartKey ?: ov.id, overrideId = ov.id, isRecurring = true, isReadOnly = it.isReadOnly || row.isReadOnlyRecurrence) }</ID>
+    <ID>MaxLineLength:Fields.kt$.</ID>
+    <ID>MaxLineLength:Fields.kt$Text(text, style = DsTheme.type.bodyStrong, color = if (!enabled) c.textTertiary else if (emphasized) c.onInverse else c.textPrimary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)</ID>
+    <ID>MaxLineLength:GoogleHttp.kt$GoogleHttp$403 -&gt; if (reason != null &amp;&amp; (reason.contains("RateLimit", true) || reason.contains("quota", true))) ApiError.RateLimited(code) else ApiError.Client(code, reason)</ID>
+    <ID>MaxLineLength:ItemActions.kt$if (!t.readOnly) MenuRow(Icons.Rounded.DeleteOutline, stringResource(R.string.action_delete), inPlace(onDelete), Modifier.testTag(ItemMenuTags.DELETE), tint = c.error)</ID>
+    <ID>MaxLineLength:ItemActions.kt$if (t.recurring &amp;&amp; !t.completed) MenuRow(Icons.Rounded.SkipNext, stringResource(R.string.menu_skip_occurrence), inPlace(onSkip), Modifier.testTag(ItemMenuTags.SKIP))</ID>
+    <ID>MaxLineLength:Items.kt$val textColor = app.daysemble.ui.components.animateStateColor(if (task.isCompleted) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskText")</ID>
+    <ID>MaxLineLength:ListsCalendarsSettings.kt$DsButton(stringResource(R.string.new_calendar), { editing = Editing.NewCalendar() }, style = DsButtonStyle.Secondary, icon = Icons.Rounded.Add, modifier = Modifier.padding(horizontal = Space.gutter))</ID>
+    <ID>MaxLineLength:ListsCalendarsSettings.kt$DsButton(stringResource(R.string.new_list), { editing = Editing.NewList() }, style = DsButtonStyle.Secondary, icon = Icons.Rounded.Add, modifier = Modifier.padding(horizontal = Space.gutter))</ID>
+    <ID>MaxLineLength:ListsCalendarsSettings.kt$FlowRow</ID>
+    <ID>MaxLineLength:ListsCalendarsSettings.kt$is Editing.NewCalendar</ID>
+    <ID>MaxLineLength:Motion.kt$Modifier.animateItem(fadeInSpec = if (appear) m.standard(m.short) else null, placementSpec = null, fadeOutSpec = if (fadeOut) m.standard(m.short) else null)</ID>
+    <ID>MaxLineLength:NotificationSettings.kt$if</ID>
+    <ID>MaxLineLength:OccurrenceGrid.kt$date.dayOfMonth.toString()</ID>
+    <ID>MaxLineLength:OccurrenceGrid.kt$val at = cell?.completedAt?.let { " · " + stringResource(R.string.history_completed_at, Fmt.mediumDate(it.atZone(p.zone).toLocalDate(), p) + " " + Fmt.time(it, p)) } ?: ""</ID>
+    <ID>MaxLineLength:OnboardingScreen.kt$PreviewEvent(c.violet, stringResource(R.string.onboarding_preview_event), stringResource(R.string.onboarding_preview_event_time), stringResource(R.string.onboarding_preview_in))</ID>
+    <ID>MaxLineLength:OnboardingScreen.kt$mutableStateOf(Build.VERSION.SDK_INT &lt; 33 || ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)</ID>
+    <ID>MaxLineLength:OnboardingScreen.kt$private</ID>
+    <ID>MaxLineLength:OnboardingScreen.kt$val color = app.daysemble.ui.components.animateStateColor(if (i == page) c.inverse else c.outlineStrong.copy(alpha = 0.5f), m.indicator(), label = "stepDotColor")</ID>
+    <ID>MaxLineLength:Receivers.kt$AlarmReceiver$Notifications.Content(OwnerType.EVENT, e.id, alarm.occurrenceKey, alarm.reminderId, e.title.ifBlank { context.getString(R.string.untitled_event) }, text, start?.toEpochMilli(), null)</ID>
+    <ID>MaxLineLength:Reminders.kt$(if (Build.VERSION.SDK_INT &gt;= 31) Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:" + ctx.packageName)) else null)</ID>
+    <ID>MaxLineLength:ScheduleSettings.kt$DsRow(stringResource(R.string.schedule_bed), subtitle = Fmt.time(LocalTime.of(bed / 60, bed % 60), p), icon = Icons.Rounded.Bedtime, onClick = { pick = "bed" })</ID>
+    <ID>MaxLineLength:ScheduleSettings.kt$DsRow(stringResource(R.string.schedule_wake), subtitle = Fmt.time(LocalTime.of(wake / 60, wake % 60), p), icon = Icons.Rounded.WbSunny, onClick = { pick = "wake" })</ID>
+    <ID>MaxLineLength:ScheduleSettings.kt$DsTimePickerDialog(LocalTime.of(m / 60, m % 60), onPick = { t -&gt; if (which == "wake") wake = t.hour * 60 + t.minute else bed = t.hour * 60 + t.minute }, onDismiss = { pick = null })</ID>
+    <ID>MaxLineLength:ScheduleSettings.kt$TextButton(onClick = { onSave(null); onDismiss() }) { Text(stringResource(R.string.schedule_use_default), color = c.textSecondary, style = DsTheme.type.label) }</ID>
+    <ID>MaxLineLength:ScheduleSettings.kt$val ok = if (which == "wake") container.settings.setDefaultSchedule(m, d.bedMinute) else container.settings.setDefaultSchedule(d.wakeMinute, m)</ID>
+    <ID>MaxLineLength:SearchScreen.kt$EventRow(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showDate = true, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -&gt; { a.onEventLongPress(e) } })</ID>
+    <ID>MaxLineLength:SearchScreen.kt$SearchViewModel$fun setCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -&gt; Unit = {})</ID>
+    <ID>MaxLineLength:SearchScreen.kt$TaskRow(t, now, onToggle = { done -&gt; vm.setCompleted(t.id, done) { r -&gt; if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -&gt; { a.onTaskLongPress(t) } })</ID>
+    <ID>MaxLineLength:SearchScreen.kt$raw.isBlank() -&gt; StateMessage(Icons.Rounded.Search, stringResource(R.string.search_prompt), Modifier.padding(top = Space.x3), body = stringResource(R.string.search_prompt_body))</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$DsButton(stringResource(R.string.data_delete_action), { confirm = true }, style = DsButtonStyle.Destructive, modifier = Modifier.padding(horizontal = Space.gutter))</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$DsRadioRow(durationText(m.toLong()), settings.defaultEventDurationMinutes == m, { scope.launch { container.settings.setDefaultEventDuration(m) } })</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$DsRow(stringResource(R.string.settings_about), subtitle = stringResource(R.string.version_label, BuildConfig.VERSION_NAME), icon = Icons.Rounded.Info, onClick = { onOpen(SettingsPage.ABOUT) }, trailing = chevron)</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$DsRow(stringResource(R.string.settings_accounts), subtitle = stringResource(R.string.settings_accounts_sub), icon = Icons.Rounded.Sync, onClick = { onOpen(SettingsPage.ACCOUNTS) }, trailing = chevron)</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$DsRow(stringResource(R.string.settings_appearance), subtitle = stringResource(R.string.settings_appearance_sub), icon = Icons.Rounded.Palette, onClick = { onOpen(SettingsPage.APPEARANCE) }, trailing = chevron)</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$DsRow(stringResource(R.string.settings_data), subtitle = stringResource(R.string.settings_data_sub), icon = Icons.Rounded.Shield, onClick = { onOpen(SettingsPage.DATA) }, trailing = chevron)</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$DsRow(stringResource(R.string.settings_date_time), subtitle = stringResource(R.string.settings_date_time_sub), icon = Icons.Rounded.CalendarMonth, onClick = { onOpen(SettingsPage.DATE_TIME) }, trailing = chevron)</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$DsRow(stringResource(R.string.settings_lists_calendars), subtitle = stringResource(R.string.settings_lists_calendars_sub), icon = Icons.Rounded.CalendarMonth, onClick = { onOpen(SettingsPage.LISTS_CALENDARS) }, trailing = chevron)</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$DsRow(stringResource(R.string.settings_notifications), subtitle = stringResource(R.string.settings_notifications_sub), icon = Icons.Rounded.Notifications, onClick = { onOpen(SettingsPage.NOTIFICATIONS) }, trailing = chevron)</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$DsRow(stringResource(R.string.settings_tasks), subtitle = stringResource(R.string.settings_tasks_sub), icon = Icons.Rounded.TaskAlt, onClick = { onOpen(SettingsPage.TASKS) }, trailing = chevron)</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$confirmButton = { app.daysemble.ui.components.DsButton(stringResource(R.string.action_save), { onSave(name) }, style = app.daysemble.ui.components.DsButtonStyle.Ghost) }</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$dismissButton = { app.daysemble.ui.components.DsButton(stringResource(R.string.action_cancel), onDismiss, style = app.daysemble.ui.components.DsButtonStyle.Ghost) }</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$if (cleared) Text(stringResource(R.string.data_deleted), style = DsTheme.type.label, color = DsTheme.colors.success, modifier = Modifier.padding(Space.gutter))</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$internal</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$label = { stringResource(when (it) { ClockFormat.SYSTEM -&gt; R.string.theme_system; ClockFormat.H12 -&gt; R.string.clock_12; ClockFormat.H24 -&gt; R.string.clock_24 }) }</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$subtitle</ID>
+    <ID>MaxLineLength:SettingsScreens.kt$val selected = settings.defaultTaskListId == l.id || (settings.defaultTaskListId == null &amp;&amp; !l.isGoogle &amp;&amp; l == lists.firstOrNull { !it.isGoogle })</ID>
+    <ID>MaxLineLength:SleepUi.kt$SleepActions$Messages</ID>
+    <ID>MaxLineLength:SleepUi.kt$TimeField(stringResource(R.string.sleep_bedtime), bed, p, today, onDate = { pick = Pick(true, false) }, onTime = { pick = Pick(true, true) }, onClear = { bed = null })</ID>
+    <ID>MaxLineLength:SleepUi.kt$TimeField(stringResource(R.string.sleep_wake), wake, p, today, onDate = { pick = Pick(false, false) }, onTime = { pick = Pick(false, true) }, onClear = { wake = null })</ID>
+    <ID>MaxLineLength:SleepUi.kt$if (dt != null) DsIconButton(androidx.compose.material.icons.Icons.Rounded.Close, stringResource(R.string.action_clear), onClear, tint = c.textTertiary)</ID>
+    <ID>MaxLineLength:SleepUi.kt$if (record != null) TextButton(onClick = { confirmDelete = true }) { Text(stringResource(R.string.action_delete), color = c.error, style = DsTheme.type.label) }</ID>
+    <ID>MaxLineLength:SleepUi.kt$title = { Text(stringResource(if (record == null) R.string.sleep_add_title else R.string.sleep_edit_title), style = DsTheme.type.titleLarge, color = c.textPrimary) }</ID>
+    <ID>MaxLineLength:Surfaces.kt$colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = c.inverse, checkmarkColor = c.onInverse, uncheckedColor = c.outlineStrong)</ID>
+    <ID>MaxLineLength:SyncWorker.kt$SyncWorker$SyncOutcome.OK -&gt; if (c.database.sync().outbox().none { it.permanentFailures &lt; app.daysemble.data.google.calendar.CalendarSyncer.MAX_ATTEMPTS }) return Result.success()</ID>
+    <ID>MaxLineLength:TaskDetailScreen.kt$next?.let { stringResource(if (task.isCompleted) R.string.detail_current_occurrence else R.string.detail_next_after, Fmt.smartDate(it, state.today, p)) }</ID>
+    <ID>MaxLineLength:TaskEditorScreen.kt$DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_delete_subtask, s.title), { vm.deleteSubtask(s.id) }, tint = c.textTertiary)</ID>
+    <ID>MaxLineLength:TaskEditorScreen.kt$DsIconButton(androidx.compose.material.icons.Icons.Rounded.Remove, stringResource(R.string.cd_decrease), { onChange((minutes - 15).coerceAtLeast(5)) }, enabled = minutes &gt; 5)</ID>
+    <ID>MaxLineLength:TaskEditorScreen.kt$TaskRow(s, now, onToggle = { vm.toggleSubtask(s.id, it) }, onClick = { vm.toggleSubtask(s.id, !s.isCompleted) }, showDue = false, modifier = Modifier.weight(1f))</ID>
+    <ID>MaxLineLength:TaskEditorViewModel.kt$TaskEditorViewModel$private val original = MutableStateFlow&lt;TaskForm?&gt;(handle.get&lt;String&gt;(KEY_ORIGINAL)?.let { runCatching { json.decodeFromString&lt;TaskForm&gt;(it) }.getOrNull() })</ID>
+    <ID>MaxLineLength:TaskEditorViewModel.kt$TaskForm$val moved = copy(dueEpochDay = epochDay, dueMinutes = if (epochDay == null) null else dueMinutes, repeat = repeat.followDue(dueDate, epochDay?.let(LocalDate::ofEpochDay)))</ID>
+    <ID>MaxLineLength:TaskRepeat.kt$if (!pastOccurrence) add(Triple(SeriesScope.FUTURE, R.string.scope_future, if (forDelete) R.string.scope_future_delete_desc else R.string.scope_future_desc))</ID>
+    <ID>MaxLineLength:TaskRepeat.kt$listOf(Freq.DAILY to R.string.repeat_unit_days, Freq.WEEKLY to R.string.repeat_unit_weeks, Freq.MONTHLY to R.string.repeat_unit_months, Freq.YEARLY to R.string.repeat_unit_years)</ID>
+    <ID>MaxLineLength:TaskRepository.kt$TaskRepository$db.reminders().replace(OwnerType.TASK, subId, db.reminders().forOwner(OwnerType.TASK, sub.id).map { ReminderEntity.of(OwnerType.TASK, subId, it.minutesBefore) })</ID>
+    <ID>MaxLineLength:TaskRepository.kt$TaskRepository$r.toDomain(listRows.firstOrNull { it.id == r.listId }?.kind == SourceKind.GOOGLE, repeat = seriesRows.firstOrNull { it.id == r.seriesId }?.activeRule())</ID>
+    <ID>MaxLineLength:TasksApi.kt$TasksApi$json.decodeFromString(http.get(u("users/@me/lists").addQueryParameter("maxResults", "100").apply { pageToken?.let { addQueryParameter("pageToken", it) } }.build()))</ID>
+    <ID>MaxLineLength:TasksScreen.kt$Text(stringResource(R.string.tab_tasks), style = DsTheme.type.headline, color = c.textPrimary, modifier = Modifier.weight(1f).semantics { heading() })</ID>
+    <ID>MaxLineLength:TasksScreen.kt$if (index &lt; manual.lastIndex) add(CustomAccessibilityAction(moveDown) { manual.swap(index, index + 1); onReorder(manual.map { it.id }); true })</ID>
+    <ID>MaxLineLength:TasksScreen.kt$if (index &gt; 0) add(CustomAccessibilityAction(moveUp) { manual.swap(index, index - 1); onReorder(manual.map { it.id }); true })</ID>
+    <ID>MaxLineLength:TasksViewModel.kt$TasksViewModel$)</ID>
+    <ID>MaxLineLength:TasksViewModel.kt$TasksViewModel$fun delete(id: String, scope: app.daysemble.domain.model.SeriesScope = app.daysemble.domain.model.SeriesScope.THIS)</ID>
+    <ID>MaxLineLength:TasksViewModel.kt$TasksViewModel$fun setCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -&gt; Unit = {})</ID>
+    <ID>MaxLineLength:TodayScreen.kt$AgendaTaskCard(t, now, onToggle = { onToggleTask(t.id, it) }, onClick = { onOpenTask(t.id) }, showDate = true, modifier = Modifier.then(itemMotion()), onLongClick = itemActions?.let { a -&gt; { a.onTaskLongPress(t) } })</ID>
+    <ID>MaxLineLength:TodayScreen.kt$a.freeAfter != null -&gt; add(stringResource(if (a.mostly) R.string.compact_mostly_free_after else R.string.compact_free_after, Fmt.time(a.freeAfter, p)))</ID>
+    <ID>MaxLineLength:TodayScreen.kt$val vm = daysembleViewModel { c, h -&gt; TodayViewModel(c.events, c.tasks, c.settings, c.clock, c.timeContext, h, sleepRepo = c.sleep, seriesReader = c.taskSeries) }</ID>
+    <ID>MaxLineLength:TodayViewModel.kt$TodayViewModel$fun setCompleted(id: String, done: Boolean, onResult: (TaskRepository.Completion) -&gt; Unit = {})</ID>
+    <ID>NestedBlockDepth:CalendarSyncer.kt$CalendarSyncer$suspend fun pushOutbox(): Triple&lt;Int, Int, Int&gt;</ID>
+    <ID>NestedBlockDepth:EventRepository.kt$EventRepository.Companion$fun expand( rows: List&lt;EventEntity&gt;, overrides: List&lt;EventEntity&gt;, cals: Map&lt;String, CalendarSourceEntity&gt;, from: LocalDate, toInclusive: LocalDate, windowStart: Instant, windowEnd: Instant, zone: ZoneId, ): List&lt;EventOccurrence&gt;</ID>
+    <ID>NestedBlockDepth:TasksSyncer.kt$TasksSyncer$suspend fun pushOutbox(): Triple&lt;Int, Int, Int&gt;</ID>
+    <ID>ReturnCount:CalendarSyncer.kt$CalendarSyncer$private suspend fun applyRemote(dto: EventDto, cal: CalendarSourceEntity): Boolean</ID>
+    <ID>ReturnCount:RRule.kt$RRule.Companion$fun parse(line: String): RRule?</ID>
+    <ID>ReturnCount:RelativeTime.kt$RelativeTime$fun of(start: Instant, end: Instant, isAllDay: Boolean, now: Instant, zone: ZoneId): Relative</ID>
+    <ID>ReturnCount:ReminderScheduler.kt$ReminderScheduler$private suspend fun plan(type: OwnerType, ownerId: String, defaultMinute: Int): List&lt;PlannedAlarm&gt;</ID>
+    <ID>ReturnCount:ReminderScheduler.kt$ReminderScheduler$suspend fun isStillPlanned(a: ScheduledAlarmEntity): Boolean</ID>
+    <ID>ReturnCount:SyncWorker.kt$SyncWorker$override suspend fun doWork(): Result</ID>
+    <ID>ReturnCount:TaskRecurrence.kt$TaskRecurrence$fun restartAnchor(rule: RRule, date: LocalDate, previousAnchor: LocalDate): Pair&lt;LocalDate, Int&gt;</ID>
+    <ID>SpreadOperator:DaysembleDatabase.kt$DaysembleDatabase.Companion$(*Migrations.ALL)</ID>
+    <ID>SwallowedException:SyncManager.kt$SyncManager$@Suppress("TooGenericExceptionCaught") e: Exception</ID>
+    <ID>SwallowedException:SyncManager.kt$SyncManager$e: kotlinx.serialization.SerializationException</ID>
+    <ID>TooGenericExceptionCaught:GoogleAuthManager.kt$GoogleAuthManager$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:Receivers.kt$e: Exception</ID>
+    <ID>TooManyFunctions:CalendarMapper.kt$CalendarMapper</ID>
+    <ID>TooManyFunctions:Daos.kt$CalendarSourceDao</ID>
+    <ID>TooManyFunctions:Daos.kt$EventDao</ID>
+    <ID>TooManyFunctions:Daos.kt$SyncDao</ID>
+    <ID>TooManyFunctions:Daos.kt$TaskDao</ID>
+    <ID>TooManyFunctions:Formatting.kt$Fmt</ID>
+    <ID>UnusedPrivateProperty:ScreenSmokeTest.kt$ScreenSmokeTest$i</ID>
+  </CurrentIssues>
+</SmellBaseline>
