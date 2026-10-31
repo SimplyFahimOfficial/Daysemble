@@ -19,6 +19,9 @@ import app.daysemble.data.prefs.AppSettings
 import app.daysemble.ui.DaysembleRoot
 import app.daysemble.ui.theme.DaysembleTheme
 import kotlinx.coroutines.flow.Flow
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /** A request to open an item, e.g. from a reminder notification. */
 data class OpenRequest(val type: OwnerType, val id: String, val occurrenceKey: String?)
@@ -26,6 +29,8 @@ data class OpenRequest(val type: OwnerType, val id: String, val occurrenceKey: S
 class MainActivity : ComponentActivity() {
 
     private val openRequests = MutableStateFlow<OpenRequest?>(null)
+    /** A launcher shortcut to act on (New task, New event, Search); cleared once handled. */
+    private val shortcutRequests = MutableStateFlow<AppShortcut?>(null)
 
     /** Latest reduced-motion decision (system setting or the user's override), read by the splash exit. */
     private var reducedMotion = false
@@ -33,6 +38,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         parse(intent)?.let { openRequests.value = it }
+        AppShortcut.fromIntent(intent)?.let { shortcutRequests.value = it }
     }
 
     private fun parse(intent: Intent?): OpenRequest? {
@@ -45,7 +51,11 @@ class MainActivity : ComponentActivity() {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
         val container = (application as DaysembleApp).container
-        if (savedInstanceState == null) parse(intent)?.let { openRequests.value = it }
+        if (savedInstanceState == null) {
+            parse(intent)?.let { openRequests.value = it }
+            AppShortcut.fromIntent(intent)?.let { shortcutRequests.value = it }
+        }
+        lifecycleScope.launch(Dispatchers.Default) { AppShortcuts.publish(applicationContext) }
 
         // Keep the splash until settings are read, so the first frame has the right theme.
         var settingsLoaded = false
@@ -82,6 +92,7 @@ class MainActivity : ComponentActivity() {
                 DaysembleRoot(
                     container = container, settings = s,
                     openRequests = openRequests, onOpenHandled = { openRequests.value = null },
+                    shortcutRequests = shortcutRequests, onShortcutHandled = { shortcutRequests.value = null },
                 )
             }
         }

@@ -22,7 +22,6 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.DaysembleApp
 import app.daysemble.R
+import app.daysemble.ui.components.DsDialogAction
+import app.daysemble.ui.components.DsDialogButtons
 import app.daysemble.data.db.SourceKind
 import app.daysemble.data.repo.toArgbInt
 import app.daysemble.ui.components.DsButton
@@ -138,7 +139,7 @@ fun ListsCalendarsRoute(onBack: () -> Unit) {
             AlertDialog(
                 onDismissRequest = { confirmDelete = null }, containerColor = colors.surfaceRaised,
                 text = { Text(stringResource(if (isList) R.string.list_last_refused else R.string.calendar_last_refused), style = DsTheme.type.body) },
-                confirmButton = { TextButton({ confirmDelete = null }) { Text(stringResource(R.string.action_done), color = colors.textPrimary) } },
+                confirmButton = { DsDialogButtons(listOf(DsDialogAction(stringResource(R.string.action_done), { confirmDelete = null }))) },
             )
         } else {
             DsConfirmDialog(
@@ -204,16 +205,21 @@ private fun NameDialog(
                     }
                 }
                 if (onDelete != null) {
-                    TextButton(onClick = onDelete, modifier = Modifier.padding(top = Space.m)) { Text(stringResource(R.string.action_delete), color = c.error) }
+                    DsButton(
+                        stringResource(R.string.action_delete), onDelete, Modifier.padding(top = Space.m),
+                        style = DsButtonStyle.Destructive,
+                    )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(name, color); onDismiss() }, enabled = !nameEditable || name.isNotBlank()) {
-                Text(stringResource(R.string.action_save), color = c.textPrimary)
-            }
+            DsDialogButtons(
+                listOf(
+                    DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel),
+                    DsDialogAction(stringResource(R.string.action_save), { onSave(name, color); onDismiss() }, enabled = !nameEditable || name.isNotBlank()),
+                ),
+            )
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) } },
     )
 }
 

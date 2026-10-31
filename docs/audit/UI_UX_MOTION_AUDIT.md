@@ -48,8 +48,8 @@ Priority: C = Critical, H = High, M = Medium, L = Low. Complexity: S = small, M 
 | D3 | Settings | "Date & time" and "Lists & calendars" shared the `CalendarMonth` icon | The two rows looked like the same destination. | `ListAlt` for Lists & calendars | S | M | `settings/SettingsScreens.kt` | Done |
 | D4 | Event detail, missing-event state | Back arrow, while the loaded page has a close X | Same screen, different exit control (wayfinding). | Use the close X in both states | S | L | `event/EventDetailScreen.kt` | Done |
 | D5 | Radii | The 20dp card and 28dp panel radii were private literals | Token drift (11 literal shapes in total, see AUDIT.md A5). | `Radii.tile` and `Radii.panel`, used by the cards and the Today panel. The other literals are deliberate small radii (calendar blocks, history grid) and the fixed radius on the wrapping time pill. | S | L | `theme/Dimens.kt`, `components/Cards.kt`, `today/TodayScreen.kt` | Done (partial) |
-| D6 | Dialogs | Some use `DsButton`; most use M3 `TextButton` with hand-set colours | Inconsistent button styling in dialogs | One `DsDialogButtons` row | M | M | ItemActions, ListsCalendars, Schedule, Sleep, EventDetail, TaskRepeat | Recommended |
-| D7 | Shadows | 10dp scrim-coloured shadows on the bar and FAB; 14dp on the Today panel (light theme). The design note says elevation is tonal. | Heavy for a "calm" app, and it contradicts the stated rule | Add an elevation token. Try about 6dp with a softer spot colour once D1 is in. Needs on-device review. | S | L | `DaysembleRoot.kt`, `TodayScreen.kt` | Recommended |
+| D6 | Dialogs | Some use `DsButton`; most use M3 `TextButton` with hand-set colours | Inconsistent button styling in dialogs | `DsDialogButtons` in every dialog (16 of them). Confirm is the ink pill, Destructive is red, an Alternative is outlined, Cancel is plain text. Up to two actions sit side by side; three or more stack full width with Cancel last. | M | M | `components/DialogButtons.kt`, plus Pickers, ZonePicker, ItemActions, EventDetail, ListsCalendars, Schedule, Settings, Sleep, TaskRepeat | Done |
+| D7 | Shadows | 10dp scrim-coloured shadows on the bar and FAB; 14dp on the Today panel (light theme). The design note says elevation is tonal. | Heavy for a "calm" app, and it contradicts the stated rule | `Elevation` tokens: bar and FAB 6dp, panel 8dp, dragged row 6dp, shadow colour at 50 % of the scrim | S | L | `theme/Dimens.kt`, `DaysembleRoot.kt`, `TodayScreen.kt`, `TasksScreen.kt` | Done (judged on renders only, not on a device) |
 
 ### Motion system
 
@@ -60,20 +60,23 @@ Priority: C = Critical, H = High, M = Medium, L = Low. Complexity: S = small, M 
 | A3 | The completed-section chevron rotated even with reduced motion | `snap()` when reduced | L | Done |
 | A4 | The role table didn't cover drops, swipe arming, the scroll edge or haptics | Documented in `theme/Motion.kt`, with the haptic rule: commits only | L | Done |
 | A5 | No shared element from a list item into its detail (AUDIT.md B5) | Needs a design for the recorded main layer under the NavHost | M | Recommended |
-| A6 | Reorder can't auto-scroll past the visible rows (AUDIT.md F9) | Drive `listState.scrollBy` near the edges while dragging | M | Recommended |
+| A6 | Reorder can't auto-scroll past the visible rows (AUDIT.md F9) | Within 64dp of an edge the list scrolls under the held row, up to 900 dp/s and faster nearer the edge, and keeps going while the finger is still. A row held past the last visible row now takes that row's slot. Before this, the row's own slot could scroll away, which dropped the gesture without saving. A cancelled drag now keeps the order on screen. | M | Done |
 
 ### UX, accessibility and states
 
 | # | Finding | Recommendation | P |
 |---|---|---|---|
-| U1 | `ErrorState` and `OfflineState` exist but no screen uses them. Sync problems show only in the header badge. | Show `OfflineState` in Accounts when the last sync failed for network reasons | M |
+| U1 | `ErrorState` and `OfflineState` exist but no screen uses them. Sync problems show only in the header badge. | **Done:** Accounts shows `OfflineState` ("You're offline": changes are kept and sync later) or `ErrorState` (the reason, plus Try again). Neither shows while a sync is running or when a reconnect is needed. | M |
 | U2 | Loading: Today shows blank placeholders, and Calendar and Task detail show nothing until Room responds. Normally this takes a few ms. | Keep it this way; skeletons would flash. Add one only if device timing shows a gap of 100 ms or more. | L |
 | U3 | Time-grid chips are 22–28dp tall, and the grid has no accessible create-at-slot action (AUDIT.md A5, F11) | 48dp hit padding; a custom accessibility action | M |
 | U4 | All haptics go through `LocalHapticFeedback`, so the system haptic setting turns them off. Reduced motion removes the new press and lift scales. | — | — |
 
 ### New features and integrations (recommended, not built)
 
-- **Launcher shortcuts** ("New task", "New event", "Search"). This needs no dependency: add `res/xml/shortcuts.xml` to each of the three launcher aliases, and extend `MainActivity.parse` with an action that opens Quick Add or Search. It's left out because the alias switching and the CI manifest audit (`scripts/ci/apk_audit.py`) need a reviewed change.
+- **Launcher shortcuts: done** (`AppShortcuts.kt`). New task, New event and Search are dynamic shortcuts, published at launch off the main thread.
+  - Why dynamic: static `shortcuts.xml` belongs to one launcher alias, so it would vanish when the logo changes, and it needs the literal package name, which differs in debug builds.
+  - What they open: on the main screen, New task and New event open Quick Add on that kind. Over another page they open the full editor on top, so an editor with unsaved changes is never closed. Search doesn't stack a second copy.
+  - Manifest: no new exported component or permission. `apk_audit.py` passes on the release APK.
 - **Today widget** (Glance). It adds a dependency, so it's roadmap item 9 in AUDIT.md.
 
 ### Performance
@@ -111,3 +114,25 @@ Nothing new was measured. Without a device there is no JankStats, Macrobenchmark
 - Frame timing.
 
 No new tests were added (none were requested). The arming, drop-glide and haptic paths are therefore covered only by compilation and the existing suites.
+
+## 4. Second pass (same branch)
+
+**Implemented:** D6, D7, A6, U1 and the launcher shortcuts, as described in the tables above.
+
+**Checks after the second pass:**
+- `assembleDebug assembleRelease testDebugUnitTest lintDebug`: BUILD SUCCESSFUL.
+  - 431 tests (7 came in with the merge of `main`), 396 passed, 35 skipped, 0 failed.
+  - Lint: 0 errors, 10 warnings and 1 hint. That is one warning fewer than before: Try again reuses the unused `action_retry` string. The hint suggests reporting shortcut usage.
+- detekt: no findings in code changed here. Main at `a1a1ff6` already has 11 findings from PR #22 (`CalendarSyncer`, `EditOccurrenceFlowTest`, `EventEditorScreen`), and they are still there.
+- `scripts/ci/apk_audit.py` on the release APK: PASS.
+
+**Temporary checks.** I ran a set of temporary Robolectric checks and then deleted them; none are committed:
+- The three shortcuts are published.
+- New event opens Quick Add on Event, and New task on Task.
+- Search opens once.
+- Accounts shows the offline state, and the error state with Try again.
+- The shared confirm row works (Cancel and Delete).
+- Auto-scroll: a row held at the bottom edge of a 30-task list moved from position 0 to 29.
+- The auto-scroll check first failed. That failure is what exposed the dropped-gesture bug, which is fixed above.
+
+**Rendered and checked:** the dark series dialog, the time picker, both Accounts states and Today. The first dialog style had a tonal fill for alternatives, which nearly vanished on the dark dialog, so alternatives are now outlined.

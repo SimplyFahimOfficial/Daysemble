@@ -24,6 +24,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
+import app.daysemble.ui.theme.Elevation
 import app.daysemble.ui.theme.Sizes
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.SearchOff
@@ -39,6 +40,8 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
@@ -138,8 +141,54 @@ fun TasksScreen(
     val dragScope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
-    val liftPx = with(density) { 6.dp.toPx() }
+    val liftPx = with(density) { Elevation.lifted.toPx() }
     val m = DsTheme.motion
+    // Moves the dragged row into the slot of the row under its centre, if that's another one. Past
+    // the first or last visible row (under the bottom bar, or while the list auto-scrolls), it takes
+    // that row's slot, so its own slot always stays on screen and the gesture is never dropped.
+    fun swapUnderFinger(id: String) {
+        val infos = listState.layoutInfo.visibleItemsInfo
+        val cur = infos.firstOrNull { it.key == id } ?: return
+        val center = (cur.offset + cur.size / 2 + dragOffset).toInt()
+        val rows = infos.filter { info -> manual.any { it.id == info.key } }
+        val target = rows.firstOrNull { it.key != id && center in it.offset..(it.offset + it.size) }
+            ?: rows.lastOrNull()?.takeIf { it.key != id && center > it.offset + it.size }
+            ?: rows.firstOrNull()?.takeIf { it.key != id && center < it.offset }
+            ?: return
+        manual.swap(manual.indexOfFirst { it.id == id }, manual.indexOfFirst { it.id == target.key })
+        dragOffset += (cur.offset - target.offset).toFloat()
+        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+    }
+    // Held near the top or bottom of the list, the list scrolls under the row, faster the closer
+    // it is to the edge, and keeps going while the finger is still. The row stays under the finger
+    // (the scroll is added to its offset) and keeps taking the places it passes.
+    val edgePx = with(density) { AutoScrollEdge.toPx() }
+    val maxSpeedPx = with(density) { AutoScrollMaxSpeed.toPx() }
+    LaunchedEffect(dragging, settling) {
+        val id = dragging ?: return@LaunchedEffect
+        if (settling) return@LaunchedEffect
+        var last = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            val dt = (now - last) / 1_000_000_000f
+            last = now
+            val info = listState.layoutInfo
+            val cur = info.visibleItemsInfo.firstOrNull { it.key == id }
+            val top = cur?.let { it.offset + dragOffset } ?: 0f
+            val end = info.viewportEndOffset - info.afterContentPadding
+            // -1..1: how far into the top (negative) or bottom edge zone the row is; 0 outside both.
+            val pull = when {
+                cur == null -> 0f
+                top < edgePx -> -((edgePx - top) / edgePx).coerceAtMost(1f)
+                top + cur.size > end - edgePx -> ((top + cur.size - (end - edgePx)) / edgePx).coerceAtMost(1f)
+                else -> 0f
+            }
+            if (pull != 0f) {
+                dragOffset += listState.scrollBy(pull * kotlin.math.abs(pull) * maxSpeedPx * dt)
+                swapUnderFinger(id)
+            }
+        }
+    }
     fun settleDrop(id: String) {
         settling = true
         settleJob = dragScope.launch {
@@ -274,18 +323,7 @@ fun TasksScreen(
                                         onDrag = { change, amount ->
                                             change.consume()
                                             dragOffset += amount.y
-                                            val infos = listState.layoutInfo.visibleItemsInfo
-                                            val cur = infos.firstOrNull { it.key == task.id } ?: return@detectDragGesturesAfterLongPress
-                                            val center = cur.offset + cur.size / 2 + dragOffset
-                                            val target = infos.firstOrNull { info ->
-                                                info.key != task.id && manual.any { it.id == info.key } &&
-                                                    center.toInt() in info.offset..(info.offset + info.size)
-                                            } ?: return@detectDragGesturesAfterLongPress
-                                            val from = manual.indexOfFirst { it.id == task.id }
-                                            val to = manual.indexOfFirst { it.id == target.key }
-                                            manual.swap(from, to)
-                                            dragOffset += (cur.offset - target.offset).toFloat()
-                                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                            swapUnderFinger(task.id)
                                         },
                                         onDragEnd = {
                                             // The order is saved now; the glide only follows it.
@@ -294,6 +332,8 @@ fun TasksScreen(
                                             settleDrop(task.id)
                                         },
                                         onDragCancel = {
+                                            // Cancelled by the system, not the user: keep the order they see.
+                                            onReorder(manual.map { it.id })
                                             settleDrop(task.id)
                                         },
                                     )
@@ -323,6 +363,10 @@ fun TasksScreen(
         }
     }
 }
+
+/** Distance from the list's edge where a dragged row starts scrolling it, and the top speed. */
+private val AutoScrollEdge = 64.dp
+private val AutoScrollMaxSpeed = 900.dp // per second
 
 @Composable
 private fun SwipeableTaskRow(

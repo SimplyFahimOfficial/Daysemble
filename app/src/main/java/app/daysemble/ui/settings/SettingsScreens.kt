@@ -44,6 +44,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.BuildConfig
 import app.daysemble.DaysembleApp
 import app.daysemble.R
+import app.daysemble.ui.components.DsDialogAction
+import app.daysemble.ui.components.DsDialogButtons
 import app.daysemble.data.prefs.AppSettings
 import app.daysemble.data.prefs.ClockFormat
 import app.daysemble.data.prefs.TaskSort
@@ -172,8 +174,14 @@ private fun DisplayNameDialog(initial: String, onDismiss: () -> Unit, onSave: (S
                 focusRequester = focus, capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words,
             )
         },
-        confirmButton = { app.daysemble.ui.components.DsButton(stringResource(R.string.action_save), { onSave(name) }, style = app.daysemble.ui.components.DsButtonStyle.Ghost) },
-        dismissButton = { app.daysemble.ui.components.DsButton(stringResource(R.string.action_cancel), onDismiss, style = app.daysemble.ui.components.DsButtonStyle.Ghost) },
+        confirmButton = {
+            DsDialogButtons(
+                listOf(
+                    DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel),
+                    DsDialogAction(stringResource(R.string.action_save), { onSave(name) }),
+                ),
+            )
+        },
     )
 }
 

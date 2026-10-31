@@ -2,7 +2,6 @@ package app.daysemble.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -10,7 +9,6 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TimePickerDefaults
 import androidx.compose.material3.rememberDatePickerState
@@ -43,21 +41,22 @@ fun DsDatePickerDialog(
         onDismissRequest = onDismiss,
         shape = Radii.dialog,
         confirmButton = {
-            TextButton(
-                onClick = {
-                    state.selectedDateMillis?.let { onPick(java.time.Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
-                    onDismiss()
-                },
-                enabled = state.selectedDateMillis != null,
-            ) { Text(stringResource(R.string.action_done), color = c.textPrimary) }
-        },
-        dismissButton = {
-            Row {
-                if (onClear != null) {
-                    TextButton(onClick = { onClear(); onDismiss() }) { Text(stringResource(R.string.action_clear), color = c.textSecondary) }
-                }
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) }
-            }
+            DsDialogButtons(
+                pickerActions(
+                    onClear = onClear?.let { { it(); onDismiss() } },
+                    onDismiss = onDismiss,
+                    done = DsDialogAction(
+                        stringResource(R.string.action_done),
+                        onClick = {
+                            state.selectedDateMillis?.let { onPick(java.time.Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
+                            onDismiss()
+                        },
+                        enabled = state.selectedDateMillis != null,
+                    ),
+                ),
+                Modifier.padding(start = Space.l),
+                stacked = false,
+            )
         },
         colors = DatePickerDefaults.colors(containerColor = c.surfaceRaised),
     ) {
@@ -90,17 +89,14 @@ fun DsTimePickerDialog(
         shape = Radii.dialog,
         containerColor = c.surfaceRaised,
         confirmButton = {
-            TextButton(onClick = { onPick(LocalTime.of(state.hour, state.minute)); onDismiss() }) {
-                Text(stringResource(R.string.action_done), color = c.textPrimary)
-            }
-        },
-        dismissButton = {
-            Row {
-                if (onClear != null) {
-                    TextButton(onClick = { onClear(); onDismiss() }) { Text(stringResource(R.string.action_clear), color = c.textSecondary) }
-                }
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) }
-            }
+            DsDialogButtons(
+                pickerActions(
+                    onClear = onClear?.let { { it(); onDismiss() } },
+                    onDismiss = onDismiss,
+                    done = DsDialogAction(stringResource(R.string.action_done), { onPick(LocalTime.of(state.hour, state.minute)); onDismiss() }),
+                ),
+                stacked = false,
+            )
         },
         text = {
             Column(Modifier.fillMaxWidth().padding(top = Space.s), verticalArrangement = Arrangement.Center) {
@@ -140,12 +136,23 @@ fun DsConfirmDialog(
         title = { Text(title, style = DsTheme.type.titleLarge, color = c.textPrimary) },
         text = body?.let { { Text(it, style = DsTheme.type.body, color = c.textSecondary) } },
         confirmButton = {
-            TextButton(onClick = { onConfirm(); onDismiss() }) {
-                Text(confirm, color = if (destructive) c.error else c.textPrimary, style = DsTheme.type.label)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = c.textSecondary, style = DsTheme.type.label) }
+            DsDialogButtons(
+                listOf(
+                    DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel),
+                    DsDialogAction(
+                        confirm, { onConfirm(); onDismiss() },
+                        if (destructive) DsDialogAction.Kind.Destructive else DsDialogAction.Kind.Confirm,
+                    ),
+                ),
+            )
         },
     )
+}
+
+/** Cancel, then Clear when offered, then Done. Clear is an alternative, so it's outlined, not plain. */
+@Composable
+private fun pickerActions(onClear: (() -> Unit)?, onDismiss: () -> Unit, done: DsDialogAction): List<DsDialogAction> = buildList {
+    add(DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel))
+    if (onClear != null) add(DsDialogAction(stringResource(R.string.action_clear), onClear, DsDialogAction.Kind.Alternative))
+    add(done)
 }

@@ -593,6 +593,16 @@
     <string name="sync_state_reauth">Sign in needed</string>
     <string name="sync_state_offline">Offline</string>
     <string name="sync_state_error">Sync problem</string>
+    <string name="sync_offline_title">You\'re offline</string>
+    <string name="sync_offline_body">Your changes are saved on this device and sync with Google when you\'re back online.</string>
+    <string name="sync_error_title">The last sync didn\'t finish</string>
+    <!-- Launcher shortcuts (long-press the app icon). Short labels: about 10 characters. -->
+    <string name="shortcut_new_task">New task</string>
+    <string name="shortcut_new_task_long">Add a task</string>
+    <string name="shortcut_new_event">New event</string>
+    <string name="shortcut_new_event_long">Add an event</string>
+    <string name="shortcut_search">Search</string>
+    <string name="shortcut_search_long">Search events and tasks</string>
     <string name="sync_state_synced">Synced %1$s</string>
     <string name="sync_state_waiting">Waiting to sync</string>
     <string name="err_offline">no connection</string>
