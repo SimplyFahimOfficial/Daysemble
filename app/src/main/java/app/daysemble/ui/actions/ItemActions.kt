@@ -23,7 +23,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -56,6 +55,8 @@ import app.daysemble.ui.LocalEventDeleted
 import app.daysemble.ui.LocalTaskDeleted
 import app.daysemble.ui.LocalTaskRescheduled
 import app.daysemble.ui.components.DsConfirmDialog
+import app.daysemble.ui.components.DsDialogAction
+import app.daysemble.ui.components.DsDialogButtons
 import app.daysemble.ui.components.DsDatePickerDialog
 import app.daysemble.ui.format.Fmt
 import app.daysemble.ui.format.LocalAppClock
@@ -190,16 +191,18 @@ fun ItemActionsHost(
                 title = { Text(stringResource(R.string.delete_recurring_title), style = DsTheme.type.titleLarge, color = c.textPrimary) },
                 text = { Text(stringResource(R.string.delete_recurring_body), style = DsTheme.type.body, color = c.textSecondary) },
                 confirmButton = {
-                    Column(horizontalAlignment = Alignment.End) {
-                        TextButton(onClick = {
-                            confirmDelete = null
-                            scope.launch { onEventDeleted(container.events.deleteOccurrence(t.id, t.occurrenceKey.orEmpty()), true) }
-                        }) { Text(stringResource(R.string.delete_this_event), color = c.error) }
-                        TextButton(onClick = { confirmDelete = null; scope.launch { onEventDeleted(container.events.delete(t.id), false) } }) {
-                            Text(stringResource(R.string.delete_all_events), color = c.error)
-                        }
-                        TextButton(onClick = { confirmDelete = null }) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) }
-                    }
+                    DsDialogButtons(
+                        listOf(
+                            DsDialogAction(stringResource(R.string.delete_this_event), {
+                                confirmDelete = null
+                                scope.launch { onEventDeleted(container.events.deleteOccurrence(t.id, t.occurrenceKey.orEmpty()), true) }
+                            }, DsDialogAction.Kind.Destructive),
+                            DsDialogAction(stringResource(R.string.delete_all_events), {
+                                confirmDelete = null; scope.launch { onEventDeleted(container.events.delete(t.id), false) }
+                            }, DsDialogAction.Kind.Destructive),
+                            DsDialogAction(stringResource(R.string.action_cancel), { confirmDelete = null }, DsDialogAction.Kind.Cancel),
+                        ),
+                    )
                 },
             )
             else -> DsConfirmDialog(
@@ -263,7 +266,7 @@ private fun RescheduleDialog(onPick: (LocalDate) -> Unit, onDismiss: () -> Unit)
                 ) { Text(stringResource(R.string.pick_date), style = DsTheme.type.body, color = c.textPrimary) }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) } },
+        confirmButton = { DsDialogButtons(listOf(DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel))) },
     )
 }
 

@@ -120,6 +120,7 @@ import app.daysemble.ui.format.TimePrefs
 import app.daysemble.ui.format.durationText
 import app.daysemble.ui.format.rememberMinuteTicker
 import app.daysemble.ui.theme.DsTheme
+import app.daysemble.ui.theme.Elevation
 import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
@@ -546,7 +547,13 @@ private fun AgendaPanel(
             .fillMaxSize()
             // Light: a soft ambient shadow lifts the white panel off the white canvas. Dark: tone
             // and the hairline do it (shadows don't show on near-black).
-            .then(if (!c.isDark) Modifier.shadow(14.dp, PanelShape, ambientColor = c.scrim, spotColor = Color.Transparent) else Modifier)
+            .then(
+                if (c.isDark) Modifier
+                else Modifier.shadow(
+                    Elevation.panel, PanelShape,
+                    ambientColor = c.scrim.copy(alpha = c.scrim.alpha * Elevation.SHADOW_ALPHA), spotColor = Color.Transparent,
+                ),
+            )
             .clip(PanelShape)
             .background(c.surface)
             .border(Sizes.hairline, c.outline, PanelShape),

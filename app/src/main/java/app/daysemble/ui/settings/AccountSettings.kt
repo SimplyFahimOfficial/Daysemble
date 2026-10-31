@@ -46,6 +46,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.BuildConfig
 import app.daysemble.DaysembleApp
 import app.daysemble.R
+import app.daysemble.ui.components.ErrorState
+import app.daysemble.ui.components.OfflineState
 import app.daysemble.data.db.SourceKind
 import app.daysemble.data.db.SyncService
 import app.daysemble.data.google.auth.AuthResult
@@ -258,6 +260,24 @@ private fun Connected(
         is ConnectUi.Error -> Callout(
             stringResource(R.string.google_connect_failed), stringResource(R.string.google_error_code, ui.reason),
             Modifier.padding(horizontal = Space.gutter),
+        )
+        else -> Unit
+    }
+    // A failed sync gets a clear state with the way forward, not only a red subtitle further down.
+    // Reconnecting (below) has its own message, so it isn't repeated here.
+    when (syncIndicator(s)) {
+        SyncIndicator.Offline -> OfflineState(
+            stringResource(R.string.sync_offline_title),
+            stringResource(R.string.sync_offline_body) +
+                if (s.pendingChanges > 0) "\n" + pluralStringResource(R.plurals.pending_changes, s.pendingChanges, s.pendingChanges) else "",
+        )
+        SyncIndicator.Error -> ErrorState(
+            stringResource(R.string.sync_error_title),
+            listOfNotNull(
+                s.calendar.lastError?.takeIf { s.calendar.enabled },
+                s.tasks.lastError?.takeIf { s.tasks.enabled },
+            ).distinct().map { errorText(it) }.joinToString("\n"),
+            onRetry = syncNow, retryLabel = stringResource(R.string.action_retry),
         )
         else -> Unit
     }

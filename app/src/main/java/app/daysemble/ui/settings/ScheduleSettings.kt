@@ -14,7 +14,6 @@ import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +28,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.DaysembleApp
 import app.daysemble.R
+import app.daysemble.ui.components.DsDialogAction
+import app.daysemble.ui.components.DsDialogButtons
 import app.daysemble.core.time.DaySchedulePrefs
 import app.daysemble.core.time.SleepLog
 import app.daysemble.core.time.SleepSchedule
@@ -211,15 +212,13 @@ private fun WeekdayDialog(day: DayOfWeek, prefs: DaySchedulePrefs, p: TimePrefs,
             }
         },
         confirmButton = {
-            TextButton(enabled = wake != bed, onClick = { onSave(SleepSchedule(wake, bed)); onDismiss() }) {
-                Text(stringResource(R.string.action_save), color = c.textPrimary, style = DsTheme.type.label)
-            }
-        },
-        dismissButton = {
-            Column {
-                TextButton(onClick = { onSave(null); onDismiss() }) { Text(stringResource(R.string.schedule_use_default), color = c.textSecondary, style = DsTheme.type.label) }
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = c.textSecondary, style = DsTheme.type.label) }
-            }
+            DsDialogButtons(
+                listOf(
+                    DsDialogAction(stringResource(R.string.action_save), { onSave(SleepSchedule(wake, bed)); onDismiss() }, enabled = wake != bed),
+                    DsDialogAction(stringResource(R.string.schedule_use_default), { onSave(null); onDismiss() }, DsDialogAction.Kind.Alternative),
+                    DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel),
+                ),
+            )
         },
     )
     pick?.let { which ->
