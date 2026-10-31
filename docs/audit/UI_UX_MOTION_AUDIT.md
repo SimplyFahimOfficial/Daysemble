@@ -5,6 +5,7 @@ Reference: the `apple-design` guidance (WWDC *Designing Fluid Interfaces* and *P
 Builds on [AUDIT.md](AUDIT.md), which already fixed the structural motion problems: whole-app recomposition, hidden tabs doing work, the panel re-measuring every frame, double-image day swaps, and the month height jump. This pass doesn't redo that work.
 
 **Evidence levels.**
+
 - **Confirmed** means I read the code path, or a test or render shows it.
 - **Render** means a Robolectric native-graphics frame (`VisualAuditRender`). These frames show layout, not real-time smoothness.
 - No device or emulator was available, so I report no frame timings.
@@ -92,9 +93,11 @@ Nothing new was measured. Without a device there is no JankStats, Macrobenchmark
 **Environment.** I installed the Android SDK in the sandbox (platform 37, build-tools 36/37) and ran JDK 21.
 
 **Baseline before any change.**
+
 - `testDebugUnitTest`: 424 tests, 389 passed, 35 skipped, 0 failed.
 
 **After the changes.**
+
 - `assembleDebug testDebugUnitTest lintDebug`: BUILD SUCCESSFUL.
   - 424 tests, 389 passed, 35 skipped, 0 failed.
   - Lint: 0 errors, 11 warnings, none in code changed here.
@@ -103,10 +106,12 @@ Nothing new was measured. Without a device there is no JankStats, Macrobenchmark
 **Regression caught and fixed.** `DatePressFeedbackTest` failed on my first chip change, because I had replaced the app's ambient indication with an explicit `ripple()`. The chip now uses `LocalIndication.current` on the pill, and the test passes.
 
 **Renders.**
+
 - I ran the opt-in `VisualAuditRender` / `NewFeaturesRender` suite before and after. Its 4 `details*` cases fail identically on the untouched baseline (a stale harness assertion), so that failure is pre-existing.
 - Before/after crops confirm D1 (Today light and Tasks dark), D2 and D3.
 
 **Not verified.** Nothing here was checked on a device:
+
 - How the haptics feel, and whether the GestureThresholdActivate, SegmentTick and GestureEnd constants are supported on a given device. Unsupported types are no-ops.
 - The real-time feel of the drop glide and swipe arming.
 - Predictive back.
@@ -120,6 +125,7 @@ No new tests were added (none were requested). The arming, drop-glide and haptic
 **Implemented:** D6, D7, A6, U1 and the launcher shortcuts, as described in the tables above.
 
 **Checks after the second pass:**
+
 - `assembleDebug assembleRelease testDebugUnitTest lintDebug`: BUILD SUCCESSFUL.
   - 431 tests (7 came in with the merge of `main`), 396 passed, 35 skipped, 0 failed.
   - Lint: 0 errors, 10 warnings and 1 hint. That is one warning fewer than before: Try again reuses the unused `action_retry` string. The hint suggests reporting shortcut usage.
@@ -127,6 +133,7 @@ No new tests were added (none were requested). The arming, drop-glide and haptic
 - `scripts/ci/apk_audit.py` on the release APK: PASS.
 
 **Temporary checks.** I ran a set of temporary Robolectric checks and then deleted them; none are committed:
+
 - The three shortcuts are published.
 - New event opens Quick Add on Event, and New task on Task.
 - Search opens once.

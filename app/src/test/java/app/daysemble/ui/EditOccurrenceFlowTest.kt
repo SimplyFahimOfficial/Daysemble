@@ -58,7 +58,10 @@ class EditOccurrenceFlowTest {
     }
 
     private fun waitFor(text: String) {
-        repeat(40) { if (compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()) return; settle(2) }
+        repeat(40) {
+            if (compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()) return
+            settle(2)
+        }
         compose.onNodeWithText(text).assertExists()
     }
 
@@ -92,7 +95,10 @@ class EditOccurrenceFlowTest {
         compose.onNode(hasText("Save") and hasClickAction()).performClick(); settle(30)
 
         fun titleOn(d: java.time.LocalDate) = runBlocking { c.events.occurrences(d, d, zone).first() }.single { it.eventId == id }.title
-        repeat(40) { if (titleOn(today) == "Gym (short)") return@repeat; settle(2) }
+        repeat(40) {
+            if (titleOn(today) == "Gym (short)") return@repeat
+            settle(2)
+        }
         assertThat(titleOn(today)).isEqualTo("Gym (short)")
         assertThat(titleOn(today.plusDays(1))).isEqualTo("Gym")
         assertThat(titleOn(today.minusDays(1))).isEqualTo("Gym")

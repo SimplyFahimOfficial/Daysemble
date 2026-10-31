@@ -185,21 +185,28 @@ fun SleepPrompts(actions: SleepActions) {
             shape = Radii.dialog, containerColor = c.surfaceRaised,
             title = { Text(title, style = DsTheme.type.titleLarge, color = c.textPrimary) },
             text = { Text(body, style = DsTheme.type.body, color = c.textSecondary) },
-            confirmButton = {
-                DsDialogButtons(
-                    listOf(
-                        DsDialogAction(stringResource(R.string.sleep_update_to_now), { actions.prompt = null; actions.moveToNow(prompt) }),
-                        DsDialogAction(
-                            stringResource(R.string.sleep_edit_times), { actions.prompt = null; actions.edit(record) }, DsDialogAction.Kind.Alternative,
-                        ),
-                        DsDialogAction(stringResource(R.string.action_cancel), { actions.prompt = null }, DsDialogAction.Kind.Cancel),
-                    ),
-                )
-            },
+            confirmButton = { DsDialogButtons(promptActions(actions, prompt, record)) },
         )
     }
     actions.editing?.let { r -> SleepEditDialog(r, actions, onDismiss = { actions.editing = null }) }
     if (actions.adding) SleepEditDialog(null, actions, onDismiss = { actions.adding = false })
+}
+
+/** Update to now (the main answer), Edit times, Cancel. */
+@Composable
+private fun promptActions(actions: SleepActions, prompt: SleepActions.Prompt, record: SleepRecord): List<DsDialogAction> = listOf(
+    DsDialogAction(stringResource(R.string.sleep_update_to_now), { actions.prompt = null; actions.moveToNow(prompt) }),
+    DsDialogAction(stringResource(R.string.sleep_edit_times), { actions.prompt = null; actions.edit(record) }, DsDialogAction.Kind.Alternative),
+    DsDialogAction(stringResource(R.string.action_cancel), { actions.prompt = null }, DsDialogAction.Kind.Cancel),
+)
+
+/** Cancel, Delete (for an existing record), Save. */
+@Composable
+private fun editActions(canDelete: Boolean, onDismiss: () -> Unit, onDelete: () -> Unit, onSave: () -> Unit): List<DsDialogAction> {
+    val cancel = DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel)
+    val delete = DsDialogAction(stringResource(R.string.action_delete), onDelete, DsDialogAction.Kind.Destructive)
+    val save = DsDialogAction(stringResource(R.string.action_save), onSave)
+    return if (canDelete) listOf(cancel, delete, save) else listOf(cancel, save)
 }
 
 /** The two buttons, side by side; the one that fits the moment comes first and is filled. */
@@ -308,22 +315,14 @@ private fun SleepEditDialog(record: SleepRecord?, actions: SleepActions, onDismi
             }
         },
         confirmButton = {
-            DsDialogButtons(
-                buildList {
-                    add(DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel))
-                    if (record != null) add(DsDialogAction(stringResource(R.string.action_delete), { confirmDelete = true }, DsDialogAction.Kind.Destructive))
-                    add(
-                        DsDialogAction(stringResource(R.string.action_save), {
-                            scope.launch {
-                                val e = actions.save(record?.id, bed?.let(Instant::ofEpochMilli), wake?.let(Instant::ofEpochMilli))
-                                if (e == null) onDismiss() else error = e
-                            }
-                        }),
-                    )
-                },
-                // Cancel, Delete, Save are short: keep them on one line.
-                stacked = false,
-            )
+            val save: () -> Unit = {
+                scope.launch {
+                    val e = actions.save(record?.id, bed?.let(Instant::ofEpochMilli), wake?.let(Instant::ofEpochMilli))
+                    if (e == null) onDismiss() else error = e
+                }
+            }
+            // Cancel, Delete, Save are short: keep them on one line.
+            DsDialogButtons(editActions(canDelete = record != null, onDismiss, onDelete = { confirmDelete = true }, save), stacked = false)
         },
     )
     if (confirmDelete && record != null) {
