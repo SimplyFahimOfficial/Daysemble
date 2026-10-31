@@ -376,6 +376,9 @@ interface SyncDao {
     @Query("DELETE FROM sync_state")
     suspend fun clearStates()
 
+    @Query("DELETE FROM sync_state WHERE service = :service")
+    suspend fun clearState(service: SyncService)
+
     @Insert suspend fun logConflict(entry: ConflictLogEntity)
 
     @Query("SELECT * FROM conflict_log ORDER BY at DESC LIMIT 100")

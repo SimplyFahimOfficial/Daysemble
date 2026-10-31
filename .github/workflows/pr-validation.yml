@@ -1,0 +1,24 @@
+# Pull request gate. Runs for every pull request into main, including Dependabot and fork PRs.
+# No secrets, read-only token, no path filters (a required check that is skipped never reports).
+# Security scans for pull requests live in security.yml, codeql.yml, dependency-review.yml and
+# workflow-audit.yml; see docs/CI_CD.md for which checks to make required.
+name: PR validation
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android
+    uses: ./.github/workflows/android-build.yml
+    permissions:
+      contents: read

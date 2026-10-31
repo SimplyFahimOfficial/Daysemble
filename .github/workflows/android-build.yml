@@ -1,0 +1,194 @@
+# Reusable Android build and quality gate. Called by pr-validation.yml (pull requests) and ci.yml
+# (pushes to main) so both run exactly the same checks. Uses no secrets: the release build is
+# unsigned here, and the smoke test signs it with a key generated inside the job.
+name: Android build
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  BUILD_TOOLS_VERSION: "36.0.0"
+  APP_ID: app.daysemble
+
+jobs:
+  build:
+    name: Build, unit tests, lint, APK audit
+    # Pinned image instead of ubuntu-latest, which moves to Ubuntu 26.04 from 2026-10-19
+    # (actions/runner-images#14748). Move deliberately once 26.04 has been verified.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The wrapper JAR runs before anything else in the build; make sure it is an official one.
+      - uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Android platform 37 and build tools
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;${BUILD_TOOLS_VERSION}" > /dev/null
+
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          # MIT-licensed caching. The default 'enhanced' provider is a proprietary component
+          # with separate terms (see gradle/actions DISTRIBUTION.md); opt in deliberately if wanted.
+          # Only the default branch writes the cache; pull requests read it.
+          cache-provider: basic
+
+      - name: Debug build, unit tests and lint
+        run: ./gradlew assembleDebug testDebugUnitTest lintDebug --stacktrace
+
+      - name: Release build (R8, unsigned) and SBOM
+        run: ./gradlew assembleRelease :app:cyclonedxDirectBom --stacktrace
+
+      - name: Audit the release APK
+        run: |
+          apk=app/build/outputs/apk/release/app-release-unsigned.apk
+          python3 scripts/ci/apk_audit.py --apk "$apk" --package "$APP_ID" --build-tools "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
+          # 16 KB page-size alignment of native libraries (required for Android 15+ devices with 16 KB pages).
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/zipalign" -c -P 16 4 "$apk"
+          echo "zipalign: 4-byte aligned, native libraries 16 KB aligned" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Test summary
+        if: always()
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import glob, xml.etree.ElementTree as ET
+          t = f = e = s = 0
+          for p in glob.glob("app/build/test-results/**/*.xml", recursive=True):
+              r = ET.parse(p).getroot()
+              t += int(r.get("tests", 0)); f += int(r.get("failures", 0)); e += int(r.get("errors", 0)); s += int(r.get("skipped", 0))
+          print(f"## Unit tests\n\n{t} tests, {f} failures, {e} errors, {s} skipped\n")
+          EOF
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 7
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: daysemble-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+      # Unsigned: not installable as is. Used by the smoke test job below. The artifact root is
+      # app/build/ (the common parent of the paths).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: daysemble-release-unsigned
+          path: |
+            app/build/outputs/apk/release/app-release-unsigned.apk
+            app/build/outputs/mapping/release/mapping.txt
+            app/build/reports/sbom/daysemble-bom.json
+          retention-days: 7
+
+  detekt:
+    name: Detekt (new findings)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      DETEKT_VERSION: "1.23.8"
+      DETEKT_SHA256: 3afe89a11120303c73c9bdda3d8fe558dd9070a6937d27819ddc04b275381245
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # The detekt CLI, not the Gradle plugin: detekt 1.23's plugin does not support this project's
+      # Kotlin version, and the CLI only parses sources. Findings already in
+      # config/detekt/baseline.xml are reported by Codacy; only new ones fail here.
+      - name: Download detekt CLI
+        run: scripts/ci/fetch-tool.sh "https://repo.maven.apache.org/maven2/io/gitlab/arturbosch/detekt/detekt-cli/${DETEKT_VERSION}/detekt-cli-${DETEKT_VERSION}-all.jar" "$DETEKT_SHA256" "$RUNNER_TEMP/detekt.jar"
+
+      - name: Run detekt
+        run: |
+          mkdir -p build/reports/detekt
+          java -jar "$RUNNER_TEMP/detekt.jar" --config detekt.yml --build-upon-default-config \
+            --input app/src/main/java,app/src/test/java --baseline config/detekt/baseline.xml \
+            --report md:build/reports/detekt/detekt.md --report sarif:build/reports/detekt/detekt.sarif
+
+      - name: Detekt summary
+        if: always()
+        run: |
+          if [ -f build/reports/detekt/detekt.md ]; then cat build/reports/detekt/detekt.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: detekt-report
+          path: build/reports/detekt/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  release-smoke:
+    name: Release APK smoke test (emulator)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: daysemble-release-unsigned
+          path: ${{ runner.temp }}/release
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install the build tools for signing
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;${BUILD_TOOLS_VERSION}" > /dev/null
+
+      # A throwaway key generated in this job, so the R8 build can be installed. It is not the
+      # release key and the signed APK is not uploaded.
+      - name: Sign with a throwaway key
+        run: |
+          rel="$RUNNER_TEMP/release"
+          pass="$(openssl rand -hex 16)"
+          keytool -genkeypair -keystore "$rel/smoke.jks" -storepass "$pass" -keypass "$pass" -alias smoke \
+            -keyalg RSA -keysize 2048 -validity 1 -dname "CN=Daysemble CI smoke test" > /dev/null 2>&1
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/apksigner" sign --ks "$rel/smoke.jks" --ks-pass "pass:$pass" \
+            --out "$rel/smoke.apk" "$rel/outputs/apk/release/app-release-unsigned.apk"
+          rm -f "$rel/smoke.jks"
+
+      - name: Launch on emulator
+        env:
+          SMOKE_OUT: build/emulator-smoke
+        run: scripts/ci/emulator-smoke.sh "$RUNNER_TEMP/release/smoke.apk" "$APP_ID"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: emulator-smoke
+          path: build/emulator-smoke/
+          retention-days: 7
+          if-no-files-found: ignore

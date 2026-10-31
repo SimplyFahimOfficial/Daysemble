@@ -17,6 +17,11 @@ updates:
     labels:
       - "dependencies"
       - "android"
+    # Wait a week (two for major versions) after a release before proposing it: most compromised or broken releases
+    # are found and pulled within that window. Security updates are not delayed by this.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     # Group all non-major Gradle bumps into a single PR to reduce noise.
     groups:
       gradle-minor-patch:
@@ -34,6 +39,11 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+    # Wait a week (two for major versions) after a release before proposing it: most compromised or broken releases
+    # are found and pulled within that window. Security updates are not delayed by this.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     groups:
       github-actions:
         patterns:
