@@ -181,19 +181,24 @@ class BackupManager(
         val seriesIds = dao.localEvents().filter { it.rrule != null && it.recurringParentId == null }.mapTo(HashSet()) { it.id }
         val (overrides, masters) = events.filter { validId(it.id) }.partition { it.recurringParentId != null }
         for (e in masters + overrides) {
-            val usable = e.calendarId in calendars && validZone(e.timeZone) && validEventDays(e) &&
-                (e.recurringParentId == null || e.recurringParentId in seriesIds)
-            if (!usable) { tally.skipped++; continue }
-            val row = e.copy(
-                remoteId = null, etag = null, remoteUpdatedAt = null, syncState = SyncState.LOCAL,
-                isDeleted = false, pendingClientId = null, instancesUntil = null,
-            )
-            if (tally.added(dao.insertEvent(row))) {
+            if (!usableEvent(e, calendars, seriesIds)) { tally.skipped++; continue }
+            if (tally.added(dao.insertEvent(asLocalEvent(e)))) {
                 tally.events++
                 if (e.recurringParentId == null && e.rrule != null) seriesIds += e.id
             }
         }
     }
+
+    /** In an on-device calendar, readable back, and (for a changed occurrence) of an on-device series. */
+    private fun usableEvent(e: EventEntity, calendars: Set<String>, seriesIds: Set<String>) =
+        e.calendarId in calendars && validZone(e.timeZone) && validEventDays(e) &&
+            (e.recurringParentId == null || e.recurringParentId in seriesIds)
+
+    /** [e] as on-device data: no Google identity or sync state, whatever the file says. */
+    private fun asLocalEvent(e: EventEntity) = e.copy(
+        remoteId = null, etag = null, remoteUpdatedAt = null, syncState = SyncState.LOCAL,
+        isDeleted = false, pendingClientId = null, instancesUntil = null,
+    )
 
     private suspend fun mergeTasks(tasks: List<TaskEntity>, lists: Set<String>, series: Set<String>, tally: Tally) {
         // A parent that is here but not on-device (a Google task) doesn't adopt an imported subtask.
