@@ -74,10 +74,12 @@ class EventRepository(
         val c = calendars.get(id) ?: return false
         if (c.kind != SourceKind.LOCAL) return false
         if (calendars.byKind(SourceKind.LOCAL).size <= 1) return false
-        val ids = events.allIn(id).map { it.id }
-        db.withTransaction {
+        // Read the ids in the transaction, so an event added in between doesn't leave reminder rows behind.
+        val ids = db.withTransaction {
+            val ids = events.allIn(id).map { it.id }
             ids.forEach { db.reminders().deleteForOwner(OwnerType.EVENT, it) }
             calendars.delete(id)
+            ids
         }
         ids.forEach(listener::onEventChanged)
         return true
@@ -206,12 +208,20 @@ class EventRepository(
     /** Updates the event (whole series for recurring events). */
     suspend fun update(id: String, draft: EventDraft) {
         require(draft.validationError == null) { "Invalid event: ${draft.validationError}" }
-        val target = draft.calendarId?.takeIf { it != get(id)?.calendarId }
-        if (target != null) {
-            moveToCalendar(id, target)
-            return update(id, draft.copy(calendarId = target))
-        }
+        // Moving to another calendar and editing are one transaction, so a failure can't leave the
+        // event moved but not edited. (Room joins the nested transactions below to this one.)
         val google = db.withTransaction {
+            val target = draft.calendarId?.takeIf { it != get(id)?.calendarId }
+            val moved = if (target != null) moveRow(id, target) ?: return@withTransaction null else false
+            val edited = updateRow(id, draft) ?: return@withTransaction null
+            moved || edited
+        } ?: return
+        notify(id, google)
+    }
+
+    /** Applies [draft] to the row. Returns whether it is a Google event, or null if it's gone. */
+    private suspend fun updateRow(id: String, draft: EventDraft): Boolean? =
+        db.withTransaction {
             val row = get(id) ?: return@withTransaction null
             val cal = calendars.get(row.calendarId) ?: return@withTransaction null
             val g = cal.kind == SourceKind.GOOGLE
@@ -224,9 +234,7 @@ class EventRepository(
             events.upsert(updated)
             saveReminders(id, draft.reminderMinutesBefore)
             g
-        } ?: return
-        notify(id, google)
-    }
+        }
 
     /** True when an event can change calendar (series with individually changed occurrences can't). */
     suspend fun canMove(id: String): Boolean {
@@ -240,7 +248,13 @@ class EventRepository(
      * copy to resurrect on the next pull.
      */
     suspend fun moveToCalendar(id: String, newCalendarId: String) {
-        val google = db.withTransaction {
+        val google = moveRow(id, newCalendarId) ?: return
+        notify(id, google)
+    }
+
+    /** Moves the row. Returns whether Google is involved, or null if nothing moved. */
+    private suspend fun moveRow(id: String, newCalendarId: String): Boolean? =
+        db.withTransaction {
             val row = get(id) ?: return@withTransaction null
             if (row.calendarId == newCalendarId) return@withTransaction null
             require(canMove(id)) { "Series with changed occurrences can't change calendar" }
@@ -265,9 +279,7 @@ class EventRepository(
                 ),
             )
             fromG || toG
-        } ?: return
-        notify(id, google)
-    }
+        }
 
     /** Deletes a whole event / series (soft delete for Google until the remote delete succeeds). */
     suspend fun delete(id: String) {

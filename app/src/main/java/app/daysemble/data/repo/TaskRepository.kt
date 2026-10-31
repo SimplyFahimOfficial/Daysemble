@@ -92,10 +92,13 @@ class TaskRepository(
         val l = lists.get(id) ?: return false
         if (l.kind != SourceKind.LOCAL) return false
         if (lists.all().count { it.kind == SourceKind.LOCAL } <= 1) return false
-        val ids = tasks.allIn(id).map { it.id }
-        db.withTransaction {
+        // Read the ids in the transaction: a task added in between would be cascade-deleted with
+        // its reminder rows left behind.
+        val ids = db.withTransaction {
+            val ids = tasks.allIn(id).map { it.id }
             ids.forEach { db.reminders().deleteForOwner(OwnerType.TASK, it) }
             lists.delete(id) // cascades to tasks
+            ids
         }
         ids.forEach(listener::onTaskChanged) // cancels their alarms
         return true
@@ -281,8 +284,9 @@ class TaskRepository(
 
     suspend fun setPriority(id: String, priority: Priority) {
         // Priority is local-only for Google tasks, so no push is needed.
-        val row = tasks.get(id) ?: return
-        tasks.upsert(row.copy(priority = priority.level, updatedAt = clock.now().toEpochMilli()))
+        // A targeted update: a whole-row write of an older copy could undo a concurrent sync write.
+        tasks.get(id) ?: return
+        tasks.setPriority(id, priority.level)
         listener.onTaskChanged(id)
     }
 
@@ -295,7 +299,7 @@ class TaskRepository(
         db.withTransaction {
             val row = tasks.get(id)?.takeIf { !it.isDeleted } ?: return@withTransaction
             val value = on && row.dueDate != null
-            tasks.upsert(row.copy(countdownEnabled = value, updatedAt = clock.now().toEpochMilli()))
+            tasks.setCountdown(id, value)
             if (!row.isCompleted) row.seriesId?.let { series.get(it) }?.takeIf { it.endedAt == null }?.let {
                 series.upsert(it.copy(countdownEnabled = value, updatedAt = clock.now().toEpochMilli()))
             }
@@ -313,24 +317,26 @@ class TaskRepository(
      * is deleted and a new one created in the destination (the Tasks API has no cross-list move).
      */
     suspend fun moveToList(id: String, newListId: String, scope: SeriesScope = SeriesScope.THIS) {
-        val row = tasks.get(id)?.takeIf { !it.isDeleted && it.parentId == null } ?: return
-        if (row.listId == newListId) return
-        val from = lists.get(row.listId) ?: return
-        val to = lists.get(newListId) ?: return
-        val toGoogle = to.kind == SourceKind.GOOGLE
-        // Google Tasks can't store a repeat rule: a repeating task stays in on-device lists.
-        val active = row.seriesId?.let { series.get(it) }?.takeIf { it.endedAt == null }
-        if (active != null && toGoogle) return
-        // For an occurrence of a repeating task, [scope] says whether the series moves too:
-        // "this occurrence" moves only this one (the next ones still appear in the series' list),
-        // "this and future" / "the entire series" move the series, so the next ones appear in the
-        // new list. Completed occurrences stay where they are. Moving a completed occurrence only
-        // files that one away, whatever the scope (the editor offers no scope for it).
-        if (!row.isCompleted && scope != SeriesScope.THIS) {
-            active?.let { series.upsert(it.copy(listId = newListId, updatedAt = clock.now().toEpochMilli())) }
-        }
         val now = clock.now().toEpochMilli()
-        db.withTransaction {
+        // One transaction for the checks, the series and the rows: a failure part-way can't leave
+        // the series in the new list with its rows still in the old one.
+        val sync = db.withTransaction {
+            val row = tasks.get(id)?.takeIf { !it.isDeleted && it.parentId == null } ?: return@withTransaction null
+            if (row.listId == newListId) return@withTransaction null
+            val from = lists.get(row.listId) ?: return@withTransaction null
+            val to = lists.get(newListId) ?: return@withTransaction null
+            val toGoogle = to.kind == SourceKind.GOOGLE
+            // Google Tasks can't store a repeat rule: a repeating task stays in on-device lists.
+            val active = row.seriesId?.let { series.get(it) }?.takeIf { it.endedAt == null }
+            if (active != null && toGoogle) return@withTransaction null
+            // For an occurrence of a repeating task, [scope] says whether the series moves too:
+            // "this occurrence" moves only this one (the next ones still appear in the series' list),
+            // "this and future" / "the entire series" move the series, so the next ones appear in the
+            // new list. Completed occurrences stay where they are. Moving a completed occurrence only
+            // files that one away, whatever the scope (the editor offers no scope for it).
+            if (!row.isCompleted && scope != SeriesScope.THIS) {
+                active?.let { series.upsert(it.copy(listId = newListId, updatedAt = now)) }
+            }
             var sort = tasks.maxSortKey(newListId)
             for (t in listOf(row) + tasks.subtasks(id).filter { !it.isDeleted }) {
                 val oldRemoteList = if (from.kind == SourceKind.GOOGLE) from.remoteId else null
@@ -345,9 +351,10 @@ class TaskRepository(
                     ),
                 )
             }
-        }
+            from.kind == SourceKind.GOOGLE || toGoogle
+        } ?: return
         listener.onTaskChanged(id)
-        if (from.kind == SourceKind.GOOGLE || toGoogle) listener.onPendingSync()
+        if (sync) listener.onPendingSync()
     }
 
     /**
