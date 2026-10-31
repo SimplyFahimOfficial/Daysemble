@@ -114,6 +114,9 @@ class TasksSyncer(
                             when {
                                 // Deleted meanwhile: its own DELETE op is queued; don't revive or patch it.
                                 cur == null || cur.syncState == SyncState.PENDING_DELETE -> UpdateDecision.Skip
+                                // Moved to another list meanwhile: the move queued its own delete and create.
+                                // Patching the old Google copy would upload the moved task's contents there.
+                                cur.listId != t.listId -> UpdateDecision.Skip
                                 cur.remoteUpdatedAt != null && remoteUpdated > cur.remoteUpdatedAt && remoteUpdated > cur.updatedAt -> {
                                     // Newer remote edit wins over our older pending edit.
                                     applyRemoteVersion(cur, remote, list, logLocalLoss = true)
@@ -185,6 +188,9 @@ class TasksSyncer(
 
     private suspend fun markSynced(local: TaskEntity, remote: TaskDto) = db.withTransaction {
         val cur = tasks.get(local.id) ?: return@withTransaction
+        // Moved to another list during the request: [remote] is the copy in the old list, which the
+        // move's queued delete removes. Don't give the moved row that copy's identity.
+        if (cur.listId != local.listId) return@withTransaction
         val editedMeanwhile = cur.updatedAt > local.updatedAt
         tasks.upsert(
             cur.copy(
@@ -205,6 +211,8 @@ class TasksSyncer(
     private suspend fun remoteDeletedWhileEdited(snapshot: TaskEntity) = db.withTransaction {
         // Re-read: on the push path [snapshot] was read before a network call.
         val t = tasks.get(snapshot.id) ?: return@withTransaction
+        // Moved to another list meanwhile: the move queued its own ops for the new list.
+        if (t.listId != snapshot.listId) return@withTransaction
         if (t.syncState == SyncState.PENDING_DELETE) {
             // Deleted on both sides: nothing to keep.
             tasks.hardDelete(t.id); db.reminders().deleteForOwner(OwnerType.TASK, t.id); db.sync().clearFor(OwnerType.TASK, t.id)

@@ -157,6 +157,9 @@ class CalendarSyncer(
     private suspend fun markSynced(local: EventEntity, remote: EventDto) {
         db.withTransaction {
             val cur = events.get(local.id) ?: return@withTransaction
+            // Moved to another calendar during the request: [remote] is the copy in the old calendar,
+            // which the move's queued delete removes. Don't give the moved row that copy's identity.
+            if (cur.calendarId != local.calendarId) return@withTransaction
             // If the user edited again during the request, keep it pending (outbox still has it next round).
             val editedMeanwhile = cur.updatedAt > local.updatedAt
             events.upsert(
@@ -176,6 +179,8 @@ class CalendarSyncer(
             // Re-read: on the push path [snapshot] was read before a network call, and the user may
             // have edited again since. Writing the snapshot back would drop that edit.
             val e = events.get(snapshot.id) ?: return@withTransaction
+            // Moved to another calendar meanwhile: the move queued its own ops for the new calendar.
+            if (e.calendarId != snapshot.calendarId) return@withTransaction
             if (e.syncState == SyncState.PENDING_DELETE) {
                 // Deleted on both sides: nothing to keep.
                 events.hardDelete(e.id); db.reminders().deleteForOwner(OwnerType.EVENT, e.id); db.sync().clearFor(OwnerType.EVENT, e.id)
@@ -341,6 +346,9 @@ class CalendarSyncer(
             val local = events.get(snapshot.id) ?: return@withTransaction false
             // Deleted meanwhile: the local delete stands (its DELETE op is queued).
             if (local.syncState == SyncState.PENDING_DELETE) return@withTransaction false
+            // Moved to another calendar meanwhile: [remote] and [cal] describe the old copy, which the
+            // move's queued delete removes. Applying either would pull the event back or misplace its etag.
+            if (local.calendarId != cal.id) return@withTransaction false
             if (local.remoteUpdatedAt != null && remoteUpdated <= local.remoteUpdatedAt) return@withTransaction false // nothing new remotely
             if (remoteUpdated > local.updatedAt) {
                 val incoming = CalendarMapper.toEntity(remote, cal, local, parent, now()) ?: return@withTransaction true

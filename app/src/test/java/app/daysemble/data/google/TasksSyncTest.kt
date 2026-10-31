@@ -192,6 +192,30 @@ class TasksSyncTest : SyncTestBase() {
         assertThat(router.count("PATCH", "/tasks/v1/lists/L1/tasks/T1")).isEqualTo(0)
     }
 
+    @Test fun `a task moved to another list while Google's version is fetched is not patched there`() = runTest {
+        router.on("GET", "/tasks/v1/users/@me/lists") { lists() }
+        router.on("GET", "/tasks/v1/lists/L1/tasks") { json(body = """{"items":[$t1]}""") }
+        syncer().sync(acct)
+        val l = listId()
+        db.taskLists().upsert(app.daysemble.data.db.TaskListEntity(id = "local", kind = SourceKind.LOCAL, title = "On this phone"))
+        val local = db.tasks().byRemoteId(l, "T1")!!
+        clock.instant = java.time.Instant.parse("2026-10-21T00:00:00Z")
+        tasks.update(local.id, TaskDraft(title = "Mine", dueDate = LocalDate.parse("2026-10-25")))
+        clock.instant = java.time.Instant.parse("2026-10-22T08:00:00Z")
+        router.on("GET", "/tasks/v1/lists/L1/tasks/T1") {
+            kotlinx.coroutines.runBlocking { tasks.moveToList(local.id, "local") }
+            json(body = t1)
+        }
+        syncer().pushOutbox()
+        assertThat(router.count("PATCH", "/tasks/v1/lists/L1/tasks/T1")).isEqualTo(0)
+        val row = db.tasks().get(local.id)!!
+        assertThat(row.listId).isEqualTo("local")
+        assertThat(row.remoteId).isNull()
+        assertThat(row.syncState).isEqualTo(SyncState.LOCAL)
+        // The old Google copy is still queued for deletion.
+        assertThat(db.sync().outbox().single().snapshotRemoteId).isEqualTo("T1")
+    }
+
     @Test fun `remote deletion with unpushed local edits keeps the task and re-creates it`() = runTest {
         router.on("GET", "/tasks/v1/users/@me/lists") { lists() }
         router.on("GET", "/tasks/v1/lists/L1/tasks") { json(body = """{"items":[$t1]}""") }
