@@ -599,7 +599,12 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
         }
         composable<TaskEditorRoute> { e ->
             val r = e.toRoute<TaskEditorRoute>()
-            Page { TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), initialDueMinute = r.dueMinute, initialTitle = r.title, onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) }) }
+            Page {
+                TaskEditorScreenRoute(
+                    r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), initialDueMinute = r.dueMinute, initialTitle = r.title,
+                    onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) },
+                )
+            }
         }
         composable<EventDetailRoute> { e ->
             val r = e.toRoute<EventDetailRoute>()

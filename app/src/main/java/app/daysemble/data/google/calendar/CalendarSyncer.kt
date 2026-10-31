@@ -137,22 +137,7 @@ class CalendarSyncer(
                         // A create whose response was lost has no remoteId yet, but used our deterministic client id.
                         val rid = e.remoteId ?: CalendarMapper.clientIdOf(e)
                         try { api.delete(cal.remoteId, rid) } catch (_: ApiError.NotFound) { } catch (_: ApiError.Gone) { }
-                        db.withTransaction {
-                            val cur = events.get(e.id)
-                            if (cur != null && cur.syncState != SyncState.PENDING_DELETE) {
-                                // Undone while the request ran: the restored row stays. Its Google copy is gone,
-                                // so it is created again (with a new client id, as the old one may still be held).
-                                events.upsert(cur.copy(remoteId = null, etag = null, remoteUpdatedAt = null, pendingClientId = CalendarMapper.newClientId(), syncState = SyncState.PENDING_CREATE))
-                                // Changed occurrences of the deleted Google series can't follow (as in restore).
-                                events.overridesFor(listOf(e.id)).filter { it.remoteId != null }.forEach { o ->
-                                    events.hardDelete(o.id); db.reminders().deleteForOwner(OwnerType.EVENT, o.id); db.sync().clearFor(OwnerType.EVENT, o.id)
-                                }
-                                db.sync().clearFor(OwnerType.EVENT, e.id)
-                                db.sync().enqueue(app.daysemble.data.db.OutboxEntity(entityType = OwnerType.EVENT, entityId = e.id, op = OutboxOp.CREATE, createdAt = now()))
-                            } else {
-                                events.hardDelete(e.id); db.reminders().deleteForOwner(OwnerType.EVENT, e.id)
-                            }
-                        }
+                        remoteDeleted(e.id)
                     }
                 }
                 db.sync().remove(op.id)
@@ -167,6 +152,29 @@ class CalendarSyncer(
             }
         }
         return Triple(pushed, conflicts, failed)
+    }
+
+    /** The pushed delete went through on Google: remove the row, unless the delete was undone meanwhile. */
+    private suspend fun remoteDeleted(id: String) = db.withTransaction {
+        val cur = events.get(id)
+        if (cur == null || cur.syncState == SyncState.PENDING_DELETE) {
+            events.hardDelete(id); db.reminders().deleteForOwner(OwnerType.EVENT, id)
+            return@withTransaction
+        }
+        // Undone while the request ran: the restored row stays. Its Google copy is gone, so it is
+        // created again, with a new client id (the old one may still be held by the deleted copy).
+        events.upsert(
+            cur.copy(
+                remoteId = null, etag = null, remoteUpdatedAt = null,
+                pendingClientId = CalendarMapper.newClientId(), syncState = SyncState.PENDING_CREATE,
+            ),
+        )
+        // Changed occurrences of the deleted Google series can't follow (as in EventRepository.restore).
+        events.overridesFor(listOf(id)).filter { it.remoteId != null }.forEach { o ->
+            events.hardDelete(o.id); db.reminders().deleteForOwner(OwnerType.EVENT, o.id); db.sync().clearFor(OwnerType.EVENT, o.id)
+        }
+        db.sync().clearFor(OwnerType.EVENT, id)
+        db.sync().enqueue(app.daysemble.data.db.OutboxEntity(entityType = OwnerType.EVENT, entityId = id, op = OutboxOp.CREATE, createdAt = now()))
     }
 
     private suspend fun markSynced(local: EventEntity, remote: EventDto) {
