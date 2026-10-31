@@ -268,7 +268,12 @@ fun DaysembleRoot(
                 rootScope.launch {
                     val msg = movedMsg.format(app.daysemble.ui.format.Fmt.smartDate(newDate, container.clock.today(), prefs))
                     val r = snackbar.showSnackbar(msg, undoLabel, duration = SnackbarDuration.Short)
-                    if (r == SnackbarResult.ActionPerformed) container.tasks.setDue(id, oldDate, oldTime)
+                    if (r == SnackbarResult.ActionPerformed) {
+                        // The snackbar outlives the screen: if the due date or time was changed again
+                        // meanwhile, that newer change stands.
+                        val cur = container.tasks.get(id)
+                        if (cur != null && cur.dueDate == newDate && cur.dueTime == oldTime) container.tasks.setDue(id, oldDate, oldTime)
+                    }
                 }
             }
         }
@@ -481,7 +486,9 @@ private fun AppContent(
             onMoreEventOptions = { pre ->
                 nav.openFromMain(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
             },
-            onMoreTaskOptions = { d, minute -> nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay(), dueMinute = minute)) },
+            onMoreTaskOptions = { title, d, minute ->
+                nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay(), dueMinute = minute, title = title.takeIf { it.isNotBlank() }))
+            },
         )
     }
 }
@@ -592,7 +599,7 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
         }
         composable<TaskEditorRoute> { e ->
             val r = e.toRoute<TaskEditorRoute>()
-            Page { TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), initialDueMinute = r.dueMinute, onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) }) }
+            Page { TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), initialDueMinute = r.dueMinute, initialTitle = r.title, onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) }) }
         }
         composable<EventDetailRoute> { e ->
             val r = e.toRoute<EventDetailRoute>()

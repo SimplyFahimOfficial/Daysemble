@@ -79,13 +79,14 @@ import java.time.LocalTime
 fun TaskEditorRoute(
     taskId: String?, parentId: String?, initialDue: LocalDate?,
     initialDueMinute: Int? = null,
+    initialTitle: String? = null,
     /** Called when the screen closes itself (after saving, deleting, or when its item is gone). Defaults to [onClose]. */
     onDone: (() -> Unit)? = null,
     onClose: () -> Unit,
 ) {
     val finish = onDone ?: onClose
     val vm = daysembleViewModel(key = "task:$taskId:$parentId") { c, h ->
-        TaskEditorViewModel(c.tasks, { c.newTaskListId() }, taskId, parentId, initialDue, h, initialDueMinute)
+        TaskEditorViewModel(c.tasks, { c.newTaskListId() }, taskId, parentId, initialDue, h, initialDueMinute, initialTitle)
     }
     val state by vm.state.collectAsStateWithLifecycle()
     val event by vm.events.collectAsStateWithLifecycle()

@@ -71,8 +71,8 @@ fun QuickAddSheet(
     initialDate: LocalDate?,
     onDismiss: () -> Unit,
     onMoreEventOptions: (EventPrefill) -> Unit,
-    /** The chosen due date and minute of day (the time only with a date). */
-    onMoreTaskOptions: (LocalDate?, Int?) -> Unit,
+    /** The typed title, the chosen due date and minute of day (the time only with a date). */
+    onMoreTaskOptions: (String, LocalDate?, Int?) -> Unit,
 ) {
     val c = DsTheme.colors
     val p = LocalTimePrefs.current
@@ -198,7 +198,8 @@ fun QuickAddSheet(
                             if (d != null && d != today && d != today.plusDays(1)) dayLabel(d, today, p) else stringResource(R.string.pick_date),
                             d != null && d != today && d != today.plusDays(1), { pickDate = true }, icon = Icons.Rounded.CalendarToday,
                         )
-                        // A time needs a date: picking one with no date sets the task for today.
+                        // A time needs a date: picking one with no date sets the task for today
+                        // (tomorrow after 23:30, when the next half hour is midnight).
                         val m = taskMinute?.takeIf { d != null }
                         DsChip(
                             m?.let { Fmt.time(LocalTime.of(it / 60, it % 60), p) } ?: stringResource(R.string.add_time),
@@ -225,7 +226,7 @@ fun QuickAddSheet(
                     stringResource(R.string.more_options),
                     onClick = {
                         if (kind == AddKind.EVENT) onMoreEventOptions(EventPrefill(title, LocalDate.ofEpochDay(eventDate), startMinute))
-                        else onMoreTaskOptions(date?.let(LocalDate::ofEpochDay), taskMinute?.takeIf { date != null })
+                        else onMoreTaskOptions(title, date?.let(LocalDate::ofEpochDay), taskMinute?.takeIf { date != null })
                         onDismiss()
                     },
                     style = DsButtonStyle.Ghost,
@@ -255,11 +256,14 @@ fun QuickAddSheet(
         )
     }
     if (pickTaskTime) {
+        // The next half hour, and its day: after 23:30 that is midnight tomorrow, not 00:00 today
+        // (which would make the task overdue as soon as it's added).
+        val slotDay = today.plusDays(rollDays).toEpochDay()
         DsTimePickerDialog(
-            // Start from the next half hour for today, from 09:00 for another day.
+            // Start from the next half hour on its day, from 09:00 for another day.
             initial = taskMinute?.let { LocalTime.of(it / 60, it % 60) }
-                ?: if (date == null || date == today.toEpochDay()) LocalTime.of(firstSlot / 60, firstSlot % 60) else LocalTime.of(9, 0),
-            onPick = { taskMinute = it.hour * 60 + it.minute; if (date == null) date = today.toEpochDay() },
+                ?: if (date == null || date == slotDay) LocalTime.of(firstSlot / 60, firstSlot % 60) else LocalTime.of(9, 0),
+            onPick = { taskMinute = it.hour * 60 + it.minute; if (date == null) date = slotDay },
             onDismiss = { pickTaskTime = false },
             onClear = if (taskMinute != null) ({ taskMinute = null }) else null,
         )

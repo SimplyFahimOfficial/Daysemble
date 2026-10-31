@@ -4,6 +4,7 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -90,9 +91,24 @@ class QuickActionsFlowTest {
         compose.onNode(hasText("Done") and hasClickAction()).performClick(); settle()
         compose.onNode(hasSetTextAction()).performImeAction(); settle() // the keyboard's Done adds it
         val t = eventually({ task("Pay bills") }) { it != null }!!
-        // No date was picked: choosing a time sets the task for today.
-        assertThat(t.dueDate).isEqualTo(c.clock.today())
+        // No date was picked: choosing a time sets the task for the next half hour's day (today, or
+        // tomorrow after 23:30), so the default is never already past.
+        val (rollDays, _) = app.daysemble.ui.add.nextSlot(c.clock.zonedNow().toLocalTime())
+        assertThat(t.dueDate).isEqualTo(c.clock.today().plusDays(rollDays))
         assertThat(t.dueTime).isNotNull()
+        assertThat(t.dueDate!!.atTime(t.dueTime!!)).isAtLeast(c.clock.zonedNow().toLocalDateTime().withSecond(0).withNano(0))
+    }
+
+    @Test fun quickAdd_moreOptions_keepsTheTypedTitle() {
+        showApp()
+        compose.onNodeWithContentDescription("Add task or event").performClick(); settle()
+        compose.onNode(hasSetTextAction()).performTextInput("Pay bills")
+        compose.onNode(hasText("More options") and hasClickAction()).performClick()
+        // Quick Add has closed, and the full editor's title field already holds the typed title.
+        eventually({ compose.onAllNodesWithText("More options").fetchSemanticsNodes() }) { it.isEmpty() }
+        settle(10)
+        compose.onAllNodesWithText("More options").assertCountEquals(0)
+        compose.onNode(hasSetTextAction() and hasText("Pay bills")).assertExists()
     }
 
     @Test fun reschedule_movesTheDate_keepsTheTime_andUndoMovesItBack() {
@@ -109,6 +125,25 @@ class QuickActionsFlowTest {
         waitFor("Moved to ", substring = true)
         compose.onNodeWithText("Undo").performClick(); settle()
         assertThat(eventually({ task("Call Sam") }) { it?.dueDate == today }!!.dueDate).isEqualTo(today)
+    }
+
+    @Test fun rescheduleUndo_keepsAChangeMadeAfterIt() {
+        val today = c.clock.today()
+        runBlocking { c.tasks.create(TaskDraft(title = "Call Sam", dueDate = today, dueTime = LocalTime.of(17, 30)), c.defaults().taskListId) }
+        showApp()
+        waitFor("Call Sam")
+        compose.onAllNodesWithText("Call Sam").onFirst().performTouchInput { longClick() }; settle()
+        compose.onNodeWithTag(ItemMenuTags.RESCHEDULE).performClick(); settle()
+        compose.onNode(hasText("Tomorrow") and hasClickAction()).performClick(); settle()
+        val id = eventually({ task("Call Sam") }) { it?.dueDate == today.plusDays(1) }!!.id
+        waitFor("Moved to ", substring = true)
+        // Another change to the due date while the snackbar is still up (e.g. in the editor).
+        val later = today.plusDays(5)
+        runBlocking { c.tasks.setDue(id, later, LocalTime.of(9, 0)) }
+        compose.onNodeWithText("Undo").performClick(); settle()
+        val t = task("Call Sam")!!
+        assertThat(t.dueDate).isEqualTo(later)
+        assertThat(t.dueTime).isEqualTo(LocalTime.of(9, 0))
     }
 
     @Test fun deletingAnEvent_canBeUndone() {
