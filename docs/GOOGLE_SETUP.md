@@ -67,8 +67,8 @@ matches the installed app by package + SHA-1.
 - **Disconnect:** revokes access and removes the Google copies from the device. Nothing is deleted from Google.
 
 ## Known limitations
-- You can't edit a *single occurrence* of a repeating Google event yet. You can edit the whole series
-  or delete one occurrence (EXDATE).
+- A repeating event can be edited for one occurrence or for the whole series, but not "this and
+  following". An edited occurrence keeps the series' reminders and calendar.
 - Repeat rules the app can't expand (e.g. `BYSETPOS`) are displayed from Google's own instance list (−30 days to +1 year) and are read-only in Daysemble.
 - Attendees, conferencing and attachments aren't shown. They're preserved because the app only
   PATCHes the fields it manages.
