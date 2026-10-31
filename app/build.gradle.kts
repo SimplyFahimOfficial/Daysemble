@@ -147,6 +147,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+    // On-device QR encoding for Settings > Support My Work (pure Java, no permissions, no network).
+    implementation(libs.zxing.core)
     implementation(libs.play.services.auth)
 
     testImplementation(libs.junit)

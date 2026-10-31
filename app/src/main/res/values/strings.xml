@@ -661,4 +661,36 @@
     <!-- Display name -->
     <string name="settings_your_name">Your name</string>
     <string name="settings_your_name_unset">Not set. Shown next to the logo on Today.</string>
+    <!-- Support My Work. Links and payment details live in support/SupportConfig.kt. -->
+    <string name="support_title">Support My Work</string>
+    <string name="support_entry_sub">Ko-fi, UPI and project links</string>
+    <string name="support_intro">Your support helps me maintain existing applications, improve features and continue developing independent open-source projects. Every contribution is voluntary and appreciated.</string>
+    <string name="support_section_payment">Payment options</string>
+    <string name="support_kofi_title">Support on Ko-fi</string>
+    <string name="support_upi_title">Pay with UPI</string>
+    <string name="support_upi_body">Scan the code with any UPI app, or open one on this phone. You choose the amount.</string>
+    <string name="support_upi_qr_description">UPI QR code to pay %1$s, UPI ID %2$s</string>
+    <string name="support_upi_enlarge">Enlarge QR code</string>
+    <string name="support_upi_id_label">UPI ID</string>
+    <string name="support_upi_payee">Payee: %1$s</string>
+    <string name="support_copy_upi_id">Copy UPI ID</string>
+    <string name="support_upi_id_copied">UPI ID copied</string>
+    <string name="support_open_upi_app">Open UPI app</string>
+    <string name="support_choose_upi_app">Pay with</string>
+    <string name="support_no_upi_app">No UPI app is installed on this phone. Scan the QR code from another phone, or copy the UPI ID.</string>
+    <string name="support_share_qr">Share QR</string>
+    <string name="support_save_qr">Save QR</string>
+    <string name="support_qr_saved">QR code saved</string>
+    <string name="support_qr_save_failed">Couldn’t save the QR code</string>
+    <string name="support_qr_share_failed">Couldn’t share the QR code</string>
+    <string name="support_share_text">UPI ID: %1$s (payee %2$s)</string>
+    <string name="support_upi_note">Check that your UPI app shows the payee name %1$s before you pay. Opening a UPI app doesn’t complete a payment, and Daysemble never learns whether you paid.</string>
+    <string name="support_scan_title">Scan with any UPI app</string>
+    <string name="support_close">Close</string>
+    <string name="support_section_about">About Daysemble</string>
+    <string name="support_project_info">Daysemble is an independent project by %1$s. Version %2$s.</string>
+    <string name="support_repository">Source code on GitHub</string>
+    <string name="support_website">Personal website</string>
+    <string name="support_github_profile">More projects on GitHub</string>
+    <string name="support_link_failed">No app found to open this link</string>
 </resources>

@@ -649,6 +649,7 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
                     SettingsPage.TASKS -> TaskSettingsRoute(onBack = back)
                     SettingsPage.DATA -> DataSettingsRoute(onBack = back)
                     SettingsPage.ABOUT -> AboutRoute(onBack = back)
+                    SettingsPage.SUPPORT -> app.daysemble.ui.settings.SupportRoute(onBack = back)
                     SettingsPage.SCHEDULE -> app.daysemble.ui.settings.ScheduleSettingsRoute(onBack = back)
                     null -> LaunchedEffect(Unit) { nav.popBackStack(e.destination.id, inclusive = true) }
                 }
