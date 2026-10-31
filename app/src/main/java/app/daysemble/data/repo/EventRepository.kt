@@ -211,8 +211,11 @@ class EventRepository(
         // Moving to another calendar and editing are one transaction, so a failure can't leave the
         // event moved but not edited. (Room joins the nested transactions below to this one.)
         val google = db.withTransaction {
-            val target = draft.calendarId?.takeIf { it != get(id)?.calendarId }
-            val moved = if (target != null) moveRow(id, target) ?: return@withTransaction null else false
+            val current = get(id) ?: return@withTransaction null
+            val target = draft.calendarId?.takeIf { it != current.calendarId }
+            // The event exists, so a move that doesn't happen means a calendar is gone. Fail the save
+            // (nothing is written) instead of reporting success and dropping the other edits.
+            val moved = if (target != null) checkNotNull(moveRow(id, target)) { "The calendar is no longer available" } else false
             val edited = updateRow(id, draft) ?: return@withTransaction null
             moved || edited
         } ?: return

@@ -337,24 +337,32 @@ class TaskRepository(
             if (!row.isCompleted && scope != SeriesScope.THIS) {
                 active?.let { series.upsert(it.copy(listId = newListId, updatedAt = now)) }
             }
-            var sort = tasks.maxSortKey(newListId)
-            for (t in listOf(row) + tasks.subtasks(id).filter { !it.isDeleted }) {
-                val oldRemoteList = if (from.kind == SourceKind.GOOGLE) from.remoteId else null
-                if (from.kind == SourceKind.GOOGLE || toGoogle) {
-                    outbox.recordMove(OwnerType.TASK, t.id, t.remoteId, oldRemoteList, toGoogle)
-                }
-                tasks.upsert(
-                    t.copy(
-                        listId = newListId, remoteId = null, etag = null, remotePosition = null, remoteUpdatedAt = null,
-                        sortKey = ++sort, updatedAt = now,
-                        syncState = if (toGoogle) SyncState.PENDING_CREATE else SyncState.LOCAL,
-                    ),
-                )
-            }
-            from.kind == SourceKind.GOOGLE || toGoogle
+            moveRows(row, from, to, now)
         } ?: return
         listener.onTaskChanged(id)
         if (sync) listener.onPendingSync()
+    }
+
+    /**
+     * Moves [row] and its subtasks into [to], queueing the remote delete and create when a Google list
+     * is involved. Call inside [moveToList]'s transaction. Returns whether Google is involved.
+     */
+    private suspend fun moveRows(row: TaskEntity, from: TaskListEntity, to: TaskListEntity, now: Long): Boolean {
+        val fromGoogle = from.kind == SourceKind.GOOGLE
+        val toGoogle = to.kind == SourceKind.GOOGLE
+        val oldRemoteList = if (fromGoogle) from.remoteId else null
+        var sort = tasks.maxSortKey(to.id)
+        for (t in listOf(row) + tasks.subtasks(row.id).filter { !it.isDeleted }) {
+            if (fromGoogle || toGoogle) outbox.recordMove(OwnerType.TASK, t.id, t.remoteId, oldRemoteList, toGoogle)
+            tasks.upsert(
+                t.copy(
+                    listId = to.id, remoteId = null, etag = null, remotePosition = null, remoteUpdatedAt = null,
+                    sortKey = ++sort, updatedAt = now,
+                    syncState = if (toGoogle) SyncState.PENDING_CREATE else SyncState.LOCAL,
+                ),
+            )
+        }
+        return fromGoogle || toGoogle
     }
 
     /**
