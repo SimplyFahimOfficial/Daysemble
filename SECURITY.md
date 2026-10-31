@@ -34,3 +34,9 @@ Do not include real personal data or credentials in a report.
 - An assessment and a planned fix window within 30 days.
 - Credit in the release notes once a fix ships, unless you prefer to remain
   anonymous.
+
+## Security practices
+
+How the app and its build are secured, what CI enforces, and the reviewed exceptions are described
+in [docs/SECURITY.md](docs/SECURITY.md). Release signing and verification are in
+[docs/RELEASE.md](docs/RELEASE.md).
