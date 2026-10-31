@@ -72,12 +72,19 @@ class QuickActionsFlowTest {
     }
 
     private fun waitFor(text: String, substring: Boolean = false) {
-        repeat(40) { if (compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()) return; settle(2) }
+        repeat(40) {
+            if (compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()) return
+            settle(2)
+        }
         compose.onNodeWithText(text, substring = substring).assertExists()
     }
 
     private fun <T> eventually(read: () -> T, done: (T) -> Boolean): T {
-        repeat(40) { val v = read(); if (done(v)) return v; settle(2) }
+        repeat(40) {
+            val v = read()
+            if (done(v)) return v
+            settle(2)
+        }
         return read()
     }
 

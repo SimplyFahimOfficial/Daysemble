@@ -299,7 +299,9 @@ private fun ItemMenu(
                     stringResource(if (t.completed) R.string.action_mark_incomplete else R.string.action_complete), inPlace(onToggle),
                     Modifier.testTag(ItemMenuTags.COMPLETE),
                 )
-                if (!t.completed) MenuRow(Icons.Rounded.EditCalendar, stringResource(R.string.menu_reschedule), onReschedule, Modifier.testTag(ItemMenuTags.RESCHEDULE))
+                if (!t.completed) {
+                    MenuRow(Icons.Rounded.EditCalendar, stringResource(R.string.menu_reschedule), onReschedule, Modifier.testTag(ItemMenuTags.RESCHEDULE))
+                }
                 if (t.recurring && !t.completed) MenuRow(Icons.Rounded.SkipNext, stringResource(R.string.menu_skip_occurrence), inPlace(onSkip), Modifier.testTag(ItemMenuTags.SKIP))
             }
             if (!t.readOnly) MenuRow(Icons.Rounded.DeleteOutline, stringResource(R.string.action_delete), inPlace(onDelete), Modifier.testTag(ItemMenuTags.DELETE), tint = c.error)

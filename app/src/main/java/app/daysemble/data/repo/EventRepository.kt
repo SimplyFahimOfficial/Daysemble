@@ -293,24 +293,26 @@ class EventRepository(
         var google = false
         db.withTransaction {
             for (r in deleted.rows) {
-                val mine = deleted.reminders.filter { it.ownerId == r.id }
-                val cur = events.get(r.id)
-                if (cur == r) {
-                    // The row is untouched (a changed occurrence of a kept series, or of a Google series whose
-                    // delete isn't pushed yet), but the series delete removed its reminders: put them back.
-                    if (restoreReminders(r.id, mine)) restored += r.id
-                    continue
-                }
-                val g = calendars.get(r.calendarId)?.kind == SourceKind.GOOGLE
-                val row = (if (g) restoredGoogleRow(r, cur, now) else r) ?: continue
-                events.upsert(row)
-                db.reminders().replace(OwnerType.EVENT, r.id, mine)
+                val g = restoreRow(r, deleted.reminders.filter { it.ownerId == r.id }, now) ?: continue
                 restored += r.id
                 google = google || g
             }
         }
         restored.forEach(listener::onEventChanged)
         if (google) listener.onPendingSync()
+    }
+
+    /** Restores row [r] with its [reminders]. Returns null if nothing was written, else whether it is a Google event. */
+    private suspend fun restoreRow(r: EventEntity, reminders: List<ReminderEntity>, now: Long): Boolean? {
+        val cur = events.get(r.id)
+        // The row is untouched (a changed occurrence of a kept series, or of a Google series whose
+        // delete isn't pushed yet), but the series delete removed its reminders: put them back.
+        if (cur == r) return if (restoreReminders(r.id, reminders)) false else null
+        val g = calendars.get(r.calendarId)?.kind == SourceKind.GOOGLE
+        val row = (if (g) restoredGoogleRow(r, cur, now) else r) ?: return null
+        events.upsert(row)
+        db.reminders().replace(OwnerType.EVENT, r.id, reminders)
+        return g
     }
 
     /** Puts back [reminders] of [id] if it has none now. Returns whether anything was written. */
