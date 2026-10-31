@@ -5,11 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
-/**
- * Reads and inserts for the backup file ([app.daysemble.data.backup.BackupManager]). On-device data
- * only. Inserts never overwrite: a row whose id (or unique key) is already here is skipped, which
- * the return value shows as -1.
- */
+/** Reads for the backup file ([app.daysemble.data.backup.BackupManager]). On-device data only. */
 @Dao
 interface BackupDao {
     @Query("SELECT * FROM calendar_source WHERE kind = 'LOCAL'")
@@ -36,21 +32,19 @@ interface BackupDao {
     @Query("SELECT * FROM reminder")
     suspend fun reminders(): List<ReminderEntity>
 
-    @Query("SELECT id FROM calendar_source")
-    suspend fun calendarIds(): List<String>
-
-    @Query("SELECT id FROM task_list")
-    suspend fun listIds(): List<String>
-
-    @Query("SELECT id FROM task_series")
-    suspend fun seriesIds(): List<String>
-
     @Query("SELECT id FROM task")
     suspend fun taskIds(): List<String>
 
     @Query("SELECT id FROM event")
     suspend fun eventIds(): List<String>
+}
 
+/**
+ * Inserts for a backup import ([app.daysemble.data.backup.BackupManager]). They never overwrite: a
+ * row whose id (or unique key) is already here is skipped, which the return value shows as -1.
+ */
+@Dao
+interface BackupImportDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertCalendar(c: CalendarSourceEntity): Long
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertList(l: TaskListEntity): Long
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertEvent(e: EventEntity): Long
