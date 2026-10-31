@@ -293,38 +293,16 @@ class EventRepository(
         var google = false
         db.withTransaction {
             for (r in deleted.rows) {
-                val g = calendars.get(r.calendarId)?.kind == SourceKind.GOOGLE
-                val cur = events.get(r.id)
                 val mine = deleted.reminders.filter { it.ownerId == r.id }
+                val cur = events.get(r.id)
                 if (cur == r) {
                     // The row is untouched (a changed occurrence of a kept series, or of a Google series whose
                     // delete isn't pushed yet), but the series delete removed its reminders: put them back.
-                    if (mine.isNotEmpty() && db.reminders().forOwner(OwnerType.EVENT, r.id).isEmpty()) {
-                        db.reminders().replace(OwnerType.EVENT, r.id, mine)
-                        restored += r.id
-                    }
+                    if (restoreReminders(r.id, mine)) restored += r.id
                     continue
                 }
-                val row = when {
-                    !g -> r
-                    cur != null && cur.syncState == SyncState.PENDING_DELETE -> {
-                        outbox.cancelDelete(OwnerType.EVENT, r.id, r.remoteId != null)
-                        r.copy(isDeleted = false, updatedAt = now, syncState = if (r.remoteId != null) SyncState.PENDING_UPDATE else SyncState.PENDING_CREATE)
-                    }
-                    cur != null -> r.copy(
-                        remoteId = cur.remoteId, etag = cur.etag, remoteUpdatedAt = cur.remoteUpdatedAt, updatedAt = now,
-                        syncState = outbox.recordUpdate(OwnerType.EVENT, r.id, cur.syncState),
-                    )
-                    r.recurringParentId != null && r.remoteId != null -> continue
-                    else -> {
-                        outbox.recordCreate(OwnerType.EVENT, r.id)
-                        r.copy(
-                            remoteId = null, etag = null, remoteUpdatedAt = null, isDeleted = false, updatedAt = now,
-                            pendingClientId = app.daysemble.data.google.calendar.CalendarMapper.newClientId(),
-                            syncState = SyncState.PENDING_CREATE,
-                        )
-                    }
-                }
+                val g = calendars.get(r.calendarId)?.kind == SourceKind.GOOGLE
+                val row = (if (g) restoredGoogleRow(r, cur, now) else r) ?: continue
                 events.upsert(row)
                 db.reminders().replace(OwnerType.EVENT, r.id, mine)
                 restored += r.id
@@ -333,6 +311,37 @@ class EventRepository(
         }
         restored.forEach(listener::onEventChanged)
         if (google) listener.onPendingSync()
+    }
+
+    /** Puts back [reminders] of [id] if it has none now. Returns whether anything was written. */
+    private suspend fun restoreReminders(id: String, reminders: List<ReminderEntity>): Boolean {
+        if (reminders.isEmpty() || db.reminders().forOwner(OwnerType.EVENT, id).isNotEmpty()) return false
+        db.reminders().replace(OwnerType.EVENT, id, reminders)
+        return true
+    }
+
+    /**
+     * The Google row [r] as restored, given what is stored now ([cur]), with its sync queued; null if it
+     * can't come back (a changed occurrence of a series already deleted on Google). Call inside [restore].
+     */
+    private suspend fun restoredGoogleRow(r: EventEntity, cur: EventEntity?, now: Long): EventEntity? = when {
+        cur != null && cur.syncState == SyncState.PENDING_DELETE -> {
+            outbox.cancelDelete(OwnerType.EVENT, r.id, r.remoteId != null)
+            r.copy(isDeleted = false, updatedAt = now, syncState = if (r.remoteId != null) SyncState.PENDING_UPDATE else SyncState.PENDING_CREATE)
+        }
+        cur != null -> r.copy(
+            remoteId = cur.remoteId, etag = cur.etag, remoteUpdatedAt = cur.remoteUpdatedAt, updatedAt = now,
+            syncState = outbox.recordUpdate(OwnerType.EVENT, r.id, cur.syncState),
+        )
+        r.recurringParentId != null && r.remoteId != null -> null
+        else -> {
+            outbox.recordCreate(OwnerType.EVENT, r.id)
+            r.copy(
+                remoteId = null, etag = null, remoteUpdatedAt = null, isDeleted = false, updatedAt = now,
+                pendingClientId = app.daysemble.data.google.calendar.CalendarMapper.newClientId(),
+                syncState = SyncState.PENDING_CREATE,
+            )
+        }
     }
 
     /** Deletes a whole event / series (soft delete for Google until the remote delete succeeds). */
