@@ -29,6 +29,8 @@ data class EventEditorUiState(
     val saving: Boolean = false,
     /** False for series with individually changed occurrences (they can't move between calendars). */
     val canChangeCalendar: Boolean = true,
+    /** Editing one occurrence of a series: no repeat, calendar or reminders (those stay series-wide). */
+    val isOccurrence: Boolean = false,
 ) {
     val isDirty get() = form != null && original != null && form != original
     val calendar get() = calendars.firstOrNull { it.id == form?.calendarId }
@@ -41,6 +43,7 @@ class EventEditorViewModel(
     private val newDefaults: suspend () -> EventForm,
     private val deviceZone: ZoneId,
     private val handle: SavedStateHandle,
+    private val occurrenceKey: String? = null,
 ) : ViewModel() {
     private val json = Json { ignoreUnknownKeys = true }
     private val form = MutableStateFlow(handle.get<String>(KEY)?.let { runCatching { json.decodeFromString<EventForm>(it) }.getOrNull() })
@@ -52,10 +55,11 @@ class EventEditorViewModel(
     val done = MutableStateFlow(false)
 
     init {
-        viewModelScope.launch { if (eventId != null) canMove.value = repo.canMove(eventId) }
+        viewModelScope.launch { if (eventId != null) canMove.value = occurrenceKey == null && repo.canMove(eventId) }
         viewModelScope.launch {
             if (form.value != null) return@launch
-            val f = if (eventId != null) repo.draftFor(eventId, deviceZone)?.let(EventForm::from) else {
+            val f = if (eventId != null && occurrenceKey != null) repo.draftForOccurrence(eventId, occurrenceKey, deviceZone)?.let(EventForm::from)
+            else if (eventId != null) repo.draftFor(eventId, deviceZone)?.let(EventForm::from) else {
                 newDefaults().let { if (it.calendarId == null) it.copy(calendarId = defaultCalendarId()) else it }
             }
             if (f == null) { done.value = true; return@launch }
@@ -71,6 +75,7 @@ class EventEditorViewModel(
             isNew = eventId == null, form = f, original = o,
             calendars = cals.filter { it.isWritable }, validation = f?.toDraft()?.validationError,
             showErrors = err, saveError = saveErr, saving = isSaving, canChangeCalendar = movable,
+            isOccurrence = eventId != null && occurrenceKey != null,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EventEditorUiState(eventId == null, form.value, original.value))
 
@@ -84,7 +89,11 @@ class EventEditorViewModel(
         saving.value = true
         viewModelScope.launch {
             val ok = runCatching {
-                if (eventId == null) repo.create(draft, f.calendarId ?: defaultCalendarId()) else repo.update(eventId, draft)
+                when {
+                    eventId == null -> repo.create(draft, f.calendarId ?: defaultCalendarId())
+                    occurrenceKey != null -> repo.updateOccurrence(eventId, occurrenceKey, draft)
+                    else -> repo.update(eventId, draft)
+                }
             }.isSuccess
             if (ok) { original.value = f; done.value = true } else { saveError.value = true; saving.value = false }
         }

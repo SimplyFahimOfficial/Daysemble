@@ -389,7 +389,7 @@ private fun AppContent(
         onOpenTask = { id -> TaskDetailRoute(id).let { if (!nav.isShowing(it)) nav.navigate(it) } },
         onEditTask = { id -> nav.navigate(TaskEditorRoute(taskId = id)) },
         onOpenEvent = { id, key -> EventDetailRoute(id, key).let { if (!nav.isShowing(it)) nav.navigate(it) } },
-        onEditEvent = { id -> nav.navigate(EventEditorRoute(eventId = id)) },
+        onEditEvent = { id, key -> nav.navigate(EventEditorRoute(eventId = id, occurrenceKey = key)) },
     ) {
     Box(Modifier.fillMaxSize().background(c.background)) {
         // Paused (lifecycle CREATED) while a page covers it completely: see VisibilityLifecycle.
@@ -611,7 +611,7 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
             val r = e.toRoute<EventDetailRoute>()
             Page {
                 EventDetailScreenRoute(
-                    r.eventId, r.occurrenceKey, onEdit = { id -> nav.openFrom(e, EventEditorRoute(eventId = id)) },
+                    r.eventId, r.occurrenceKey, onEdit = { id, key -> nav.openFrom(e, EventEditorRoute(eventId = id, occurrenceKey = key)) },
                     onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) },
                 )
             }
@@ -620,7 +620,7 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
             val r = e.toRoute<EventEditorRoute>()
             Page {
                 EventEditorScreenRoute(
-                    r.eventId, r.dateEpochDay?.let(LocalDate::ofEpochDay), r.startMinute, r.title,
+                    r.eventId, r.dateEpochDay?.let(LocalDate::ofEpochDay), r.startMinute, r.title, occurrenceKey = r.occurrenceKey,
                     onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) },
                 )
             }
