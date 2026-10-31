@@ -1,12 +1,12 @@
 package app.daysemble.ui.components
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import app.daysemble.R
@@ -23,15 +23,23 @@ import app.daysemble.R
  * Switch Access and keyboards can reach it too; Enter on a focused item is the tap.
  */
 @Composable
-fun Modifier.itemClick(onClick: () -> Unit, onLongClick: (() -> Unit)?): Modifier {
-    val haptics = LocalHapticFeedback.current
+fun Modifier.itemClick(
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
+    /** Pass one to drive other press feedback (e.g. [pressScale]) from the same gesture. */
+    interactionSource: MutableInteractionSource? = null,
+): Modifier {
     val click by rememberUpdatedState(onClick)
     val long by rememberUpdatedState(onLongClick)
+    // combinedClickable already plays the long-press haptic (hapticFeedbackEnabled defaults to
+    // true). Playing it here as well made every long press buzz twice.
     return this.combinedClickable(
+        interactionSource = interactionSource,
+        indication = LocalIndication.current,
         role = Role.Button,
         onClickLabel = stringResource(R.string.action_open),
         onLongClickLabel = if (onLongClick != null) stringResource(R.string.menu_more_actions) else null,
-        onLongClick = if (onLongClick != null) ({ haptics.performHapticFeedback(HapticFeedbackType.LongPress); long?.invoke() }) else null,
+        onLongClick = if (onLongClick != null) ({ long?.invoke() }) else null,
         onClick = { click() },
     )
 }

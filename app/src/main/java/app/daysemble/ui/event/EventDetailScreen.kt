@@ -99,7 +99,8 @@ fun EventDetailRoute(
     if (!isLoaded) { Column(Modifier.fillMaxSize().background(DsTheme.colors.background)) {}; return }
     if (event == null) {
         Column(Modifier.fillMaxSize().background(DsTheme.colors.background)) {
-            DsTopBar("", onClose)
+            // The same close (X) as the loaded page: it's the same screen and closes the same way.
+            DsTopBar("", onClose, close = true)
             StateMessage(Icons.Rounded.EventBusy, stringResource(R.string.event_missing), Modifier.padding(top = Space.x3))
         }
         return
@@ -184,7 +185,8 @@ private fun EventDetailScreen(
                                     val uri = ("geo:0,0?q=" + Uri.encode(event.location)).toUri()
                                     try { ctx.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: ActivityNotFoundException) { mapsError = true }
                                 },
-                                style = DsButtonStyle.Secondary, icon = Icons.Rounded.Map,
+                                // Raised: a Secondary (tonal) button is the tile's own colour and can't be seen on it.
+                                style = DsButtonStyle.Raised, icon = Icons.Rounded.Map,
                             )
                         }
                         if (mapsError) {

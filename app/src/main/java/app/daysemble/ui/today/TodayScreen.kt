@@ -4,8 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,7 +35,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
@@ -121,8 +119,8 @@ import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.TimePrefs
 import app.daysemble.ui.format.durationText
 import app.daysemble.ui.format.rememberMinuteTicker
-import app.daysemble.ui.theme.DsMotion
 import app.daysemble.ui.theme.DsTheme
+import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 import kotlinx.coroutines.launch
@@ -522,7 +520,7 @@ private fun AnnotatedString.Builder.appendTemplate(template: String, args: List<
 
 // ---- Agenda panel -----------------------------------------------------------------------------
 
-private val PanelShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+private val PanelShape = Radii.panel
 
 @Composable
 private fun AgendaPanel(
@@ -686,7 +684,9 @@ private fun Handle(expanded: Boolean, onToggle: () -> Unit) {
 @Composable
 private fun CompletedHeader(count: Int, expanded: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
     val c = DsTheme.colors
-    val rotation by animateFloatAsState(if (expanded) 180f else 0f, DsTheme.motion.standard(), label = "chev")
+    val m = DsTheme.motion
+    // Rotation is movement: with reduced motion the chevron flips at once.
+    val rotation by animateFloatAsState(if (expanded) 180f else 0f, if (m.reduced) snap() else m.standard(), label = "chev")
     Row(
         modifier
             .padding(top = Space.l)
@@ -763,7 +763,7 @@ private fun rememberOverviewPanel(): OverviewPanel {
     // Follows the finger directly; on release a critically damped spring carries the gesture's
     // velocity into the settle. Reduced motion: a short tween, no spring.
     val spec: AnimationSpec<Float> = remember(m.reduced) {
-        if (m.reduced) tween(m.short, easing = DsMotion.Standard) else spring(dampingRatio = 1f, stiffness = 650f)
+        m.settle()
     }
     val threshold = with(density) { 125.dp.toPx() }
     return remember(state, spec, threshold) { OverviewPanel(state, spec, threshold) }

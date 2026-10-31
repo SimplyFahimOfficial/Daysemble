@@ -23,6 +23,10 @@ object Radii {
     val chip = RoundedCornerShape(8.dp)
     val control = RoundedCornerShape(12.dp)
     val card = RoundedCornerShape(16.dp)
+    /** Agenda cards (Today, the calendar's day lists): larger tiles than [card]. */
+    val tile = RoundedCornerShape(20.dp)
+    /** Top of the Today agenda panel. */
+    val panel = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     val sheet = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     val dialog = RoundedCornerShape(24.dp)
     val pill = RoundedCornerShape(percent = 50)
