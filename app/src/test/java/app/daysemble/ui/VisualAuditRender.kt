@@ -51,6 +51,7 @@ import app.daysemble.ui.format.LocalAppClock
 import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.rememberTimePrefs
 import app.daysemble.ui.settings.AppearanceRoute
+import app.daysemble.ui.settings.SupportRoute
 import app.daysemble.ui.tasks.TasksRoute
 import app.daysemble.ui.theme.DaysembleTheme
 import app.daysemble.ui.today.TodayRoute
@@ -136,6 +137,9 @@ open class VisualAuditRender {
 
     private fun enabled() = assumeTrue(System.getProperty("daysemble.visualAudit") == "true")
 
+    // The whole page in one tall, low-density frame (scrolling plus several full-size captures runs out of heap).
+    @Config(qualifiers = "w393dp-h1700dp-mdpi") @Test fun supportLight() { enabled(); render("support-light", ThemeMode.LIGHT) { SupportRoute(onBack = {}) } }
+    @Config(qualifiers = "w393dp-h1700dp-mdpi") @Test fun supportDark() { enabled(); render("support-dark", ThemeMode.DARK) { SupportRoute(onBack = {}) } }
     @Test fun todayLight() { enabled(); render("today-light", ThemeMode.LIGHT) { TodayRoute(PaddingValues(), { _, _ -> }, {}) } }
     @Test fun calendarLight() { enabled(); render("calendar-light", ThemeMode.LIGHT) { CalendarRoute(PaddingValues(), { _, _ -> }, {}, { _, _ -> }) } }
     @Test fun tasksDark() { enabled(); render("tasks-dark", ThemeMode.DARK) { TasksRoute(PaddingValues(), {}) } }

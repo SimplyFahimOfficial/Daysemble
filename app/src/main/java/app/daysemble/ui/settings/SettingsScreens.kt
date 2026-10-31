@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
@@ -69,7 +70,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 
-enum class SettingsPage { APPEARANCE, NOTIFICATIONS, ACCOUNTS, CONFLICTS, LISTS_CALENDARS, DATE_TIME, TASKS, DATA, ABOUT, SCHEDULE }
+enum class SettingsPage { APPEARANCE, NOTIFICATIONS, ACCOUNTS, CONFLICTS, LISTS_CALENDARS, DATE_TIME, TASKS, DATA, ABOUT, SCHEDULE, SUPPORT }
 
 @Composable
 private fun SettingsScaffold(title: String, onBack: () -> Unit, loaded: Boolean = true, content: @Composable () -> Unit) {
@@ -147,6 +148,10 @@ fun SettingsHomeRoute(onBack: () -> Unit, onOpen: (SettingsPage) -> Unit) {
         SectionHeader(stringResource(R.string.settings_section_privacy), Modifier.padding(top = Space.l))
         DsRow(stringResource(R.string.settings_data), subtitle = stringResource(R.string.settings_data_sub), icon = Icons.Rounded.Shield, onClick = { onOpen(SettingsPage.DATA) }, trailing = chevron)
         DsRow(stringResource(R.string.settings_about), subtitle = stringResource(R.string.version_label, BuildConfig.VERSION_NAME), icon = Icons.Rounded.Info, onClick = { onOpen(SettingsPage.ABOUT) }, trailing = chevron)
+        DsRow(
+            stringResource(R.string.support_title), subtitle = stringResource(R.string.support_row_sub),
+            icon = Icons.Rounded.FavoriteBorder, onClick = { onOpen(SettingsPage.SUPPORT) }, trailing = chevron,
+        )
     }
 }
 
@@ -378,7 +383,7 @@ private fun BackupSection(container: app.daysemble.AppContainer) {
 }
 
 @Composable
-fun AboutRoute(onBack: () -> Unit) {
+fun AboutRoute(onBack: () -> Unit, onOpenSupport: () -> Unit = {}) {
     SettingsScaffold(stringResource(R.string.settings_about), onBack) {
         Column(Modifier.padding(Space.gutter)) {
             app.daysemble.ui.brand.BrandWordmark(Modifier.semantics { heading() }, height = 48.dp)
@@ -386,6 +391,11 @@ fun AboutRoute(onBack: () -> Unit) {
             Spacer(Modifier.height(Space.l))
             Text(stringResource(R.string.about_body), style = DsTheme.type.body, color = DsTheme.colors.textSecondary)
         }
+        DsRow(
+            stringResource(R.string.support_title), subtitle = stringResource(R.string.support_row_sub),
+            icon = Icons.Rounded.FavoriteBorder, onClick = onOpenSupport,
+            trailing = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = DsTheme.colors.textTertiary) },
+        )
         HairlineDivider()
         SectionHeader(stringResource(R.string.about_troubleshooting), Modifier.padding(top = Space.l))
         DsRow(stringResource(R.string.about_zone), subtitle = LocalTimePrefs.current.zone.id)
