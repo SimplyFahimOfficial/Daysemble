@@ -67,12 +67,14 @@ fun EventEditorRoute(
     date: LocalDate?,
     startMinute: Int?,
     title: String?,
+    /** With [eventId] of a series: edit only this occurrence. */
+    occurrenceKey: String? = null,
     /** Called when the screen closes itself (after saving, deleting, or when its item is gone). Defaults to [onClose]. */
     onDone: (() -> Unit)? = null,
     onClose: () -> Unit,
 ) {
     val prefs = LocalTimePrefs.current
-    val vm = daysembleViewModel(key = "event:$eventId") { c, h ->
+    val vm = daysembleViewModel(key = "event:$eventId:$occurrenceKey") { c, h ->
         EventEditorViewModel(
             c.events, { c.defaults().calendarId }, eventId,
             newDefaults = {
@@ -83,7 +85,7 @@ fun EventEditorRoute(
                 val m = startMinute ?: slot
                 newEventForm(d, m, s.defaultEventDurationMinutes, prefs.zone, title.orEmpty(), s.defaultEventReminderMinutes)
             },
-            deviceZone = prefs.zone, handle = h,
+            deviceZone = prefs.zone, handle = h, occurrenceKey = occurrenceKey,
         )
     }
     val state by vm.state.collectAsStateWithLifecycle()
@@ -108,7 +110,7 @@ private fun EventEditorScreen(
     BackHandler(enabled = state.isDirty) { confirmDiscard = true }
 
     Column(Modifier.fillMaxSize().background(c.background).imePadding()) {
-        DsTopBar(stringResource(if (state.isNew) R.string.new_event else R.string.edit_event), attemptClose) {
+        DsTopBar(stringResource(if (state.isNew) R.string.new_event else if (state.isOccurrence) R.string.edit_this_event else R.string.edit_event), attemptClose) {
             DsButton(stringResource(R.string.action_save), save, modifier = Modifier.padding(end = Space.s), enabled = state.form != null && !state.saving)
         }
         val f = state.form
@@ -158,10 +160,15 @@ private fun EventEditorScreen(
                 }
             }
 
-            RepeatSection(f, update, onPickUntil = { picker = "until" })
+            if (!state.isOccurrence) RepeatSection(f, update, onPickUntil = { picker = "until" })
 
             SectionHeader(stringResource(R.string.field_reminders), Modifier.padding(top = Space.l))
-            ReminderPicker(
+            if (state.isOccurrence) {
+                Text(
+                    stringResource(R.string.occurrence_reminders_note), style = DsTheme.type.bodySmall, color = c.textSecondary,
+                    modifier = Modifier.padding(horizontal = Space.gutter),
+                )
+            } else ReminderPicker(
                 selected = f.reminders, options = EventReminderOptions, forTask = false, allDay = f.isAllDay,
                 onChange = { r -> update { it.copy(reminders = r) } },
             )

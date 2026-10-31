@@ -22,6 +22,7 @@ import app.daysemble.ui.theme.EventSwatch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import java.time.Duration
@@ -177,6 +178,57 @@ class EventRepository(
                 rrule = e.rrule?.let(RRule::parse), reminderMinutesBefore = reminders(id), colorArgb = e.colorArgb,
             )
         }
+    }
+
+    /**
+     * A draft of one occurrence of series [masterId]: its changed version if it has one, otherwise
+     * the series at that occurrence's time. No repeat rule (it's one occurrence) and the series'
+     * reminders and calendar, which stay series-wide.
+     */
+    suspend fun draftForOccurrence(masterId: String, key: String, deviceZone: ZoneId): EventDraft? {
+        val master = get(masterId)?.takeIf { it.rrule != null } ?: return null
+        val override = events.override(masterId, key)?.takeIf { !it.isDeleted && !it.isCancelled }
+        val base = draftFor(override?.id ?: masterId, deviceZone) ?: return null
+        val occ = observeOccurrence(masterId, key, deviceZone).first() ?: return null
+        val zone = base.zone
+        val timing = if (occ.isAllDay) {
+            base.copy(startDate = occ.startDate, endDate = occ.endDate.minusDays(1).coerceAtLeast(occ.startDate))
+        } else {
+            val s = occ.start.atZone(zone); val e = occ.end.atZone(zone)
+            base.copy(startDate = s.toLocalDate(), startTime = s.toLocalTime(), endDate = e.toLocalDate(), endTime = e.toLocalTime())
+        }
+        return timing.copy(rrule = null, calendarId = master.calendarId, reminderMinutesBefore = reminders(masterId))
+    }
+
+    /**
+     * Changes only the occurrence [key] of series [masterId], by storing (or updating) an override
+     * row for it. The rule, the other occurrences, the reminders and the calendar stay as they are.
+     * For Google the change is pushed as an edit of that instance.
+     */
+    suspend fun updateOccurrence(masterId: String, key: String, draft: EventDraft) {
+        require(draft.validationError == null) { "Invalid event: ${draft.validationError}" }
+        val google = db.withTransaction {
+            val master = get(masterId) ?: return@withTransaction null
+            require(master.rrule != null && !master.isReadOnlyRecurrence) { "Not an editable series" }
+            val cal = calendars.get(master.calendarId) ?: return@withTransaction null
+            require(isWritableRole(cal.accessRole)) { "Calendar is read-only" }
+            val g = cal.kind == SourceKind.GOOGLE
+            val now = clock.now().toEpochMilli()
+            val existing = events.override(masterId, key)
+            val base = existing ?: master.copy(
+                id = UUID.randomUUID().toString(), rrule = null, exdates = "", recurringParentId = masterId, originalStartKey = key,
+                remoteId = null, etag = null, remoteUpdatedAt = null, pendingClientId = null, instancesUntil = null,
+                isCancelled = false, createdAt = now,
+            )
+            // An override has no rule of its own and stays in its series' calendar.
+            val row = applyDraft(base, draft.copy(rrule = null, calendarId = master.calendarId))
+            // A change of a Google instance is an edit of that instance on Google (CalendarSyncer finds its
+            // id), never a new event: so it is always queued as an update.
+            val state = if (g) outbox.recordUpdate(OwnerType.EVENT, row.id, SyncState.PENDING_UPDATE) else SyncState.LOCAL
+            events.upsert(row.copy(isCancelled = false, isDeleted = false, updatedAt = now, syncState = state))
+            g
+        } ?: return
+        notify(masterId, google)
     }
 
     suspend fun create(draft: EventDraft, fallbackCalendarId: String): String {

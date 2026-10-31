@@ -123,7 +123,8 @@ object CalendarMapper {
             location = e.location,
             start = start,
             end = end,
-            recurrence = recurrence ?: if (!forInsert && e.rrule == null) emptyList() else null,
+            // An instance of a series (an override) has no recurrence of its own: never send the field for it.
+            recurrence = recurrence ?: if (!forInsert && e.rrule == null && e.recurringParentId == null) emptyList() else null,
             reminders = RemindersDto(useDefault = false, overrides = reminders.distinct().take(5).map { ReminderDto("popup", it) }),
         )
     }

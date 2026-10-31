@@ -120,7 +120,12 @@ class CalendarSyncer(
                         markSynced(e, created)
                     }
                     OutboxOp.UPDATE -> {
-                        val rid = e.remoteId ?: run { db.sync().remove(op.id); continue }
+                        val rid = e.remoteId ?: if (e.recurringParentId != null) {
+                            // A change of one occurrence made here: edit that instance of the series on Google.
+                            instanceId(cal.remoteId, e) ?: continue
+                        } else {
+                            db.sync().remove(op.id); continue
+                        }
                         try {
                             markSynced(e, api.patch(cal.remoteId, rid, CalendarMapper.toDto(e, reminders(e.id), false), e.etag))
                         } catch (_: ApiError.Precondition) {
@@ -128,8 +133,10 @@ class CalendarSyncer(
                             if (resolveConflict(e, api.get(cal.remoteId, rid), cal)) conflicts++
                             continue
                         } catch (_: ApiError.NotFound) {
+                            if (e.recurringParentId != null) throw ApiError.Client(404, "instance_gone") // can't re-create one occurrence alone
                             remoteDeletedWhileEdited(e); conflicts++; continue
                         } catch (_: ApiError.Gone) {
+                            if (e.recurringParentId != null) throw ApiError.Client(410, "instance_gone")
                             remoteDeletedWhileEdited(e); conflicts++; continue
                         }
                     }
@@ -152,6 +159,28 @@ class CalendarSyncer(
             }
         }
         return Triple(pushed, conflicts, failed)
+    }
+
+    /**
+     * Google's id of the instance [override] changes, found by its original start. Null while the
+     * series itself isn't on Google yet (its create is still queued): the change waits for it.
+     */
+    private suspend fun instanceId(calendarRemoteId: String, override: EventEntity): String? {
+        val master = override.recurringParentId?.let { events.get(it) } ?: throw ApiError.Client(404, "series_gone")
+        val masterRemote = master.remoteId ?: return null
+        val key = override.originalStartKey ?: throw ApiError.Client(400, "no_original_start")
+        val zone = runCatching { java.time.ZoneId.of(master.timeZone) }.getOrDefault(java.time.ZoneOffset.UTC)
+        // A window of a few days around the original date, matched by original start like a pull does.
+        val day = java.time.LocalDate.parse(key.take(10))
+        val min = day.minusDays(2).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toString()
+        val max = day.plusDays(3).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toString()
+        var page: String? = null
+        do {
+            val p = api.instances(calendarRemoteId, masterRemote, min, max, page)
+            p.items.firstOrNull { it.id != null && CalendarMapper.originalKey(it, zone) == key }?.let { return it.id }
+            page = p.nextPageToken
+        } while (page != null)
+        throw ApiError.Client(404, "instance_gone")
     }
 
     private suspend fun markSynced(local: EventEntity, remote: EventDto) {
@@ -284,8 +313,12 @@ class CalendarSyncer(
 
     /** Applies one remote item. Returns true if it was a conflict. */
     private suspend fun applyRemote(dto: EventDto, cal: CalendarSourceEntity): Boolean {
-        val local = events.byRemoteId(cal.id, dto.id!!)
         val parent = dto.recurringEventId?.let { events.byRemoteId(cal.id, it) }
+        // An occurrence changed here but not pushed yet has no Google id: match it by its original start,
+        // so Google's version of that instance meets it (as a conflict) instead of becoming a second row.
+        val local = events.byRemoteId(cal.id, dto.id!!) ?: parent?.let { p ->
+            CalendarMapper.originalKey(dto, java.time.ZoneId.of(p.timeZone))?.let { events.override(p.id, it) }?.takeIf { it.remoteId == null }
+        }
         if (dto.recurringEventId != null && parent == null) return false // parent outside our data; ignore orphan exception
 
         if (dto.status == "cancelled") {

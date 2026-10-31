@@ -112,7 +112,10 @@ class MotionContinuityTest {
     }
 
     @Test fun anotherDay_replacesTheAgendaInOneFrame_neverTwoDaysTogether() {
-        // The sample data has "Design review" today only and the weekly "Yoga" tomorrow only.
+        // The sample data has "Design review" today only and the weekly "Yoga" tomorrow only. The swap
+        // needs both days on the one-week strip, which isn't so on the last day of the week.
+        val first = java.time.temporal.WeekFields.of(Locale.getDefault()).firstDayOfWeek
+        org.junit.Assume.assumeTrue("tomorrow is on the strip's next page today", today.plusDays(1).dayOfWeek != first)
         assertThat(inAgenda("Design review")).isEqualTo(1)
         dateCell(today.plusDays(1)).performClick()
         var sawTomorrow = false

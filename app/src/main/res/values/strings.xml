@@ -158,6 +158,12 @@
     <string name="tasks_empty_title">No open tasks</string>
     <string name="tasks_empty_filter_title">Nothing here</string>
     <string name="tasks_empty_body">Tasks you add appear here.</string>
+    <string name="edit_this_event">Edit this event</string>
+    <string name="edit_recurring_title">Edit a repeating event</string>
+    <string name="edit_recurring_body">Change only this event, or every event in the series?</string>
+    <string name="edit_only_this_event">This event</string>
+    <string name="edit_all_events">All events</string>
+    <string name="occurrence_reminders_note">Reminders are the same for every event in the series. To change them, edit all events.</string>
     <string name="task_deleted">Task deleted</string>
     <string name="overdue_since">Overdue · %1$s</string>
     <string name="priority_none">None</string>

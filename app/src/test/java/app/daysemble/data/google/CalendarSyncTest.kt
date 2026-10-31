@@ -150,6 +150,56 @@ class CalendarSyncTest : SyncTestBase() {
         assertThat(db.sync().outbox()).isEmpty()
     }
 
+    private val instance22 = """{"id":"s1_20261022T070000Z","status":"confirmed","summary":"Standup","recurringEventId":"s1","etag":"\"i1\"",
+        "originalStartTime":{"dateTime":"2026-10-22T09:00:00+02:00","timeZone":"Europe/Berlin"},
+        "start":{"dateTime":"2026-10-22T09:00:00+02:00"},"end":{"dateTime":"2026-10-22T09:15:00+02:00"},"updated":"2026-10-01T08:00:00.000Z"}"""
+
+    @Test fun `an occurrence changed here is pushed as an edit of that instance, without a recurrence`() = runTest {
+        router.on("GET", "/calendar/v3/users/me/calendarList") { calendarList() }
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$series],"nextSyncToken":"tok1"}""") }
+        syncer().sync(acct)
+        val cal = db.calendars().byKind(SourceKind.GOOGLE).single()
+        val master = db.events().byRemoteId(cal.id, "s1")!!.id
+        val key = "2026-10-22T09:00"
+        events.updateOccurrence(master, key, events.draftForOccurrence(master, key, zone)!!.copy(title = "Standup (late)", startTime = LocalTime.of(10, 0), endTime = LocalTime.of(10, 15)))
+
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[],"nextSyncToken":"tok2"}""") }
+        router.on("GET", "/calendar/v3/calendars/primary@x/events/s1/instances") { json(body = """{"items":[$instance22]}""") }
+        router.on("PATCH", "/calendar/v3/calendars/primary@x/events/s1_20261022T070000Z") { r ->
+            json(body = instance22.replace("\"Standup\"", "\"Standup (late)\"").replace("\"updated\":\"2026-10-01T08:00:00.000Z\"", "\"updated\":\"2026-10-22T08:00:00.000Z\""))
+        }
+        syncer().sync(acct)
+
+        val patch = router.requests.single { it.method == "PATCH" }.body!!.utf8()
+        assertThat(patch).contains("Standup (late)")
+        assertThat(patch).doesNotContain("recurrence")
+        assertThat(router.count("POST", "/calendar/v3/calendars/primary@x/events")).isEqualTo(0) // not a new event
+        val ov = db.events().overridesFor(listOf(master)).single()
+        assertThat(ov.remoteId).isEqualTo("s1_20261022T070000Z")
+        assertThat(ov.syncState).isEqualTo(SyncState.SYNCED)
+        assertThat(db.sync().outbox()).isEmpty()
+        val occ = events.occurrences(LocalDate.parse("2026-10-22"), LocalDate.parse("2026-10-22"), zone).first().single { it.eventId == master }
+        assertThat(occ.title).isEqualTo("Standup (late)")
+    }
+
+    @Test fun `Google's version of an instance changed here meets the local change instead of duplicating it`() = runTest {
+        router.on("GET", "/calendar/v3/users/me/calendarList") { calendarList() }
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$series],"nextSyncToken":"tok1"}""") }
+        syncer().sync(acct)
+        val cal = db.calendars().byKind(SourceKind.GOOGLE).single()
+        val master = db.events().byRemoteId(cal.id, "s1")!!.id
+        val key = "2026-10-22T09:00"
+        events.updateOccurrence(master, key, events.draftForOccurrence(master, key, zone)!!.copy(title = "Mine"))
+        // The pull brings an older Google edit of the same instance (no push in between: calendar not writable now).
+        db.calendars().upsert(cal.copy(accessRole = "reader"))
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[${instance22.replace("\"Standup\"", "\"Theirs\"")}],"nextSyncToken":"tok2"}""") }
+        router.on("GET", "/calendar/v3/users/me/calendarList") { calendarList().let { it } }
+        CalendarSyncer(db, CalendarApi(http, base("/calendar/v3/")), clock).pullCalendar(db.calendars().get(cal.id)!!)
+        val ovs = db.events().overridesFor(listOf(master)).filter { it.originalStartKey == key }
+        assertThat(ovs).hasSize(1)
+        assertThat(ovs.single().title).isEqualTo("Mine") // the newer local change wins
+    }
+
     @Test fun `remote delete of an item with unpushed local edits keeps the local version`() = runTest {
         router.on("GET", "/calendar/v3/users/me/calendarList") { calendarList() }
         router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$ev1],"nextSyncToken":"tok1"}""") }
