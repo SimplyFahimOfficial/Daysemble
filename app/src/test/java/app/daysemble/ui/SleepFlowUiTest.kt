@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -97,6 +98,8 @@ class SleepFlowUiTest {
         compose.onNodeWithText("I’m going to sleep").performClick()
         compose.waitUntil(5_000) { records().size == 1 }
         val before = records().single()
+        // The database has the record before the history row is on screen: wait for the row's button.
+        compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription("Edit times").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Edit times").performClick()
         waitForText("Edit sleep")
         compose.onNodeWithText("Delete").performClick()
