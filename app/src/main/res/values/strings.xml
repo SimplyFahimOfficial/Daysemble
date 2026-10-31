@@ -159,6 +159,13 @@
     <string name="tasks_empty_filter_title">Nothing here</string>
     <string name="tasks_empty_body">Tasks you add appear here.</string>
     <string name="task_deleted">Task deleted</string>
+    <string name="event_deleted">Event deleted</string>
+    <string name="occurrence_deleted">Event removed from this day</string>
+    <string name="menu_reschedule">Reschedule</string>
+    <string name="reschedule_title">Move to</string>
+    <string name="reschedule_next_week">Next week</string>
+    <!-- %1$s: the new due date, e.g. "Tue, Nov 3" -->
+    <string name="task_rescheduled">Moved to %1$s</string>
     <string name="overdue_since">Overdue · %1$s</string>
     <string name="priority_none">None</string>
     <string name="priority_low">Low</string>

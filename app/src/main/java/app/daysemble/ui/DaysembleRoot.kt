@@ -188,6 +188,18 @@ val LocalSyncStatus = staticCompositionLocalOf<State<SyncStatus?>?> { null }
 val LocalTaskDeleted = staticCompositionLocalOf<(String) -> Unit> { {} }
 
 /**
+ * Call after an event (or one occurrence of a series) was deleted, with what the delete returned.
+ * Shows "Event deleted · Undo" from the root scope, like [LocalTaskDeleted].
+ */
+val LocalEventDeleted = staticCompositionLocalOf<(app.daysemble.data.repo.EventRepository.Deleted?, Boolean) -> Unit> { { _, _ -> } }
+
+/**
+ * Call after a task's due date was changed from a quick action, with the previous date and time.
+ * Shows "Moved to Tomorrow · Undo" from the root scope.
+ */
+val LocalTaskRescheduled = staticCompositionLocalOf<(String, java.time.LocalDate, java.time.LocalDate?, java.time.LocalTime?) -> Unit> { { _, _, _, _ -> } }
+
+/**
  * Call after a task was checked off in a list. For a repeating task it shows where the series went
  * ("Done · next one Fri, Oct 30", or that the repeat has ended) with Undo, from the root scope like
  * [LocalTaskDeleted]. Undo reopens the occurrence, which also removes the next one again if it
@@ -238,6 +250,28 @@ fun DaysembleRoot(
             }
         }
     }
+    val eventDeletedMsg = stringResource(R.string.event_deleted)
+    val occurrenceDeletedMsg = stringResource(R.string.occurrence_deleted)
+    val onEventDeleted: (app.daysemble.data.repo.EventRepository.Deleted?, Boolean) -> Unit =
+        remember(container, eventDeletedMsg, occurrenceDeletedMsg, undoLabel) {
+            { deleted, occurrence ->
+                if (deleted != null) rootScope.launch {
+                    val r = snackbar.showSnackbar(if (occurrence) occurrenceDeletedMsg else eventDeletedMsg, undoLabel, duration = SnackbarDuration.Short)
+                    if (r == SnackbarResult.ActionPerformed) container.events.restore(deleted)
+                }
+            }
+        }
+    val movedMsg = stringResource(R.string.task_rescheduled)
+    val onTaskRescheduled: (String, java.time.LocalDate, java.time.LocalDate?, java.time.LocalTime?) -> Unit =
+        remember(container, movedMsg, undoLabel, prefs) {
+            { id, newDate, oldDate, oldTime ->
+                rootScope.launch {
+                    val msg = movedMsg.format(app.daysemble.ui.format.Fmt.smartDate(newDate, container.clock.today(), prefs))
+                    val r = snackbar.showSnackbar(msg, undoLabel, duration = SnackbarDuration.Short)
+                    if (r == SnackbarResult.ActionPerformed) container.tasks.setDue(id, oldDate, oldTime)
+                }
+            }
+        }
     val nextMsg = stringResource(R.string.task_done_next)
     val endedMsg = stringResource(R.string.task_done_series_ended)
     val doneMsg = stringResource(R.string.task_done)
@@ -262,6 +296,8 @@ fun DaysembleRoot(
         LocalAppClock provides container.clock,
         LocalSnackbar provides snackbar,
         LocalTaskDeleted provides onTaskDeleted,
+        LocalEventDeleted provides onEventDeleted,
+        LocalTaskRescheduled provides onTaskRescheduled,
         LocalTaskCompleted provides onTaskCompleted,
         LocalAppSettings provides settings,
         LocalSyncStatus provides syncStatus,
@@ -445,7 +481,7 @@ private fun AppContent(
             onMoreEventOptions = { pre ->
                 nav.openFromMain(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
             },
-            onMoreTaskOptions = { d -> nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay())) },
+            onMoreTaskOptions = { d, minute -> nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay(), dueMinute = minute)) },
         )
     }
 }
@@ -556,7 +592,7 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
         }
         composable<TaskEditorRoute> { e ->
             val r = e.toRoute<TaskEditorRoute>()
-            Page { TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) }) }
+            Page { TaskEditorScreenRoute(r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), initialDueMinute = r.dueMinute, onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) }) }
         }
         composable<EventDetailRoute> { e ->
             val r = e.toRoute<EventDetailRoute>()

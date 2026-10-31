@@ -115,12 +115,14 @@ class TaskEditorViewModel(
     private val parentId: String?,
     initialDue: LocalDate?,
     private val handle: SavedStateHandle,
+    /** Minute of day prefilled by Quick Add; only used with [initialDue]. */
+    initialDueMinute: Int? = null,
 ) : ViewModel() {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val form = MutableStateFlow(
         handle.get<String>(KEY_FORM)?.let { runCatching { json.decodeFromString<TaskForm>(it) }.getOrNull() }
-            ?: TaskForm(dueEpochDay = initialDue?.toEpochDay()),
+            ?: TaskForm(dueEpochDay = initialDue?.toEpochDay(), dueMinutes = initialDueMinute?.takeIf { initialDue != null }),
     )
     private val original = MutableStateFlow<TaskForm?>(handle.get<String>(KEY_ORIGINAL)?.let { runCatching { json.decodeFromString<TaskForm>(it) }.getOrNull() })
     private val titleError = MutableStateFlow(false)

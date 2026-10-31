@@ -94,6 +94,7 @@ fun EventDetailRoute(
         value = loaded.second?.calendarId?.let { container.events.calendar(it)?.name }
     }
     val scope = rememberCoroutineScope()
+    val onDeleted = app.daysemble.ui.LocalEventDeleted.current
     val (isLoaded, event) = loaded
     if (!isLoaded) { Column(Modifier.fillMaxSize().background(DsTheme.colors.background)) {}; return }
     if (event == null) {
@@ -105,8 +106,8 @@ fun EventDetailRoute(
     }
     EventDetailScreen(
         event = event, rrule = rrule, calendarName = calendarName, onClose = onClose, onEdit = { onEdit(eventId) },
-        onDeleteSeries = { scope.launch { container.events.delete(eventId); finish() } },
-        onDeleteOccurrence = { scope.launch { container.events.deleteOccurrence(eventId, event.occurrenceKey); finish() } },
+        onDeleteSeries = { scope.launch { val d = container.events.delete(eventId); onDeleted(d, false); finish() } },
+        onDeleteOccurrence = { scope.launch { val d = container.events.deleteOccurrence(eventId, event.occurrenceKey); onDeleted(d, true); finish() } },
     )
 }
 

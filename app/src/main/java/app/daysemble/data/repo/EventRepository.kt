@@ -269,9 +269,68 @@ class EventRepository(
         notify(id, google)
     }
 
+    /**
+     * What a delete removed (the event, its changed occurrences and their reminders), kept in memory
+     * so the user can undo. See [restore].
+     */
+    class Deleted internal constructor(internal val rows: List<EventEntity>, internal val reminders: List<ReminderEntity>)
+
+    private suspend fun snapshot(id: String): Deleted? {
+        val row = events.get(id) ?: return null
+        val rows = listOf(row) + if (row.rrule != null) events.overridesFor(listOf(id)) else emptyList()
+        return Deleted(rows, rows.flatMap { db.reminders().forOwner(OwnerType.EVENT, it.id) })
+    }
+
+    /**
+     * Undoes [delete] or [deleteOccurrence]. On-device rows are written back as they were. A Google
+     * event whose delete hasn't been pushed gets its pending delete cancelled; one that is already
+     * gone from Google is created again (with a new id). Occurrences of a Google series that was
+     * deleted remotely meanwhile can't be brought back and are left out.
+     */
+    suspend fun restore(deleted: Deleted) {
+        val now = clock.now().toEpochMilli()
+        val restored = mutableListOf<String>()
+        var google = false
+        db.withTransaction {
+            for (r in deleted.rows) {
+                val g = calendars.get(r.calendarId)?.kind == SourceKind.GOOGLE
+                val cur = events.get(r.id)
+                if (cur == r) continue // untouched by the delete (e.g. a changed occurrence of a kept series)
+                val row = when {
+                    !g -> r
+                    cur != null && cur.syncState == SyncState.PENDING_DELETE -> {
+                        outbox.cancelDelete(OwnerType.EVENT, r.id, r.remoteId != null)
+                        r.copy(isDeleted = false, updatedAt = now, syncState = if (r.remoteId != null) SyncState.PENDING_UPDATE else SyncState.PENDING_CREATE)
+                    }
+                    cur != null -> r.copy(
+                        remoteId = cur.remoteId, etag = cur.etag, remoteUpdatedAt = cur.remoteUpdatedAt, updatedAt = now,
+                        syncState = outbox.recordUpdate(OwnerType.EVENT, r.id, cur.syncState),
+                    )
+                    r.recurringParentId != null && r.remoteId != null -> continue
+                    else -> {
+                        outbox.recordCreate(OwnerType.EVENT, r.id)
+                        r.copy(
+                            remoteId = null, etag = null, remoteUpdatedAt = null, isDeleted = false, updatedAt = now,
+                            pendingClientId = app.daysemble.data.google.calendar.CalendarMapper.newClientId(),
+                            syncState = SyncState.PENDING_CREATE,
+                        )
+                    }
+                }
+                events.upsert(row)
+                db.reminders().replace(OwnerType.EVENT, r.id, deleted.reminders.filter { it.ownerId == r.id })
+                restored += r.id
+                google = google || g
+            }
+        }
+        restored.forEach(listener::onEventChanged)
+        if (google) listener.onPendingSync()
+    }
+
     /** Deletes a whole event / series (soft delete for Google until the remote delete succeeds). */
-    suspend fun delete(id: String) {
+    suspend fun delete(id: String): Deleted? {
+        var removed: Deleted? = null
         val google = db.withTransaction {
+            removed = snapshot(id)
             val row = events.get(id) ?: return@withTransaction null
             val g = calendars.get(row.calendarId)?.kind == SourceKind.GOOGLE
             if (!g) {
@@ -282,13 +341,16 @@ class EventRepository(
             }
             db.reminders().deleteForOwner(OwnerType.EVENT, id)
             g
-        } ?: return
+        } ?: return null
         notify(id, google)
+        return removed
     }
 
     /** Removes one instance of a series by adding an EXDATE to the master. */
-    suspend fun deleteOccurrence(eventId: String, key: String) {
+    suspend fun deleteOccurrence(eventId: String, key: String): Deleted? {
+        var removed: Deleted? = null
         val google = db.withTransaction {
+            removed = snapshot(eventId)
             val row = get(eventId) ?: return@withTransaction null
             if (row.rrule == null) return@withTransaction null
             val g = calendars.get(row.calendarId)?.kind == SourceKind.GOOGLE
@@ -298,9 +360,10 @@ class EventRepository(
             g
         } ?: run {
             // Not a series: deleting "this occurrence" is deleting the event.
-            delete(eventId); return
+            return delete(eventId)
         }
         notify(eventId, google)
+        return removed
     }
 
     private fun applyDraft(row: EventEntity, d: EventDraft): EventEntity {
