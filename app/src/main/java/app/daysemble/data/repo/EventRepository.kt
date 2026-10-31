@@ -295,7 +295,16 @@ class EventRepository(
             for (r in deleted.rows) {
                 val g = calendars.get(r.calendarId)?.kind == SourceKind.GOOGLE
                 val cur = events.get(r.id)
-                if (cur == r) continue // untouched by the delete (e.g. a changed occurrence of a kept series)
+                val mine = deleted.reminders.filter { it.ownerId == r.id }
+                if (cur == r) {
+                    // The row is untouched (a changed occurrence of a kept series, or of a Google series whose
+                    // delete isn't pushed yet), but the series delete removed its reminders: put them back.
+                    if (mine.isNotEmpty() && db.reminders().forOwner(OwnerType.EVENT, r.id).isEmpty()) {
+                        db.reminders().replace(OwnerType.EVENT, r.id, mine)
+                        restored += r.id
+                    }
+                    continue
+                }
                 val row = when {
                     !g -> r
                     cur != null && cur.syncState == SyncState.PENDING_DELETE -> {
@@ -317,7 +326,7 @@ class EventRepository(
                     }
                 }
                 events.upsert(row)
-                db.reminders().replace(OwnerType.EVENT, r.id, deleted.reminders.filter { it.ownerId == r.id })
+                db.reminders().replace(OwnerType.EVENT, r.id, mine)
                 restored += r.id
                 google = google || g
             }
@@ -339,7 +348,8 @@ class EventRepository(
                 Outbox.DeleteResult.HARD_DELETE_LOCALLY -> events.hardDelete(id)
                 Outbox.DeleteResult.PUSH_DELETE -> events.upsert(row.copy(isDeleted = true, syncState = SyncState.PENDING_DELETE))
             }
-            db.reminders().deleteForOwner(OwnerType.EVENT, id)
+            // The series' changed occurrences go with it, so their reminders do too.
+            removed?.rows.orEmpty().forEach { db.reminders().deleteForOwner(OwnerType.EVENT, it.id) }
             g
         } ?: return null
         notify(id, google)

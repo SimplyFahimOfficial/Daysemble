@@ -150,6 +150,26 @@ class CalendarSyncTest : SyncTestBase() {
         assertThat(db.sync().outbox()).isEmpty()
     }
 
+    @Test fun `an event restored while its delete is being pushed is kept and created again`() = runTest {
+        router.on("GET", "/calendar/v3/users/me/calendarList") { calendarList() }
+        router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$ev1],"nextSyncToken":"tok1"}""") }
+        syncer().sync(acct)
+        val cal = db.calendars().byKind(SourceKind.GOOGLE).single()
+        val localId = db.events().byRemoteId(cal.id, "ev1")!!.id
+        val deleted = events.delete(localId)!!
+        router.on("DELETE", "/calendar/v3/calendars/primary@x/events/ev1") {
+            // The user taps Undo while the delete request is on its way.
+            kotlinx.coroutines.runBlocking { events.restore(deleted) }
+            json(204, "")
+        }
+        syncer().pushOutbox()
+        val row = db.events().get(localId)!!
+        assertThat(row.isDeleted).isFalse()
+        assertThat(row.remoteId).isNull()
+        assertThat(row.syncState).isEqualTo(SyncState.PENDING_CREATE)
+        assertThat(db.sync().outbox().map { it.op }).containsExactly(OutboxOp.CREATE)
+    }
+
     @Test fun `remote delete of an item with unpushed local edits keeps the local version`() = runTest {
         router.on("GET", "/calendar/v3/users/me/calendarList") { calendarList() }
         router.on("GET", "/calendar/v3/calendars/primary@x/events") { json(body = """{"items":[$ev1],"nextSyncToken":"tok1"}""") }

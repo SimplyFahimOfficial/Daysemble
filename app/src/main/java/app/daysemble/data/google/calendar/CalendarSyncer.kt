@@ -137,7 +137,22 @@ class CalendarSyncer(
                         // A create whose response was lost has no remoteId yet, but used our deterministic client id.
                         val rid = e.remoteId ?: CalendarMapper.clientIdOf(e)
                         try { api.delete(cal.remoteId, rid) } catch (_: ApiError.NotFound) { } catch (_: ApiError.Gone) { }
-                        db.withTransaction { events.hardDelete(e.id); db.reminders().deleteForOwner(OwnerType.EVENT, e.id) }
+                        db.withTransaction {
+                            val cur = events.get(e.id)
+                            if (cur != null && cur.syncState != SyncState.PENDING_DELETE) {
+                                // Undone while the request ran: the restored row stays. Its Google copy is gone,
+                                // so it is created again (with a new client id, as the old one may still be held).
+                                events.upsert(cur.copy(remoteId = null, etag = null, remoteUpdatedAt = null, pendingClientId = CalendarMapper.newClientId(), syncState = SyncState.PENDING_CREATE))
+                                // Changed occurrences of the deleted Google series can't follow (as in restore).
+                                events.overridesFor(listOf(e.id)).filter { it.remoteId != null }.forEach { o ->
+                                    events.hardDelete(o.id); db.reminders().deleteForOwner(OwnerType.EVENT, o.id); db.sync().clearFor(OwnerType.EVENT, o.id)
+                                }
+                                db.sync().clearFor(OwnerType.EVENT, e.id)
+                                db.sync().enqueue(app.daysemble.data.db.OutboxEntity(entityType = OwnerType.EVENT, entityId = e.id, op = OutboxOp.CREATE, createdAt = now()))
+                            } else {
+                                events.hardDelete(e.id); db.reminders().deleteForOwner(OwnerType.EVENT, e.id)
+                            }
+                        }
                     }
                 }
                 db.sync().remove(op.id)

@@ -115,6 +115,40 @@ class EventUndoTest {
         assertThat(db.sync().outbox().map { it.op }).containsExactly(OutboxOp.CREATE)
     }
 
+    /** A changed occurrence of [seriesId] with a reminder of its own, as a pull from Google would store it. */
+    private suspend fun addOverride(seriesId: String, remoteId: String? = null): String {
+        val master = repo.get(seriesId)!!
+        val ov = master.copy(
+            id = "ov-$seriesId", rrule = null, exdates = "", recurringParentId = seriesId, originalStartKey = "2026-10-23T10:00",
+            title = "Dentist (moved)", remoteId = remoteId,
+        )
+        db.events().upsert(ov)
+        db.reminders().replace(OwnerType.EVENT, ov.id, listOf(app.daysemble.data.db.ReminderEntity.of(OwnerType.EVENT, ov.id, 5)))
+        return ov.id
+    }
+
+    @Test fun `deleting a series removes its changed occurrences' reminders, and undo brings them back`() = runTest {
+        val id = repo.create(draft(rrule = RRule.parse("FREQ=DAILY")), local)
+        val ov = addOverride(id)
+        val deleted = repo.delete(id)!!
+        assertThat(db.reminders().forOwner(OwnerType.EVENT, ov)).isEmpty()
+        repo.restore(deleted)
+        assertThat(repo.reminders(ov)).containsExactly(5)
+        assertThat(repo.reminders(id)).containsExactly(10, 60)
+    }
+
+    @Test fun `undo of a google series delete brings back its changed occurrences' reminders`() = runTest {
+        val id = repo.create(draft(calendarId = "g", rrule = RRule.parse("FREQ=DAILY")), local)
+        markSynced(id)
+        val ov = addOverride(id, remoteId = "r-$id-1")
+        val deleted = repo.delete(id)!!
+        // The delete isn't pushed yet: the occurrence row is still there, its reminders are not.
+        assertThat(db.events().get(ov)).isNotNull()
+        assertThat(db.reminders().forOwner(OwnerType.EVENT, ov)).isEmpty()
+        repo.restore(deleted)
+        assertThat(repo.reminders(ov)).containsExactly(5)
+    }
+
     @Test fun `a deleted occurrence of a google series comes back and is pushed`() = runTest {
         val id = repo.create(draft(calendarId = "g", rrule = RRule.parse("FREQ=DAILY")), local)
         markSynced(id)
