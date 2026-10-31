@@ -27,6 +27,11 @@ data class GoogleAccountState(
     val tasksEnabled: Boolean = true,
 ) {
     val isConnected get() = email != null
+    /** The services turned on, which are the ones whose scopes are requested. */
+    val services: Set<app.daysemble.data.db.SyncService> get() = setOfNotNull(
+        app.daysemble.data.db.SyncService.CALENDAR.takeIf { calendarEnabled },
+        app.daysemble.data.db.SyncService.TASKS.takeIf { tasksEnabled },
+    )
 }
 
 class AccountStore(private val store: DataStore<Preferences>) {

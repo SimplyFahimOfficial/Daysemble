@@ -528,6 +528,9 @@
     <string name="google_setup_required_body">The developer must register an Android OAuth client for package %1$s and this build’s signing certificate (SHA-1) in Google Cloud Console, with the Calendar and Tasks APIs enabled. See docs/GOOGLE_SETUP.md.</string>
     <string name="google_no_play_title">Google Play services required</string>
     <string name="google_no_play_body">Install or update Google Play services to connect a Google account.</string>
+    <string name="google_partial_title">Not everything was allowed</string>
+    <string name="google_partial_calendar">Google Calendar access wasn’t allowed, so calendars won’t sync. To add it, turn Google Calendar on and allow it.</string>
+    <string name="google_partial_tasks">Google Tasks access wasn’t allowed, so task lists won’t sync. To add it, turn Google Tasks on and allow it.</string>
     <string name="google_connect_failed">Couldn’t connect</string>
     <string name="google_error_code">Reason: %1$s. Check your connection and try again.</string>
     <string name="google_account">Google account</string>

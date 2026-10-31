@@ -66,6 +66,7 @@ class SyncManager(
         val acc = accounts.current()
         val email = acc.email ?: return SyncOutcome.NOT_CONNECTED
         auth.accountEmail = email
+        auth.services = acc.services
         running.value = true
         try {
             var outcome = SyncOutcome.OK
@@ -133,17 +134,29 @@ class SyncManager(
 
     private fun worst(a: SyncOutcome, b: SyncOutcome) = if (b.ordinal > a.ordinal) b else a
 
-    suspend fun connect(email: String) {
+    /**
+     * After Google's consent: [granted] are the services the user allowed. Services that were
+     * [requested] but not granted are turned off, so sync doesn't keep asking for them.
+     */
+    suspend fun connect(email: String, granted: Set<SyncService> = SyncService.entries.toSet(), requested: Set<SyncService> = SyncService.entries.toSet()) {
         accounts.setConnected(email)
+        applyGrant(granted, requested)
         auth.accountEmail = email
         db.sync().clearStates()
+    }
+
+    /** Records which of the [requested] services the user allowed, e.g. after turning one on. */
+    suspend fun applyGrant(granted: Set<SyncService>, requested: Set<SyncService>) {
+        if (SyncService.CALENDAR in requested) accounts.setCalendarEnabled(SyncService.CALENDAR in granted)
+        if (SyncService.TASKS in requested) accounts.setTasksEnabled(SyncService.TASKS in granted)
+        auth.services = accounts.current().services
     }
 
     /** Re-arms changes Google rejected repeatedly, so the next sync tries them again. */
     suspend fun retryParked() = db.sync().resetFailures()
 
-    suspend fun setCalendarEnabled(v: Boolean) = accounts.setCalendarEnabled(v)
-    suspend fun setTasksEnabled(v: Boolean) = accounts.setTasksEnabled(v)
+    suspend fun setCalendarEnabled(v: Boolean) { accounts.setCalendarEnabled(v); auth.services = accounts.current().services }
+    suspend fun setTasksEnabled(v: Boolean) { accounts.setTasksEnabled(v); auth.services = accounts.current().services }
 
     /**
      * Revokes access and removes Google-sourced copies from this device. Google data is untouched.
