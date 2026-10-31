@@ -42,6 +42,7 @@ abstract class DaysembleDatabase : RoomDatabase() {
     abstract fun sync(): SyncDao
     abstract fun skips(): TaskOccurrenceSkipDao
     abstract fun sleep(): SleepDao
+    abstract fun backup(): BackupDao
 
     companion object {
         const val NAME = "daysemble.db"
