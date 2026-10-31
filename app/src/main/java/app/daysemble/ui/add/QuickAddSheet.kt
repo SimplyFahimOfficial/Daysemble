@@ -23,6 +23,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -69,7 +71,8 @@ fun QuickAddSheet(
     initialDate: LocalDate?,
     onDismiss: () -> Unit,
     onMoreEventOptions: (EventPrefill) -> Unit,
-    onMoreTaskOptions: (LocalDate?) -> Unit,
+    /** The typed title, the chosen due date and minute of day (the time only with a date). */
+    onMoreTaskOptions: (String, LocalDate?, Int?) -> Unit,
 ) {
     val c = DsTheme.colors
     val p = LocalTimePrefs.current
@@ -82,12 +85,15 @@ fun QuickAddSheet(
     var title by rememberSaveable { mutableStateOf("") }
     var date by rememberSaveable { mutableStateOf<Long?>(initialDate?.toEpochDay()) }
     val (rollDays, firstSlot) = nextSlot(clock.now().atZone(p.zone).toLocalTime())
-    var eventDate by rememberSaveable { mutableStateOf((initialDate ?: today.plusDays(rollDays)).toEpochDay()) }
-    var startMinute by rememberSaveable { mutableStateOf(firstSlot) }
+    var eventDate by rememberSaveable { mutableLongStateOf((initialDate ?: today.plusDays(rollDays)).toEpochDay()) }
+    var startMinute by rememberSaveable { mutableIntStateOf(firstSlot) }
+    // A task's due time (minute of day); only kept while it has a date.
+    var taskMinute by rememberSaveable { mutableStateOf<Int?>(null) }
     var high by rememberSaveable { mutableStateOf(false) }
     var showError by rememberSaveable { mutableStateOf(false) }
     var pickDate by rememberSaveable { mutableStateOf(false) }
     var pickTime by rememberSaveable { mutableStateOf(false) }
+    var pickTaskTime by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
@@ -107,7 +113,11 @@ fun QuickAddSheet(
             val defaults = container.defaults()
             when (kind) {
                 AddKind.TASK -> container.tasks.create(
-                    TaskDraft(title = title, dueDate = date?.let(LocalDate::ofEpochDay), priority = if (high) Priority.HIGH else Priority.NONE),
+                    TaskDraft(
+                        title = title, dueDate = date?.let(LocalDate::ofEpochDay),
+                        dueTime = taskMinute?.takeIf { date != null }?.let { LocalTime.of(it / 60, it % 60) },
+                        priority = if (high) Priority.HIGH else Priority.NONE,
+                    ),
                     container.newTaskListId(),
                 )
                 AddKind.EVENT -> {
@@ -188,6 +198,13 @@ fun QuickAddSheet(
                             if (d != null && d != today && d != today.plusDays(1)) dayLabel(d, today, p) else stringResource(R.string.pick_date),
                             d != null && d != today && d != today.plusDays(1), { pickDate = true }, icon = Icons.Rounded.CalendarToday,
                         )
+                        // A time needs a date: picking one with no date sets the task for today
+                        // (tomorrow after 23:30, when the next half hour is midnight).
+                        val m = taskMinute?.takeIf { d != null }
+                        DsChip(
+                            m?.let { Fmt.time(LocalTime.of(it / 60, it % 60), p) } ?: stringResource(R.string.add_time),
+                            m != null, { pickTaskTime = true }, icon = Icons.Rounded.Schedule,
+                        )
                         DsChip(
                             stringResource(R.string.priority_high), high, { high = !high },
                             icon = if (high) Icons.Rounded.Flag else Icons.Rounded.OutlinedFlag,
@@ -209,7 +226,7 @@ fun QuickAddSheet(
                     stringResource(R.string.more_options),
                     onClick = {
                         if (kind == AddKind.EVENT) onMoreEventOptions(EventPrefill(title, LocalDate.ofEpochDay(eventDate), startMinute))
-                        else onMoreTaskOptions(date?.let(LocalDate::ofEpochDay))
+                        else onMoreTaskOptions(title, date?.let(LocalDate::ofEpochDay), taskMinute?.takeIf { date != null })
                         onDismiss()
                     },
                     style = DsButtonStyle.Ghost,
@@ -236,6 +253,19 @@ fun QuickAddSheet(
             initial = if (kind == AddKind.TASK) date?.let(LocalDate::ofEpochDay) ?: today else LocalDate.ofEpochDay(eventDate),
             onPick = { if (kind == AddKind.TASK) date = it.toEpochDay() else eventDate = it.toEpochDay() },
             onDismiss = { pickDate = false },
+        )
+    }
+    if (pickTaskTime) {
+        // The next half hour, and its day: after 23:30 that is midnight tomorrow, not 00:00 today
+        // (which would make the task overdue as soon as it's added).
+        val slotDay = today.plusDays(rollDays).toEpochDay()
+        DsTimePickerDialog(
+            // Start from the next half hour on its day, from 09:00 for another day.
+            initial = taskMinute?.let { LocalTime.of(it / 60, it % 60) }
+                ?: if (date == null || date == slotDay) LocalTime.of(firstSlot / 60, firstSlot % 60) else LocalTime.of(9, 0),
+            onPick = { taskMinute = it.hour * 60 + it.minute; if (date == null) date = slotDay },
+            onDismiss = { pickTaskTime = false },
+            onClear = if (taskMinute != null) ({ taskMinute = null }) else null,
         )
     }
     if (pickTime) {

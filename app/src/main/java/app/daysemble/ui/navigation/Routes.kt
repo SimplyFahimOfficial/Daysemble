@@ -11,7 +11,11 @@ import kotlinx.serialization.Serializable
 
 /** A task's detail and countdown view: where a tap on a task goes (editing is one step further). */
 @Serializable data class TaskDetailRoute(val taskId: String)
-@Serializable data class TaskEditorRoute(val taskId: String? = null, val parentId: String? = null, val dueEpochDay: Long? = null)
+@Serializable data class TaskEditorRoute(
+    val taskId: String? = null, val parentId: String? = null, val dueEpochDay: Long? = null, val dueMinute: Int? = null,
+    /** Title typed in Quick Add before "More options". */
+    val title: String? = null,
+)
 @Serializable data class EventDetailRoute(val eventId: String, val occurrenceKey: String? = null)
 @Serializable data class EventEditorRoute(
     val eventId: String? = null,
