@@ -105,12 +105,16 @@ class BackupManager(
         if (file.format != BackupFile.FORMAT) throw BackupFormatException(BackupFormatException.Reason.NOT_A_BACKUP)
         if (file.version > BackupFile.VERSION) throw BackupFormatException(BackupFormatException.Reason.NEWER_VERSION)
         val result = merge(file)
-        if (result.changed) {
-            // The data is in. A failure while re-planning mustn't report the import as failed: reminders
-            // are planned again at the next app start and by the periodic refresh.
-            runCatching { onImported() }.onFailure { if (it is CancellationException) throw it }
-        }
+        if (result.changed) replanReminders()
         return result
+    }
+
+    /**
+     * The data is in: a failure while re-planning mustn't report the import as failed. Reminders are
+     * planned again at the next app start and by the periodic refresh.
+     */
+    private suspend fun replanReminders() {
+        runCatching { onImported() }.onFailure { if (it is CancellationException) throw it }
     }
 
     private fun parse(text: String): BackupFile = try {
