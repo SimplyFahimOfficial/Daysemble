@@ -331,6 +331,14 @@ reviewed list in [docs/SECURITY.md](docs/SECURITY.md#permissions).
 - Android's automatic backup includes settings only. To keep events and tasks, use *Export*.
 - Logs never contain event or task content, or tokens.
 
+## Support my work
+
+Settings › Support my work (also linked from About) offers [Ko-fi](https://ko-fi.com/simplyfahim) and UPI
+(`SimplyFahim@sbi`, payee SimplyFahim). The UPI QR code is generated on the device with no amount, and can be
+copied, shared or saved. Supporting is optional and unlocks nothing. All links and payment details are in
+`app/src/main/java/app/daysemble/support/SupportConfig.kt`. The repository link is left out while this
+repository is private.
+
 To report a vulnerability, follow the [security policy](SECURITY.md).
 
 ## Known limitations

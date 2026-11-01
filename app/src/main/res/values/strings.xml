@@ -434,6 +434,31 @@
     <string name="about_zone">Time zone</string>
     <string name="about_build">Build</string>
 
+    <!-- Support my work -->
+    <string name="support_title">Support my work</string>
+    <string name="support_row_sub">Ko-fi or UPI, always optional</string>
+    <string name="support_intro">Your support helps me maintain existing applications, improve features and continue developing independent open-source projects. Every contribution is voluntary and appreciated.</string>
+    <string name="support_section_payment">Ways to support</string>
+    <string name="support_kofi_title">Ko-fi</string>
+    <string name="support_kofi_body">One-off or monthly support through Ko-fi, in your own currency.</string>
+    <string name="support_kofi_action">Support on Ko-fi</string>
+    <string name="support_upi_title">UPI (India)</string>
+    <string name="support_upi_body">Scan the code with any UPI app, or open one on this phone. You choose the amount there.</string>
+    <string name="support_upi_payee_label">Payee name</string>
+    <string name="support_upi_open">Pay with a UPI app</string>
+    <string name="support_upi_copy">Copy UPI ID</string>
+    <string name="support_qr_share">Share QR</string>
+    <string name="support_qr_save">Save QR</string>
+    <string name="support_upi_check">Check that the payee is %1$s before you pay. Opening a UPI app doesn’t mean a payment was made; your UPI app confirms it.</string>
+    <string name="support_upi_chooser">Pay with</string>
+    <string name="support_qr_share_chooser">Share UPI QR code</string>
+    <string name="support_qr_share_text">UPI: %1$s (%2$s)</string>
+    <string name="support_qr_failed">Couldn’t create the QR image. Try again.</string>
+    <string name="support_no_browser">No app can open this link. It was copied instead.</string>
+    <string name="support_section_project">About Daysemble</string>
+    <string name="support_project_body">Daysemble is an independent calendar and task planner by SimplyFahim, released under the Apache License 2.0.</string>
+    <string name="support_repository">Source code on GitHub</string>
+
     <plurals name="minutes_short">
         <item quantity="one">%d min</item>
         <item quantity="other">%d min</item>
@@ -674,7 +699,6 @@
     <!-- Support my work -->
     <string name="support_my_work">Support my work</string>
     <string name="support_my_work_sub">Ko-fi, UPI and project links. Always optional.</string>
-    <string name="support_intro">Your support helps me maintain existing applications, improve features and continue developing independent open-source projects. Every contribution is voluntary and appreciated.</string>
     <string name="support_payment_options">Payment options</string>
     <string name="support_kofi">Support on Ko-fi</string>
     <string name="support_upi">Pay with UPI</string>

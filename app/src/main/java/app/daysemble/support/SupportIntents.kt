@@ -28,6 +28,11 @@ object SupportIntents {
     private const val SHARE_DIR = "support_share"
     private const val PNG_QUALITY = 100
 
+    internal fun createShareQrFile(cacheDir: File): File {
+        val directory = File(cacheDir, SHARE_DIR).apply { mkdirs() }
+        return File.createTempFile("SimplyFahim-UPI-QR-", ".png", directory)
+    }
+
     enum class UpiResult { OPENED, NO_UPI_APP }
 
     /** Opens an https link. Returns false if no app can (the link is then copied). */
@@ -96,8 +101,7 @@ object SupportIntents {
 
     /** Shares the QR PNG through the system share sheet with temporary read access only. */
     fun shareQr(context: Context): Boolean = try {
-        val dir = File(context.cacheDir, SHARE_DIR).apply { mkdirs() }
-        val file = File(dir, QR_FILE_NAME)
+        val file = createShareQrFile(context.cacheDir)
         file.outputStream().use(::writeQrPng)
         val uri = FileProvider.getUriForFile(context, context.packageName + AUTHORITY_SUFFIX, file)
         val text = context.getString(R.string.support_share_qr_text, SupportConfig.UPI_ID, SupportConfig.UPI_PAYEE_NAME)
