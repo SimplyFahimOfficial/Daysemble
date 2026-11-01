@@ -17,6 +17,11 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="geo" />
         </intent>
+        <!-- Settings > Support my work: find installed UPI apps (chooser, or "none installed"). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="upi" />
+        </intent>
     </queries>
 
     <application
@@ -32,6 +37,18 @@
         android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.Daysemble.Starting"
         tools:targetApi="36">
+
+        <!-- Shares the on-device UPI QR code (Support my work). Not exported; the receiving app only
+             gets temporary read access to that one cached PNG. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.supportshare"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/support_share_paths" />
+        </provider>
 
         <activity
             android:name=".MainActivity"

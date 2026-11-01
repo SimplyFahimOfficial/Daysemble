@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the cached UPI QR code PNG is shareable (see SupportIntents). -->
+<paths>
+    <cache-path
+        name="support_share"
+        path="support_share/" />
+</paths>
