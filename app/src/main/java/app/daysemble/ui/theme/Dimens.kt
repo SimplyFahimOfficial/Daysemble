@@ -23,6 +23,10 @@ object Radii {
     val chip = RoundedCornerShape(8.dp)
     val control = RoundedCornerShape(12.dp)
     val card = RoundedCornerShape(16.dp)
+    /** Agenda cards (Today, the calendar's day lists): larger tiles than [card]. */
+    val tile = RoundedCornerShape(20.dp)
+    /** Top of the Today agenda panel. */
+    val panel = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     val sheet = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     val dialog = RoundedCornerShape(24.dp)
     val pill = RoundedCornerShape(percent = 50)
@@ -37,4 +41,19 @@ object Sizes {
     val hairline = 1.dp
     val checkbox = 22.dp
     val bottomBar = 72.dp
+}
+
+/**
+ * Shadows, for the few surfaces that float over content. Elevation is otherwise tonal (surface
+ * colours), so these stay soft: they separate a layer, they don't lift it off the page.
+ */
+object Elevation {
+    /** Bottom bar and add button, over a list that scrolls under them (with the scroll-edge fade). */
+    val floating = 6.dp
+    /** The Today agenda panel's top edge over the overview (light theme only). */
+    val panel = 8.dp
+    /** A row being dragged. */
+    val lifted = 6.dp
+    /** Shadow colour strength, as a fraction of the theme's scrim. */
+    const val SHADOW_ALPHA = 0.5f
 }

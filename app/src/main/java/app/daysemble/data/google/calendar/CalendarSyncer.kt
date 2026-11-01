@@ -133,11 +133,9 @@ class CalendarSyncer(
                             if (resolveConflict(e, api.get(cal.remoteId, rid), cal)) conflicts++
                             continue
                         } catch (_: ApiError.NotFound) {
-                            if (e.recurringParentId != null) throw ApiError.Client(404, "instance_gone") // can't re-create one occurrence alone
-                            remoteDeletedWhileEdited(e); conflicts++; continue
+                            goneWhileEdited(e, HTTP_NOT_FOUND); conflicts++; continue
                         } catch (_: ApiError.Gone) {
-                            if (e.recurringParentId != null) throw ApiError.Client(410, "instance_gone")
-                            remoteDeletedWhileEdited(e); conflicts++; continue
+                            goneWhileEdited(e, HTTP_GONE); conflicts++; continue
                         }
                     }
                     OutboxOp.DELETE -> {
@@ -162,25 +160,39 @@ class CalendarSyncer(
     }
 
     /**
+     * The event being pushed is gone on Google (HTTP [code]). One occurrence can't be re-created on
+     * its own, so for an occurrence that is an error; a whole event is handled as deleted remotely
+     * while edited here.
+     */
+    private suspend fun goneWhileEdited(e: EventEntity, code: Int) {
+        if (e.recurringParentId != null) throw ApiError.Client(code, INSTANCE_GONE)
+        remoteDeletedWhileEdited(e)
+    }
+
+    /** The series an occurrence override belongs to; an error if it no longer exists locally. */
+    private suspend fun seriesOf(override: EventEntity): EventEntity =
+        override.recurringParentId?.let { events.get(it) } ?: throw ApiError.Client(HTTP_NOT_FOUND, "series_gone")
+
+    /**
      * Google's id of the instance [override] changes, found by its original start. Null while the
      * series itself isn't on Google yet (its create is still queued): the change waits for it.
      */
     private suspend fun instanceId(calendarRemoteId: String, override: EventEntity): String? {
-        val master = override.recurringParentId?.let { events.get(it) } ?: throw ApiError.Client(404, "series_gone")
+        val master = seriesOf(override)
         val masterRemote = master.remoteId ?: return null
-        val key = override.originalStartKey ?: throw ApiError.Client(400, "no_original_start")
+        val key = override.originalStartKey ?: throw ApiError.Client(HTTP_BAD_REQUEST, "no_original_start")
         val zone = runCatching { java.time.ZoneId.of(master.timeZone) }.getOrDefault(java.time.ZoneOffset.UTC)
         // A window of a few days around the original date, matched by original start like a pull does.
-        val day = java.time.LocalDate.parse(key.take(10))
-        val min = day.minusDays(2).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toString()
-        val max = day.plusDays(3).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toString()
+        val day = java.time.LocalDate.parse(key.take(ISO_DATE_LENGTH))
+        val min = day.minusDays(INSTANCE_DAYS_BEFORE).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toString()
+        val max = day.plusDays(INSTANCE_DAYS_AFTER).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toString()
         var page: String? = null
         do {
             val p = api.instances(calendarRemoteId, masterRemote, min, max, page)
             p.items.firstOrNull { it.id != null && CalendarMapper.originalKey(it, zone) == key }?.let { return it.id }
             page = p.nextPageToken
         } while (page != null)
-        throw ApiError.Client(404, "instance_gone")
+        throw ApiError.Client(HTTP_NOT_FOUND, INSTANCE_GONE)
     }
 
     /** The pushed delete went through on Google: remove the row, unless the delete was undone meanwhile. */
@@ -444,6 +456,15 @@ class CalendarSyncer(
     companion object {
         /** After this many failed pushes an op is parked and shown in Troubleshooting. */
         const val MAX_ATTEMPTS = 5
+        private const val HTTP_BAD_REQUEST = 400
+        private const val HTTP_NOT_FOUND = 404
+        private const val HTTP_GONE = 410
+        private const val INSTANCE_GONE = "instance_gone"
+        /** "yyyy-MM-dd", the date at the start of an original-start key. */
+        private const val ISO_DATE_LENGTH = 10
+        /** The window searched for an instance around its original date. */
+        private const val INSTANCE_DAYS_BEFORE = 2L
+        private const val INSTANCE_DAYS_AFTER = 3L
         private const val DEFAULT_COLOR = 0xFF2F4FA8.toInt()
     }
 }

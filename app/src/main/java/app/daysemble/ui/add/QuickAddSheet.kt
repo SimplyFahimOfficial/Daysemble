@@ -73,6 +73,8 @@ fun QuickAddSheet(
     onMoreEventOptions: (EventPrefill) -> Unit,
     /** The typed title, the chosen due date and minute of day (the time only with a date). */
     onMoreTaskOptions: (String, LocalDate?, Int?) -> Unit,
+    /** Which kind the sheet opens on (the + button: task; the "New event" shortcut: event). */
+    initialKind: AddKind = AddKind.TASK,
 ) {
     val c = DsTheme.colors
     val p = LocalTimePrefs.current
@@ -81,7 +83,7 @@ fun QuickAddSheet(
     val scope = rememberCoroutineScope()
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var kind by rememberSaveable { mutableStateOf(AddKind.TASK) }
+    var kind by rememberSaveable { mutableStateOf(initialKind) }
     var title by rememberSaveable { mutableStateOf("") }
     var date by rememberSaveable { mutableStateOf<Long?>(initialDate?.toEpochDay()) }
     val (rollDays, firstSlot) = nextSlot(clock.now().atZone(p.zone).toLocalTime())

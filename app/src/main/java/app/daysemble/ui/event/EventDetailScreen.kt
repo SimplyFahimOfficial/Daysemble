@@ -34,7 +34,6 @@ import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.DaysembleApp
 import app.daysemble.R
+import app.daysemble.ui.components.DsDialogAction
+import app.daysemble.ui.components.DsDialogButtons
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.core.time.RelativeTime
 import app.daysemble.domain.model.EventOccurrence
@@ -102,7 +103,8 @@ fun EventDetailRoute(
     if (!isLoaded) { Column(Modifier.fillMaxSize().background(DsTheme.colors.background)) {}; return }
     if (event == null) {
         Column(Modifier.fillMaxSize().background(DsTheme.colors.background)) {
-            DsTopBar("", onClose)
+            // The same close (X) as the loaded page: it's the same screen and closes the same way.
+            DsTopBar("", onClose, close = true)
             StateMessage(Icons.Rounded.EventBusy, stringResource(R.string.event_missing), Modifier.padding(top = Space.x3))
         }
         return
@@ -132,11 +134,13 @@ fun EditScopeDialog(onThis: () -> Unit, onAll: () -> Unit, onDismiss: () -> Unit
         title = { Text(stringResource(R.string.edit_recurring_title), style = DsTheme.type.titleLarge, color = c.textPrimary) },
         text = { Text(stringResource(R.string.edit_recurring_body), style = DsTheme.type.body, color = c.textSecondary) },
         confirmButton = {
-            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
-                androidx.compose.material3.TextButton(onClick = onThis) { Text(stringResource(R.string.edit_only_this_event), color = c.textPrimary) }
-                androidx.compose.material3.TextButton(onClick = onAll) { Text(stringResource(R.string.edit_all_events), color = c.textPrimary) }
-                androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) }
-            }
+            DsDialogButtons(
+                listOf(
+                    DsDialogAction(stringResource(R.string.edit_only_this_event), onThis, DsDialogAction.Kind.Alternative),
+                    DsDialogAction(stringResource(R.string.edit_all_events), onAll, DsDialogAction.Kind.Alternative),
+                    DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel),
+                ),
+            )
         },
     )
 }
@@ -214,7 +218,8 @@ private fun EventDetailScreen(
                                     val uri = ("geo:0,0?q=" + Uri.encode(event.location)).toUri()
                                     try { ctx.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: ActivityNotFoundException) { mapsError = true }
                                 },
-                                style = DsButtonStyle.Secondary, icon = Icons.Rounded.Map,
+                                // Raised: a Secondary (tonal) button is the tile's own colour and can't be seen on it.
+                                style = DsButtonStyle.Raised, icon = Icons.Rounded.Map,
                             )
                         }
                         if (mapsError) {
@@ -249,11 +254,17 @@ private fun EventDetailScreen(
                 title = { Text(stringResource(R.string.delete_recurring_title), style = DsTheme.type.titleLarge, color = c.textPrimary) },
                 text = { Text(stringResource(R.string.delete_recurring_body), style = DsTheme.type.body, color = c.textSecondary) },
                 confirmButton = {
-                    Column(horizontalAlignment = Alignment.End) {
-                        TextButton(onClick = { confirm = false; onDeleteOccurrence() }) { Text(stringResource(R.string.delete_this_event), color = c.error) }
-                        TextButton(onClick = { confirm = false; onDeleteSeries() }) { Text(stringResource(R.string.delete_all_events), color = c.error) }
-                        TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) }
-                    }
+                    DsDialogButtons(
+                        listOf(
+                            DsDialogAction(
+                                stringResource(R.string.delete_this_event), { confirm = false; onDeleteOccurrence() }, DsDialogAction.Kind.Destructive,
+                            ),
+                            DsDialogAction(
+                                stringResource(R.string.delete_all_events), { confirm = false; onDeleteSeries() }, DsDialogAction.Kind.Destructive,
+                            ),
+                            DsDialogAction(stringResource(R.string.action_cancel), { confirm = false }, DsDialogAction.Kind.Cancel),
+                        ),
+                    )
                 },
             )
         } else {

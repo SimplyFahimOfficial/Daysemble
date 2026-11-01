@@ -24,6 +24,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
+import app.daysemble.ui.theme.Elevation
 import app.daysemble.ui.theme.Sizes
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.SearchOff
@@ -38,6 +39,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -121,6 +134,72 @@ fun TasksScreen(
     }
     var dragging by remember { mutableStateOf<String?>(null) }
     var dragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    // After release the row glides from where the finger left it into its slot ([DsMotion.settle]),
+    // instead of jumping there. Grabbing it again mid-glide continues from its live position.
+    var settling by remember { mutableStateOf(false) }
+    var settleJob by remember { mutableStateOf<Job?>(null) }
+    val dragScope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val liftPx = with(density) { Elevation.lifted.toPx() }
+    val m = DsTheme.motion
+    // Moves the dragged row into the slot of the row under its centre, if that's another one. Past
+    // the first or last visible row (under the bottom bar, or while the list auto-scrolls), it takes
+    // that row's slot, so its own slot always stays on screen and the gesture is never dropped.
+    fun swapUnderFinger(id: String) {
+        val infos = listState.layoutInfo.visibleItemsInfo
+        val cur = infos.firstOrNull { it.key == id } ?: return
+        val center = (cur.offset + cur.size / 2 + dragOffset).toInt()
+        val rows = infos.filter { info -> manual.any { it.id == info.key } }
+        val target = rows.firstOrNull { it.key != id && center in it.offset..(it.offset + it.size) }
+            ?: rows.lastOrNull()?.takeIf { it.key != id && center > it.offset + it.size }
+            ?: rows.firstOrNull()?.takeIf { it.key != id && center < it.offset }
+            ?: return
+        manual.swap(manual.indexOfFirst { it.id == id }, manual.indexOfFirst { it.id == target.key })
+        dragOffset += (cur.offset - target.offset).toFloat()
+        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+    }
+    // Held near the top or bottom of the list, the list scrolls under the row, faster the closer
+    // it is to the edge, and keeps going while the finger is still. The row stays under the finger
+    // (the scroll is added to its offset) and keeps taking the places it passes.
+    val edgePx = with(density) { AutoScrollEdge.toPx() }
+    val maxSpeedPx = with(density) { AutoScrollMaxSpeed.toPx() }
+    LaunchedEffect(dragging, settling) {
+        val id = dragging ?: return@LaunchedEffect
+        if (settling) return@LaunchedEffect
+        var last = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            val dt = (now - last) / 1_000_000_000f
+            last = now
+            val info = listState.layoutInfo
+            val cur = info.visibleItemsInfo.firstOrNull { it.key == id }
+            val top = cur?.let { it.offset + dragOffset } ?: 0f
+            val end = info.viewportEndOffset - info.afterContentPadding
+            // -1..1: how far into the top (negative) or bottom edge zone the row is; 0 outside both.
+            val pull = when {
+                cur == null -> 0f
+                top < edgePx -> -((edgePx - top) / edgePx).coerceAtMost(1f)
+                top + cur.size > end - edgePx -> ((top + cur.size - (end - edgePx)) / edgePx).coerceAtMost(1f)
+                else -> 0f
+            }
+            if (pull != 0f) {
+                dragOffset += listState.scrollBy(pull * kotlin.math.abs(pull) * maxSpeedPx * dt)
+                swapUnderFinger(id)
+            }
+        }
+    }
+    fun settleDrop(id: String) {
+        settling = true
+        settleJob = dragScope.launch {
+            try {
+                animate(dragOffset, 0f, animationSpec = m.settle()) { v, _ -> dragOffset = v }
+            } finally {
+                // Not if the row was grabbed again (or another one was) in the meantime.
+                if (dragging == id && settling) { dragging = null; dragOffset = 0f; settling = false }
+            }
+        }
+    }
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -199,13 +278,20 @@ fun TasksScreen(
             items(manual, key = { it.id }) { task ->
                 val index = manual.indexOf(task)
                 val isDragged = dragging == task.id
+                // Lifted while held; set down (shadow and scale back) as it settles.
+                val lift by animateFloatAsState(if (isDragged && !settling) 1f else 0f, m.indicator(), label = "lift")
                 val moveUp = stringResource(R.string.action_move_up)
                 val moveDown = stringResource(R.string.action_move_down)
                 Box(
                     Modifier
                         .then(if (isDragged) Modifier else Modifier.then(itemMotion()))
                         .zIndex(if (isDragged) 1f else 0f)
-                        .graphicsLayer { translationY = if (isDragged) dragOffset else 0f; shadowElevation = if (isDragged) 8f else 0f }
+                        .graphicsLayer {
+                            translationY = if (isDragged) dragOffset else 0f
+                            shadowElevation = lift * liftPx
+                            val scale = 1f + (1f - m.pressScale(large = true)) * lift // 1.5 % up, none when reduced
+                            scaleX = scale; scaleY = scale
+                        }
                         .background(if (isDragged) c.surfaceRaised else c.background),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -227,24 +313,29 @@ fun TasksScreen(
                                 .padding(12.dp)
                                 .pointerInput(task.id) {
                                     detectDragGesturesAfterLongPress(
-                                        onDragStart = { dragging = task.id; dragOffset = 0f },
+                                        onDragStart = {
+                                            settleJob?.cancel(); settling = false
+                                            // Caught again mid-glide: keep its live offset, no jump.
+                                            if (dragging != task.id) dragOffset = 0f
+                                            dragging = task.id
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        },
                                         onDrag = { change, amount ->
                                             change.consume()
                                             dragOffset += amount.y
-                                            val infos = listState.layoutInfo.visibleItemsInfo
-                                            val cur = infos.firstOrNull { it.key == task.id } ?: return@detectDragGesturesAfterLongPress
-                                            val center = cur.offset + cur.size / 2 + dragOffset
-                                            val target = infos.firstOrNull { info ->
-                                                info.key != task.id && manual.any { it.id == info.key } &&
-                                                    center.toInt() in info.offset..(info.offset + info.size)
-                                            } ?: return@detectDragGesturesAfterLongPress
-                                            val from = manual.indexOfFirst { it.id == task.id }
-                                            val to = manual.indexOfFirst { it.id == target.key }
-                                            manual.swap(from, to)
-                                            dragOffset += (cur.offset - target.offset).toFloat()
+                                            swapUnderFinger(task.id)
                                         },
-                                        onDragEnd = { dragging = null; dragOffset = 0f; onReorder(manual.map { it.id }) },
-                                        onDragCancel = { dragging = null; dragOffset = 0f },
+                                        onDragEnd = {
+                                            // The order is saved now; the glide only follows it.
+                                            onReorder(manual.map { it.id })
+                                            haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)
+                                            settleDrop(task.id)
+                                        },
+                                        onDragCancel = {
+                                            // Cancelled by the system, not the user: keep the order they see.
+                                            onReorder(manual.map { it.id })
+                                            settleDrop(task.id)
+                                        },
                                     )
                                 },
                         )
@@ -273,6 +364,10 @@ fun TasksScreen(
     }
 }
 
+/** Distance from the list's edge where a dragged row starts scrolling it, and the top speed. */
+private val AutoScrollEdge = 64.dp
+private val AutoScrollMaxSpeed = 900.dp // per second
+
 @Composable
 private fun SwipeableTaskRow(
     task: Task,
@@ -283,8 +378,19 @@ private fun SwipeableTaskRow(
     modifier: Modifier = Modifier,
 ) {
     val c = DsTheme.colors
+    val m = DsTheme.motion
     val state = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
+    // "Armed": past the threshold, so letting go now completes or deletes. The background fills
+    // with the action's colour and the icon grows at that moment, with one tick, so the user knows
+    // before lifting the finger. Only arming ticks; the reset after a completion doesn't.
+    val armed by remember { derivedStateOf { state.targetValue != SwipeToDismissBoxValue.Settled } }
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(state) {
+        snapshotFlow { armed }.distinctUntilChanged().filter { it }.collect {
+            haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+        }
+    }
     // Deleting an occurrence of a repeating task asks which ones, as in the editor; cancelling puts
     // the row back.
     var askScope by rememberSaveable { mutableStateOf(false) }
@@ -308,31 +414,7 @@ private fun SwipeableTaskRow(
                 SwipeToDismissBoxValue.Settled -> Unit
             }
         },
-        backgroundContent = {
-            val dir = state.dismissDirection
-            val bg = app.daysemble.ui.components.animateStateColor(
-                when (dir) {
-                    SwipeToDismissBoxValue.StartToEnd -> c.success.copy(alpha = 0.16f)
-                    SwipeToDismissBoxValue.EndToStart -> c.errorContainer
-                    else -> Color.Transparent
-                },
-                DsTheme.motion.standard(DsTheme.motion.short),
-                label = "swipeBg",
-            )
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(bg)
-                    .padding(horizontal = Space.gutter),
-                contentAlignment = if (dir == SwipeToDismissBoxValue.EndToStart) Alignment.CenterEnd else Alignment.CenterStart,
-            ) {
-                when (dir) {
-                    SwipeToDismissBoxValue.StartToEnd -> Icon(Icons.Rounded.Check, null, tint = c.success)
-                    SwipeToDismissBoxValue.EndToStart -> Icon(Icons.Rounded.DeleteOutline, null, tint = c.error)
-                    else -> Unit
-                }
-            }
-        },
+        backgroundContent = { SwipeBackground(state.dismissDirection, armed) },
     ) {
         Box(Modifier.background(c.background)) {
             TaskRow(
@@ -346,6 +428,49 @@ private fun SwipeableTaskRow(
             HairlineDivider(Modifier.align(Alignment.BottomCenter), inset = true)
         }
     }
+}
+
+/**
+ * Behind a swiped row: neutral until the swipe passes the threshold ([armed]), then the action's
+ * colour (complete: green, delete: red) with its icon at full size.
+ */
+@Composable
+private fun SwipeBackground(dir: SwipeToDismissBoxValue, armed: Boolean) {
+    val c = DsTheme.colors
+    val m = DsTheme.motion
+    val complete = dir == SwipeToDismissBoxValue.StartToEnd
+    val action = if (complete) SwipeAction(c.success.copy(alpha = 0.16f), c.success, Icons.Rounded.Check)
+    else SwipeAction(c.errorContainer, c.error, Icons.Rounded.DeleteOutline)
+    val idle = dir == SwipeToDismissBoxValue.Settled
+    val bg = app.daysemble.ui.components.animateStateColor(
+        action.fill(idle, armed, c.surfaceVariant),
+        m.standard(m.short),
+        label = "swipeBg",
+    )
+    val iconScale by animateFloatAsState(if (armed || m.reduced) 1f else 0.8f, m.indicator(), label = "swipeIcon")
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(bg)
+            .padding(horizontal = Space.gutter),
+        contentAlignment = if (complete) Alignment.CenterStart else Alignment.CenterEnd,
+    ) {
+        if (!idle) {
+            Icon(
+                action.icon, null, tint = action.tint(armed, c.textSecondary),
+                modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale },
+            )
+        }
+    }
+}
+
+private data class SwipeAction(val armedFill: Color, val armedTint: Color, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    fun fill(idle: Boolean, armed: Boolean, neutral: Color) = when {
+        idle -> Color.Transparent
+        armed -> armedFill
+        else -> neutral
+    }
+    fun tint(armed: Boolean, neutral: Color) = if (armed) armedTint else neutral
 }
 
 @Composable
