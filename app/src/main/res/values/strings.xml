@@ -444,8 +444,6 @@
     <string name="support_kofi_action">Support on Ko-fi</string>
     <string name="support_upi_title">UPI (India)</string>
     <string name="support_upi_body">Scan the code with any UPI app, or open one on this phone. You choose the amount there.</string>
-    <string name="support_upi_qr_description">UPI QR code for %1$s, payee %2$s. Scan it with a UPI app.</string>
-    <string name="support_upi_id_label">UPI ID</string>
     <string name="support_upi_payee_label">Payee name</string>
     <string name="support_upi_open">Pay with a UPI app</string>
     <string name="support_upi_copy">Copy UPI ID</string>
@@ -455,16 +453,11 @@
     <string name="support_upi_chooser">Pay with</string>
     <string name="support_qr_share_chooser">Share UPI QR code</string>
     <string name="support_qr_share_text">UPI: %1$s (%2$s)</string>
-    <string name="support_upi_id_copied">UPI ID copied</string>
-    <string name="support_no_upi_app">No UPI app found on this phone. The UPI ID was copied, or scan the QR code from another phone.</string>
-    <string name="support_qr_saved">QR code saved</string>
     <string name="support_qr_failed">Couldn’t create the QR image. Try again.</string>
     <string name="support_no_browser">No app can open this link. It was copied instead.</string>
     <string name="support_section_project">About Daysemble</string>
     <string name="support_project_body">Daysemble is an independent calendar and task planner by SimplyFahim, released under the Apache License 2.0.</string>
     <string name="support_repository">Source code on GitHub</string>
-    <string name="support_website">Website</string>
-    <string name="support_github_profile">More projects on GitHub</string>
 
     <plurals name="minutes_short">
         <item quantity="one">%d min</item>
