@@ -1,44 +1,54 @@
 package app.daysemble.support
 
 /**
- * Every link and payment detail the Support page shows. Change them here; nothing else hardcodes them.
- * The app never handles money: it only opens Ko-fi or a UPI app chosen by the user, and stores nothing.
+ * "Support my work" configuration: the developer's payment and contact details. This is the only
+ * place these values live, so updating a link is a one-line change.
+ *
+ * Daysemble's GitHub repository is private, so no repository link is shown; the public GitHub
+ * profile is linked instead. If the repository becomes public, add its URL here and show it on the
+ * Support screen.
+ *
+ * Nothing here is sent anywhere by the app: links open in apps the user picks, and the UPI QR
+ * code is generated on the device.
  */
 object SupportConfig {
+    /** Ko-fi profile (account "SimplyFahim"). */
     const val KOFI_URL = "https://ko-fi.com/simplyfahim"
+
+    /** The developer's personal website. Not a project page. */
+    const val WEBSITE = "https://SimplyFahim.pages.dev"
+
+    /** The developer's public GitHub profile. */
+    const val GITHUB_PROFILE = "https://github.com/Fahimofficial/"
+
+    /** Public UPI ID (VPA) and the payee name UPI apps show before the user confirms. */
     const val UPI_ID = "SimplyFahim@sbi"
     const val UPI_PAYEE_NAME = "SimplyFahim"
     const val UPI_CURRENCY = "INR"
-    const val WEBSITE_URL = "https://SimplyFahim.pages.dev"
-    const val GITHUB_PROFILE_URL = "https://github.com/Fahimofficial/"
 
     /**
-     * Daysemble's own repository. It is private, so the app doesn't link to it (the link would show
-     * GitHub's 404 page to everyone else). Set it to "https://github.com/Fahimofficial/Daysemble"
-     * once the repository is public; the Support page shows the row whenever this isn't null.
+     * Standard UPI payment link that only identifies the payee:
+     * `upi://pay?pa=SimplyFahim@sbi&pn=SimplyFahim&cu=INR`.
+     *
+     * No amount (`am`) is ever set: the user enters it and confirms in their own UPI app. The same
+     * string is the "Open UPI app" intent data and the QR payload. `@` stays literal (valid in a URI
+     * query, and what bank-issued UPI QR codes use); anything else outside the RFC 3986 unreserved
+     * set is percent-encoded.
      */
-    val REPOSITORY_URL: String? = null
+    fun upiPaymentUri(
+        upiId: String = UPI_ID,
+        payeeName: String = UPI_PAYEE_NAME,
+        currency: String = UPI_CURRENCY,
+    ): String = "upi://pay?pa=${encode(upiId)}&pn=${encode(payeeName)}&cu=${encode(currency)}"
 
-    /** The payment link encoded in the QR code and sent to UPI apps. No amount: the payer chooses it. */
-    val upiPaymentUri: String = upiPaymentUri(UPI_ID, UPI_PAYEE_NAME, UPI_CURRENCY)
-}
+    private val KEPT_AS_IS: Set<Char> = (('A'..'Z') + ('a'..'z') + ('0'..'9') + listOf('-', '.', '_', '~', '@')).toSet()
+    private const val BYTE_MASK = 0xFF
 
-/**
- * A UPI deep link (`upi://pay`, NPCI linking specification) with payee address [upiId], payee name
- * [payeeName] and [currency], and deliberately no `am` (amount) parameter. Values are percent-encoded
- * except for URI-unreserved characters and `@`, so a VPA reads as `name@bank` like bank-issued codes.
- */
-fun upiPaymentUri(upiId: String, payeeName: String, currency: String): String =
-    "upi://pay?pa=${encodeUpiValue(upiId)}&pn=${encodeUpiValue(payeeName)}&cu=${encodeUpiValue(currency)}"
-
-private const val BYTE_MASK = 0xFF
-private const val ASCII_END = 0x80
-
-private fun encodeUpiValue(value: String): String = buildString {
-    for (byte in value.toByteArray(Charsets.UTF_8)) {
-        val code = byte.toInt() and BYTE_MASK
-        val ch = code.toChar()
-        if ((code < ASCII_END && ch.isLetterOrDigit()) || ch in "-._~@") append(ch)
-        else append('%').append("%02X".format(code))
+    private fun encode(value: String): String = buildString {
+        value.toByteArray(Charsets.UTF_8).forEach { byte ->
+            val unsigned = byte.toInt() and BYTE_MASK
+            val c = unsigned.toChar()
+            if (c in KEPT_AS_IS) append(c) else append("%%%02X".format(unsigned))
+        }
     }
 }

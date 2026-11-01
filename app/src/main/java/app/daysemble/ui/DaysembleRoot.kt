@@ -82,6 +82,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -151,6 +152,7 @@ import app.daysemble.ui.settings.syncLabel
 import app.daysemble.ui.task.TaskEditorRoute as TaskEditorScreenRoute
 import app.daysemble.ui.tasks.TasksRoute as TasksScreenRoute
 import app.daysemble.ui.theme.DsTheme
+import app.daysemble.ui.theme.Elevation
 import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
@@ -222,6 +224,8 @@ fun DaysembleRoot(
     settings: AppSettings,
     openRequests: kotlinx.coroutines.flow.StateFlow<app.daysemble.OpenRequest?> = kotlinx.coroutines.flow.MutableStateFlow(null),
     onOpenHandled: () -> Unit = {},
+    shortcutRequests: kotlinx.coroutines.flow.StateFlow<app.daysemble.AppShortcut?> = kotlinx.coroutines.flow.MutableStateFlow(null),
+    onShortcutHandled: () -> Unit = {},
 ) {
     val zone = rememberSystemZone()
     val prefs = rememberTimePrefs(settings.clockFormat, settings.firstDayOfWeek, zone)
@@ -235,6 +239,7 @@ fun DaysembleRoot(
         container.timeContext.value = app.daysemble.core.time.TimeContext(prefs.zone, prefs.firstDayOfWeek)
     }
     val open by openRequests.collectAsStateWithLifecycle()
+    val shortcut by shortcutRequests.collectAsStateWithLifecycle()
     val syncFlow = remember(container) { container.sync.status }
     val syncStatus = syncFlow.collectAsStateWithLifecycle(initialValue = null)
 
@@ -325,6 +330,7 @@ fun DaysembleRoot(
                 AppContent(
                     nav, container, settings, syncStatus.value, open, onOpenHandled,
                     openAccountsAfterOnboarding, { openAccountsAfterOnboarding = false }, snackbar,
+                    shortcut, onShortcutHandled,
                 )
             }
         }
@@ -355,6 +361,8 @@ private fun AppContent(
     openAccountsAfterOnboarding: Boolean,
     onAccountsOpened: () -> Unit,
     snackbar: SnackbarHostState,
+    shortcut: app.daysemble.AppShortcut? = null,
+    onShortcutHandled: () -> Unit = {},
 ) {
     val c = DsTheme.colors
     val motion = DsTheme.motion
@@ -364,6 +372,7 @@ private fun AppContent(
     var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var addDate by rememberSaveable { mutableStateOf<Long?>(null) }
+    var addKind by rememberSaveable { mutableStateOf(app.daysemble.ui.add.AddKind.TASK) }
     // The day each date-based tab is showing, used to prefill quick add for that tab.
     var todayFocus by rememberSaveable { mutableStateOf<Long?>(null) }
     var calendarFocus by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -404,6 +413,7 @@ private fun AppContent(
             onOpenSync = { nav.openFromMain(SettingsPageRoute(SettingsPage.ACCOUNTS.name)) },
             onAdd = {
                 addDate = when (tab) { Tab.TODAY -> todayFocus; Tab.CALENDAR -> calendarFocus; Tab.TASKS -> null }
+                addKind = app.daysemble.ui.add.AddKind.TASK
                 showAdd = true
             },
             modifier = Modifier
@@ -451,6 +461,26 @@ private fun AppContent(
             if (!nav.isShowing(route)) nav.navigate(route)
             onOpenHandled()
         }
+        // Launcher shortcuts. On the main screen, New task / New event open Quick Add (the same sheet
+        // as the + button) for today. Over another page they open the full editor on top instead,
+        // so nothing the user has open, such as an editor with unsaved changes, is closed for it.
+        LaunchedEffect(shortcut) {
+            val s = shortcut ?: return@LaunchedEffect
+            when (s) {
+                app.daysemble.AppShortcut.SEARCH -> if (nav.currentBackStackEntry?.destination?.hasRoute<SearchRoute>() != true) nav.navigate(SearchRoute)
+                app.daysemble.AppShortcut.NEW_TASK, app.daysemble.AppShortcut.NEW_EVENT -> {
+                    val task = s == app.daysemble.AppShortcut.NEW_TASK
+                    if (nav.currentBackStackEntry?.destination.isMain()) {
+                        addDate = null
+                        addKind = if (task) app.daysemble.ui.add.AddKind.TASK else app.daysemble.ui.add.AddKind.EVENT
+                        showAdd = true
+                    } else {
+                        nav.navigate(if (task) TaskEditorRoute() else EventEditorRoute(dateEpochDay = container.clock.today().toEpochDay()))
+                    }
+                }
+            }
+            onShortcutHandled()
+        }
         LaunchedEffect(openAccountsAfterOnboarding) {
             // Runs only once the NavHost above exists, so its graph is set.
             if (openAccountsAfterOnboarding) {
@@ -482,6 +512,7 @@ private fun AppContent(
         QuickAddSheet(
             container = container,
             initialDate = addDate?.let(LocalDate::ofEpochDay),
+            initialKind = addKind,
             onDismiss = { showAdd = false },
             onMoreEventOptions = { pre ->
                 nav.openFromMain(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
@@ -651,6 +682,7 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
                     SettingsPage.ABOUT -> AboutRoute(onBack = back, onOpenSupport = { nav.openFrom(e, SettingsPageRoute(SettingsPage.SUPPORT.name)) })
                     SettingsPage.SUPPORT -> app.daysemble.ui.settings.SupportRoute(onBack = back)
                     SettingsPage.SCHEDULE -> app.daysemble.ui.settings.ScheduleSettingsRoute(onBack = back)
+                    SettingsPage.SUPPORT -> app.daysemble.ui.settings.SupportRoute(onBack = back)
                     null -> LaunchedEffect(Unit) { nav.popBackStack(e.destination.id, inclusive = true) }
                 }
             }
@@ -852,12 +884,35 @@ private suspend fun awaitMainThreadIdle(timeoutMs: Long) {
 
 // ---- Bottom bar -----------------------------------------------------------------------------
 
+/** How far above the bottom bar's row the scroll-edge fade begins. */
+private val ScrollEdgeFade = 28.dp
+
 @Composable
 private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier) {
     val c = DsTheme.colors
     val m = DsTheme.motion
+    // Soft: with the scroll-edge fade the bar no longer needs a heavy shadow to stand off the list.
+    val shadow = c.scrim.copy(alpha = c.scrim.alpha * Elevation.SHADOW_ALPHA)
     Row(
         modifier
+            // Scroll edge: content dissolves into the background as it reaches the floating bar,
+            // rather than showing sliced cards and dividers around and under the pills. It starts
+            // a little above the bar and is opaque from the pills' middle down. One static draw,
+            // no layer, no blur.
+            .drawBehind {
+                val above = ScrollEdgeFade.toPx()
+                drawRect(
+                    Brush.verticalGradient(
+                        0f to c.background.copy(alpha = 0f),
+                        0.45f to c.background.copy(alpha = 0.9f),
+                        1f to c.background,
+                        startY = -above,
+                        endY = size.height,
+                    ),
+                    topLeft = Offset(0f, -above),
+                    size = Size(size.width, size.height + above),
+                )
+            }
             .navigationBarsPadding()
             .padding(horizontal = Space.gutter, vertical = Space.m),
         verticalAlignment = Alignment.CenterVertically,
@@ -883,7 +938,7 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
                 .weight(1f, fill = false)
                 .heightIn(min = Sizes.bottomBar - 8.dp)
                 .widthIn(max = 360.dp)
-                .shadow(10.dp, Radii.pill, ambientColor = c.scrim, spotColor = c.scrim)
+                .shadow(Elevation.floating, Radii.pill, ambientColor = shadow, spotColor = shadow)
                 .clip(Radii.pill)
                 .background(c.surfaceRaised)
                 .border(Sizes.hairline, c.outline, Radii.pill)
@@ -913,7 +968,7 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
         }
         DsFab(
             Icons.Rounded.Add, stringResource(R.string.cd_add), onAdd,
-            Modifier.requiredSize(Sizes.fab).shadow(10.dp, Radii.pill, ambientColor = c.scrim, spotColor = c.scrim),
+            Modifier.requiredSize(Sizes.fab).shadow(Elevation.floating, Radii.pill, ambientColor = shadow, spotColor = shadow),
         )
     }
 }

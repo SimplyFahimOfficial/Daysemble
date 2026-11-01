@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.daysemble.R
+import app.daysemble.ui.components.DsDialogAction
+import app.daysemble.ui.components.DsDialogButtons
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Space
@@ -79,7 +80,6 @@ fun ZonePickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () ->
                 if (shown.isEmpty()) Text(stringResource(R.string.zone_none), style = DsTheme.type.bodySmall, color = c.textSecondary)
             }
         },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel), color = c.textSecondary) } },
+        confirmButton = { DsDialogButtons(listOf(DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel))) },
     )
 }

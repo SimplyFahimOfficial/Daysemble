@@ -129,10 +129,12 @@ form need their own review by the maintainer (see below).
 
 - No analytics, crash reporting, advertising SDKs or Daysemble server. No third-party SDK other than
   Google sign-in (Play services auth).
-- OAuth scopes are `auth/calendar` and `auth/tasks` (read and write). These are broad; a narrower set
-  (`calendar.events` plus `calendar.calendarlist.readonly`) may be enough and is worth evaluating
-  (roadmap P3).
-- Disconnecting the account stops sync; the local data stays until the user deletes it or the app.
+- OAuth scopes are `auth/calendar.events` and `auth/calendar.calendarlist.readonly` for Calendar,
+  `auth/tasks` for Tasks, plus `email` (`GoogleAuthManager.scopesFor`). The full `auth/calendar`
+  scope, which can also delete calendars and change sharing, is not requested; it is only revoked
+  for accounts that granted it to an earlier build (`GoogleScopesTest`).
+- Disconnecting the account revokes access and removes the Google copies (and unsynced changes to
+  them) from the device. On-device calendars and lists stay. Nothing is deleted from Google.
 
 Needs a manual review by the maintainer before a public release:
 

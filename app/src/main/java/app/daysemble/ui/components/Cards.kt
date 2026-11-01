@@ -3,6 +3,7 @@ package app.daysemble.ui.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.material.icons.rounded.Place
@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +57,7 @@ import app.daysemble.ui.format.durationText
 import app.daysemble.ui.format.relativeText
 import app.daysemble.ui.task.repeatLabel
 import app.daysemble.ui.theme.DsTheme
+import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Space
 import java.time.Duration
 import java.time.Instant
@@ -67,7 +69,7 @@ import java.time.Instant
  * invented people, avatars or agendas.
  */
 
-private val CardShape = RoundedCornerShape(20.dp)
+private val CardShape = Radii.tile
 
 /** Pill fill on the orange card: a dark tint keeps white text above 4.5:1 (a light one wouldn't). */
 internal val OnAccentPillTint = Color.Black.copy(alpha = 0.18f)
@@ -108,13 +110,15 @@ fun AgendaEventCard(
     val a11y = listOfNotNull(event.title.ifBlank { untitled }, time, event.location.takeIf { it.isNotBlank() }, relText, repeats).joinToString(", ")
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
 
+    val interaction = remember { MutableInteractionSource() }
     Column(
         modifier
             .then(CardOuter)
             .fillMaxWidth()
+            .pressScale(interaction, large = true)
             .clip(CardShape)
             .background(bg)
-            .itemClick(onClick, onLongClick)
+            .itemClick(onClick, onLongClick, interaction)
             .semantics(mergeDescendants = true) { contentDescription = a11y }
             .padding(start = Space.l, end = Space.m, top = Space.m, bottom = Space.l),
     ) {
@@ -186,13 +190,15 @@ fun AgendaTaskCard(
     val overdue = TaskRules.isOverdue(task, now, p.zone)
     val textColor = app.daysemble.ui.components.animateStateColor(if (task.isCompleted) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskCardText")
     val strike by animateFloatAsState(if (task.isCompleted) 1f else 0f, if (m.reduced) snap() else m.standard(m.medium), label = "taskCardStrike")
+    val interaction = remember { MutableInteractionSource() }
     Row(
         modifier
             .then(CardOuter)
             .fillMaxWidth()
+            .pressScale(interaction, large = true)
             .clip(CardShape)
             .background(c.surfaceVariant)
-            .itemClick(onClick, onLongClick)
+            .itemClick(onClick, onLongClick, interaction)
             .semantics { if (actions.isNotEmpty()) customActions = actions }
             .padding(start = Space.xxs, end = Space.l, top = Space.xs, bottom = Space.xs),
         verticalAlignment = Alignment.Top,

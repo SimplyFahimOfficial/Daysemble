@@ -17,7 +17,7 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="geo" />
         </intent>
-        <!-- Support page: detects whether a UPI app is installed before offering to open one. -->
+        <!-- Settings > Support my work: find installed UPI apps (chooser, or "none installed"). -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="upi" />
@@ -37,6 +37,18 @@
         android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.Daysemble.Starting"
         tools:targetApi="36">
+
+        <!-- Shares the on-device UPI QR code (Support my work). Not exported; the receiving app only
+             gets temporary read access to that one cached PNG. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.supportshare"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/support_share_paths" />
+        </provider>
 
         <activity
             android:name=".MainActivity"
@@ -101,17 +113,6 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
-
-        <!-- Shares the Support page's UPI QR image (cache/support/ only), read-only and per-share. -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.support.files"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/support_file_paths" />
-        </provider>
 
         <!-- WorkManager is initialised on demand with our own Configuration. -->
         <provider

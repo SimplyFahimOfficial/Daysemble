@@ -1,20 +1,23 @@
 package app.daysemble.ui.settings
 
-import android.app.Activity
-import android.content.ClipboardManager
-import android.content.Intent
-import androidx.activity.compose.LocalActivity
-import androidx.compose.ui.test.assertIsDisplayed
+import android.graphics.Bitmap
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import app.daysemble.data.prefs.ThemeMode
 import app.daysemble.support.SupportConfig
-import app.daysemble.support.UpiQr
 import app.daysemble.ui.theme.DaysembleTheme
+import app.daysemble.ui.theme.DsTheme
 import com.google.common.truth.Truth.assertThat
 import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
@@ -22,86 +25,73 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.File
 
+/**
+ * Renders the Support page in both themes: the QR code on the rendered screen must decode to the
+ * UPI link, the links must be the configured ones, and each button must call its action.
+ * Renders are kept in build/support-qr/ for review.
+ */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [35], qualifiers = "w393dp-h1700dp-xxhdpi")
 class SupportScreenTest {
-
     @get:Rule val compose = createComposeRule()
 
-    private lateinit var activity: Activity
+    private val opened = mutableListOf<String>()
+    private val calls = mutableListOf<String>()
+    private val actions = SupportActions(
+        onOpenUrl = { opened += it },
+        onCopyUpiId = { calls += "copy" },
+        onOpenUpiApp = { calls += "upi" },
+        onShareQr = { calls += "share" },
+        onSaveQr = { calls += "save" },
+    )
 
-    private fun show() {
+    private fun show(theme: ThemeMode) {
         compose.setContent {
-            activity = LocalActivity.current!!
-            DaysembleTheme { SupportRoute(onBack = {}) }
+            DaysembleTheme(themeMode = theme) {
+                Column(Modifier.fillMaxWidth().background(DsTheme.colors.background)) { SupportContent(actions) }
+            }
         }
     }
 
-    @Test
-    fun showsIntroPaymentDetailsAndLinksButNotThePrivateRepository() {
-        show()
-        compose.onNodeWithText(
-            "Your support helps me maintain existing applications, improve features and continue developing " +
-                "independent open-source projects. Every contribution is voluntary and appreciated.",
-        ).assertIsDisplayed()
-        compose.onNodeWithText("Support on Ko-fi").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("UPI QR code for SimplyFahim@sbi, payee SimplyFahim. Scan it with a UPI app.")
-            .performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("SimplyFahim@sbi").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("SimplyFahim.pages.dev").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("github.com/Fahimofficial").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Source code on GitHub").assertDoesNotExist()
+    @Test fun lightThemeQrCodeOnScreenDecodesToTheUpiLink() = renderAndDecode(ThemeMode.LIGHT, "light")
+
+    @Test fun darkThemeQrCodeOnScreenDecodesToTheUpiLink() = renderAndDecode(ThemeMode.DARK, "dark")
+
+    private fun renderAndDecode(theme: ThemeMode, name: String) {
+        show(theme)
+        compose.waitForIdle()
+        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        val dir = File("build/support-qr").apply { mkdirs() }
+        File(dir, "support-screen-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        val decoded = QRCodeReader().decode(
+            BinaryBitmap(HybridBinarizer(RGBLuminanceSource(bitmap.width, bitmap.height, pixels))),
+            mapOf(DecodeHintType.TRY_HARDER to true),
+        ).text
+        assertThat(decoded).isEqualTo("upi://pay?pa=SimplyFahim@sbi&pn=SimplyFahim&cu=INR")
     }
 
-    @Test
-    fun linksOpenTheExactUrls() {
-        show()
-        compose.onNodeWithText("Support on Ko-fi").performScrollTo().performClick()
-        shadowOf(activity).nextStartedActivity.let {
-            assertThat(it.action).isEqualTo(Intent.ACTION_VIEW)
-            assertThat(it.dataString).isEqualTo("https://ko-fi.com/simplyfahim")
-        }
-        compose.onNodeWithText("Website").performScrollTo().performClick()
-        assertThat(shadowOf(activity).nextStartedActivity.dataString).isEqualTo("https://SimplyFahim.pages.dev")
-        compose.onNodeWithText("More projects on GitHub").performScrollTo().performClick()
-        assertThat(shadowOf(activity).nextStartedActivity.dataString).isEqualTo("https://github.com/Fahimofficial/")
-    }
+    @Test fun linksAndActionsAreWired() {
+        show(ThemeMode.LIGHT)
+        compose.onNodeWithText("Support on Ko-fi").performClick()
+        compose.onNodeWithText("Copy UPI ID").performClick()
+        compose.onNodeWithText("Open UPI app").performClick()
+        compose.onNodeWithText("Share QR").performClick()
+        compose.onNodeWithText("Save QR").performClick()
+        compose.onNodeWithText("Personal website").performClick()
+        compose.onNodeWithText("Projects on GitHub").performClick()
+        compose.onNodeWithText("Copied").assertExists()
 
-    @Test
-    fun withoutAUpiAppTheIdIsCopiedAndNothingClaimsPayment() {
-        show()
-        compose.onNodeWithText("Pay with a UPI app").performScrollTo().performClick()
-        assertThat(shadowOf(activity).nextStartedActivity).isNull()
-        compose.onNodeWithText("No UPI app found", substring = true).assertExists()
-        val clip = activity.getSystemService(ClipboardManager::class.java).primaryClip
-        assertThat(clip!!.getItemAt(0).text.toString()).isEqualTo("SimplyFahim@sbi")
-    }
-
-    @Test
-    fun withAUpiAppAChooserOpensWithTheUpiUri() {
-        val upi = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(SupportConfig.upiPaymentUri))
-        val info = android.content.pm.ResolveInfo().apply {
-            activityInfo = android.content.pm.ActivityInfo().apply { packageName = "com.example.upi"; name = "Pay" }
-        }
-        shadowOf(androidx.test.core.app.ApplicationProvider.getApplicationContext<android.app.Application>().packageManager)
-            .addResolveInfoForIntent(upi, info)
-        show()
-        compose.onNodeWithText("Pay with a UPI app").performScrollTo().performClick()
-        val started = shadowOf(activity).nextStartedActivity
-        assertThat(started.action).isEqualTo(Intent.ACTION_CHOOSER)
-        @Suppress("DEPRECATION")
-        val inner = started.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)!!
-        assertThat(inner.dataString).isEqualTo("upi://pay?pa=SimplyFahim@sbi&pn=SimplyFahim&cu=INR")
-    }
-
-    @Test
-    fun androidBitmapOfTheCodeDecodesToTheUpiUri() {
-        val bmp = UpiQr.bitmap()
-        val px = IntArray(bmp.width * bmp.height).also { bmp.getPixels(it, 0, bmp.width, 0, 0, bmp.width, bmp.height) }
-        val text = QRCodeReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(bmp.width, bmp.height, px)))).text
-        assertThat(text).isEqualTo(SupportConfig.upiPaymentUri)
+        assertThat(opened).containsExactly(SupportConfig.KOFI_URL, SupportConfig.WEBSITE, SupportConfig.GITHUB_PROFILE).inOrder()
+        assertThat(calls).containsExactly("copy", "upi", "share", "save").inOrder()
+        // The repository is private: no link to it may appear.
+        assertThat(opened.none { it.contains("Daysemble", ignoreCase = true) }).isTrue()
     }
 }

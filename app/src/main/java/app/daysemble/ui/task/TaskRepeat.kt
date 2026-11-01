@@ -25,6 +25,8 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import app.daysemble.R
+import app.daysemble.ui.components.DsDialogAction
+import app.daysemble.ui.components.DsDialogButtons
 import app.daysemble.core.recurrence.Freq
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.core.recurrence.WeekdayNum
@@ -279,12 +281,7 @@ fun SeriesScopeDialog(
                 }
             }
         },
-        confirmButton = {},
-        dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel), color = c.textSecondary, style = DsTheme.type.label)
-            }
-        },
+        confirmButton = { DsDialogButtons(listOf(DsDialogAction(stringResource(R.string.action_cancel), onDismiss, DsDialogAction.Kind.Cancel))) },
     )
 }
 

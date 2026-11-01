@@ -110,7 +110,12 @@ private fun EventEditorScreen(
     BackHandler(enabled = state.isDirty) { confirmDiscard = true }
 
     Column(Modifier.fillMaxSize().background(c.background).imePadding()) {
-        DsTopBar(stringResource(if (state.isNew) R.string.new_event else if (state.isOccurrence) R.string.edit_this_event else R.string.edit_event), attemptClose) {
+        val title = when {
+            state.isNew -> R.string.new_event
+            state.isOccurrence -> R.string.edit_this_event
+            else -> R.string.edit_event
+        }
+        DsTopBar(stringResource(title), attemptClose) {
             DsButton(stringResource(R.string.action_save), save, modifier = Modifier.padding(end = Space.s), enabled = state.form != null && !state.saving)
         }
         val f = state.form

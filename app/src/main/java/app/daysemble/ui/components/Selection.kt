@@ -6,6 +6,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,6 +28,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,6 +39,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,24 +63,31 @@ fun DsChip(
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
-    val bg = app.daysemble.ui.components.animateStateColor(if (selected) c.inverse else c.surfaceVariant, m.standard(m.medium), label = "chipBg")
-    val fg = app.daysemble.ui.components.animateStateColor(if (selected) c.onInverse else c.textPrimary, m.standard(m.medium), label = "chipFg")
+    val bg = animateStateColor(if (selected) c.inverse else c.surfaceVariant, m.standard(m.medium), label = "chipBg")
+    val fg = animateStateColor(if (selected) c.onInverse else c.textPrimary, m.standard(m.medium), label = "chipFg")
+    // The 48dp row takes the touch; the press is shown on the pill the user sees (ripple clipped to
+    // it, and a small press scale), not as a rectangle around it.
+    val interaction = remember { MutableInteractionSource() }
     Row(
         modifier
             .heightIn(min = Sizes.touch)
             .then(
                 when (role) {
-                    Role.Checkbox -> Modifier.toggleable(value = selected, role = role, onValueChange = { onClick() })
-                    Role.Button -> Modifier.clickable(role = role, onClick = onClick)
-                    else -> Modifier.selectable(selected = selected, role = role, onClick = onClick)
+                    Role.Checkbox -> Modifier.toggleable(
+                        value = selected, interactionSource = interaction, indication = null, role = role, onValueChange = { onClick() },
+                    )
+                    Role.Button -> Modifier.clickable(interactionSource = interaction, indication = null, role = role, onClick = onClick)
+                    else -> Modifier.selectable(selected = selected, interactionSource = interaction, indication = null, role = role, onClick = onClick)
                 },
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             Modifier
+                .pressScale(interaction)
                 .clip(Radii.pill)
                 .background(bg)
+                .indication(interaction, LocalIndication.current)
                 .padding(horizontal = Space.m + Space.xxs, vertical = Space.s),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs),
@@ -121,6 +135,8 @@ fun <T> DsSegmented(
         Row(Modifier.fillMaxWidth().selectableGroup()) {
             options.forEachIndexed { i, opt ->
                 val isSel = i == index
+                // Same spring as the indicator, so the label lights up as the indicator arrives.
+                val labelColor = animateStateColor(if (isSel) c.textPrimary else c.textSecondary, m.indicator(), label = "segLabel")
                 Box(
                     Modifier
                         .weight(1f)
@@ -132,7 +148,7 @@ fun <T> DsSegmented(
                     Text(
                         label(opt),
                         style = DsTheme.type.label,
-                        color = if (isSel) c.textPrimary else c.textSecondary,
+                        color = labelColor,
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         modifier = Modifier.padding(horizontal = 4.dp),
@@ -141,6 +157,20 @@ fun <T> DsSegmented(
             }
         }
     }
+}
+
+/**
+ * A checkbox toggle that plays a light tick on the same frame the value changes: completing (or
+ * reopening) a task is a commit.
+ */
+@Composable
+private fun Modifier.hapticCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit): Modifier {
+    val haptics = LocalHapticFeedback.current
+    val change by rememberUpdatedState(onCheckedChange)
+    return toggleable(value = checked, role = Role.Checkbox, onValueChange = {
+        haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+        change(it)
+    })
 }
 
 /**
@@ -164,7 +194,7 @@ fun DsCheck(
             .size(Sizes.touch)
             .clip(androidx.compose.foundation.shape.CircleShape) // round press feedback, like the circle it is
             .semantics { this.contentDescription = contentDescription }
-            .toggleable(value = checked, role = Role.Checkbox, onValueChange = onCheckedChange)
+            .hapticCheckbox(checked, onCheckedChange)
             .padding(13.dp),
         contentAlignment = Alignment.Center,
     ) {
