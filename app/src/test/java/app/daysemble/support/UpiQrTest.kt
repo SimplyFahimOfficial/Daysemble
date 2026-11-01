@@ -26,7 +26,7 @@ class UpiQrTest {
 
     @Test
     fun pngOfTheCodeDecodesToTheUpiUri() {
-        val matrix = UpiQr.matrix(SupportConfig.upiPaymentUri)
+        val matrix = UpiQr.matrix(SupportConfig.upiPaymentUri())
         val scale = 8
         val side = matrix.width * scale
         val image = BufferedImage(side, side, BufferedImage.TYPE_INT_ARGB)
@@ -43,7 +43,7 @@ class UpiQrTest {
 
     @Test
     fun codeHasAWhiteQuietZoneOfFourModules() {
-        val matrix = UpiQr.matrix(SupportConfig.upiPaymentUri)
+        val matrix = UpiQr.matrix(SupportConfig.upiPaymentUri())
         val q = UpiQr.QUIET_ZONE_MODULES
         for (i in 0 until matrix.width) {
             for (j in 0 until q) {
@@ -59,7 +59,7 @@ class UpiQrTest {
 
     @Test
     fun pixelsUseOnlyBlackAndWhite() {
-        val px = UpiQr.pixels(UpiQr.matrix(SupportConfig.upiPaymentUri), 2).toSet()
+        val px = UpiQr.pixels(UpiQr.matrix(SupportConfig.upiPaymentUri()), 2).toSet()
         assertThat(px).containsExactly(0xFF000000.toInt(), 0xFFFFFFFF.toInt())
     }
 }
