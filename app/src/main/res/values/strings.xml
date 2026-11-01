@@ -706,7 +706,6 @@
     <!-- Support my work -->
     <string name="support_my_work">Support my work</string>
     <string name="support_my_work_sub">Ko-fi, UPI and project links. Always optional.</string>
-    <string name="support_intro">Your support helps me maintain existing applications, improve features and continue developing independent open-source projects. Every contribution is voluntary and appreciated.</string>
     <string name="support_payment_options">Payment options</string>
     <string name="support_kofi">Support on Ko-fi</string>
     <string name="support_upi">Pay with UPI</string>
