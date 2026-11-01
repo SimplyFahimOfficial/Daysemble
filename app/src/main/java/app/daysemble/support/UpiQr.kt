@@ -47,13 +47,13 @@ object UpiQr {
     }
 
     /** A crisp bitmap of [content]. Display it with nearest-neighbour filtering so module edges stay sharp. */
-    fun bitmap(content: String = SupportConfig.upiPaymentUri, scale: Int = 16): Bitmap {
+    fun bitmap(content: String = SupportConfig.upiPaymentUri(), scale: Int = 16): Bitmap {
         val m = matrix(content)
         val side = m.width * scale
         return Bitmap.createBitmap(pixels(m, scale), side, side, Bitmap.Config.ARGB_8888)
     }
 
-    fun writePng(out: OutputStream, content: String = SupportConfig.upiPaymentUri) {
+    fun writePng(out: OutputStream, content: String = SupportConfig.upiPaymentUri()) {
         val bmp = bitmap(content)
         try {
             check(bmp.compress(Bitmap.CompressFormat.PNG, PNG_QUALITY, out)) { "PNG encoding failed" }
