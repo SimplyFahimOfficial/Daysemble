@@ -148,7 +148,6 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.play.services.auth)
-    implementation(libs.zxing.core)
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)
