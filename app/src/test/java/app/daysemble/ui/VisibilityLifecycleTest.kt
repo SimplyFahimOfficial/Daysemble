@@ -78,4 +78,37 @@ class VisibilityLifecycleTest {
         compose.waitForIdle()
         compose.onNodeWithText("value: second").assertExists()
     }
+
+    /**
+     * Switching back to a tab (or closing a page over the main screen) within the same minute must
+     * not hand the screen a new "now": each new value recomposed the whole tab and re-ran its
+     * ViewModel during the tab's fade-in. A new minute while hidden still refreshes on return.
+     */
+    @Test fun minuteTicker_returningWithinTheSameMinute_keepsItsValue() {
+        val clock = app.daysemble.core.time.FixedAppClock(java.time.Instant.parse("2026-10-27T10:00:05Z"), java.time.ZoneOffset.UTC)
+        val parent = Parent().apply { registry.currentState = Lifecycle.State.RESUMED }
+        // New values handed to the screen. Each one recomposes everything that reads it.
+        val delivered = mutableListOf<java.time.Instant>()
+        compose.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(androidx.lifecycle.compose.LocalLifecycleOwner provides parent) {
+                val now = app.daysemble.ui.format.rememberMinuteTicker(clock)
+                androidx.compose.runtime.SideEffect { if (delivered.lastOrNull() != now) delivered += now }
+            }
+        }
+        fun settle() = repeat(3) {
+            compose.mainClock.advanceTimeBy(100); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        }
+        fun hideThenShowAt(t: String) {
+            compose.runOnUiThread { parent.registry.currentState = Lifecycle.State.CREATED }
+            settle()
+            clock.instant = java.time.Instant.parse(t)
+            compose.runOnUiThread { parent.registry.currentState = Lifecycle.State.RESUMED }
+            settle()
+        }
+        settle()
+        hideThenShowAt("2026-10-27T10:00:40Z")
+        assertThat(delivered).containsExactly(java.time.Instant.parse("2026-10-27T10:00:05Z"))
+        hideThenShowAt("2026-10-27T10:01:10Z")
+        assertThat(delivered.last()).isEqualTo(clock.instant)
+    }
 }

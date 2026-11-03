@@ -143,3 +143,15 @@ No new tests were added (none were requested). The arming, drop-glide and haptic
 - The auto-scroll check first failed. That failure is what exposed the dropped-gesture bug, which is fixed above.
 
 **Rendered and checked:** the dark series dialog, the time picker, both Accounts states and Today. The first dialog style had a tonal fill for alternatives, which nearly vanished on the dark dialog, so alternatives are now outlined.
+
+## 4. Bottom bar responsiveness pass (November 2026)
+
+No device or emulator was available (no KVM in the sandbox), so there are still no frame timings.
+Findings are from the code path plus a Robolectric reproduction where noted.
+
+| # | Finding | Fix | Evidence | Status |
+|---|---|---|---|---|
+| N1 | Every tab switch back to a tab, and every page close back to the main screen, gave the screen a new `now`: `rememberMinuteTicker` re-read the clock when its lifecycle restarted. Today, Calendar and Tasks pass `now` down widely and forward it to their ViewModel, so the whole tab recomposed, its ViewModel rebuilt its state off the main thread, and the tab recomposed again with that state, all during the 160 ms tab fade or the page-close animation. | Keep the old value when the clock is still in the same minute. Everything that reads it is minute-precision; a new minute while hidden still refreshes at once. | `VisibilityLifecycleTest.minuteTicker_returningWithinTheSameMinute_keepsItsValue` fails on the old code (a second value was delivered) and passes now | Done |
+| N2 | The bottom-bar pill used `indicator()` with `StiffnessMediumLow` (response ≈ 0.31 s, 83 % of the way when the 160 ms tab fade ends). The tab had arrived while the pill was still gliding. | `indicator()` uses `StiffnessMedium` (response ≈ 0.16 s, about 98 % at 160 ms). Shared with the segmented control and step dots, so all selection indicators keep one speed. | Spring maths; not measured on a device | Done |
+| N3 | Tab items had a ripple only; every other control in the app also scales slightly on press. | `pressScale` on each tab, shared by the dark and light label copies so both shrink together. Off with reduced motion. | Code path | Done |
+| N4 | The snackbar's lift above the bar was an animated `padding`, read in composition, so the content around it recomposed on every frame of each page open and close. | Same animation applied as an `offset { }`, read in placement. | Code path | Done |

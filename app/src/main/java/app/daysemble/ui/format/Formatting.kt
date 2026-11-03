@@ -141,6 +141,10 @@ fun relativeText(r: Relative): String = when (r) {
  * Current instant, refreshed on each minute boundary while in composition and the lifecycle is at
  * least STARTED. It stops in the background and reads the clock again on return, so a screen
  * that comes back after hours shows the right "in 5 min" / countdown at once.
+ *
+ * Coming back within the same minute keeps the old value: everything that reads it works at
+ * minute precision, and a new value recomposed the whole tab (and re-ran its ViewModel) during
+ * the tab switch or page close that made it visible.
  */
 @Composable
 fun rememberMinuteTicker(clock: AppClock = LocalAppClock.current): Instant {
@@ -148,7 +152,8 @@ fun rememberMinuteTicker(clock: AppClock = LocalAppClock.current): Instant {
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(clock, lifecycle) {
         lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-            now = clock.now()
+            val fresh = clock.now()
+            if (fresh.toEpochMilli() / 60_000 != now.toEpochMilli() / 60_000) now = fresh
             while (true) {
                 delay(RelativeTime.nextTickDelayMs(clock.now()) + 50)
                 now = clock.now()
