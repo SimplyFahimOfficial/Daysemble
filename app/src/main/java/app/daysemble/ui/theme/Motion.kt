@@ -93,9 +93,13 @@ data class DsMotion(val reduced: Boolean = false) {
     /** Immediate feedback (pressed, toggled). */
     fun <T> feedback(): FiniteAnimationSpec<T> = if (reduced) snap() else tween(100, easing = Standard)
 
-    /** Selection indicators (bottom-bar pill, segmented control, step dots): critically damped, no bounce. */
+    /**
+     * Selection indicators (bottom-bar pill, segmented control, step dots): critically damped, no
+     * bounce. Response ≈ 0.16 s, so the bottom-bar pill lands with the [tabEnter] fade of the tab it
+     * selects. (StiffnessMediumLow, response ≈ 0.31 s, was still gliding well after the tab had arrived.)
+     */
     fun <T> indicator(): FiniteAnimationSpec<T> =
-        if (reduced) tween(short, easing = Standard) else spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)
+        if (reduced) tween(short, easing = Standard) else spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)
 
     /**
      * Something the finger let go of, settling into place (the Today panel, a reordered row): a

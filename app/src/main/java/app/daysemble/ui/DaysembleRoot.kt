@@ -23,6 +23,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,7 +34,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -124,6 +128,7 @@ import app.daysemble.ui.brand.BrandNameplate
 import app.daysemble.ui.calendar.CalendarRoute as CalendarScreenRoute
 import app.daysemble.ui.components.DsFab
 import app.daysemble.ui.components.DsIconButton
+import app.daysemble.ui.components.pressScale
 import app.daysemble.ui.components.SyncBadge
 import app.daysemble.ui.event.EventDetailRoute as EventDetailScreenRoute
 import app.daysemble.ui.event.EventEditorRoute as EventEditorScreenRoute
@@ -488,9 +493,11 @@ private fun AppContent(
                 nav.navigate(SettingsPageRoute(SettingsPage.ACCOUNTS.name))
             }
         }
-        // Moves with the bottom bar instead of jumping when the bar shows or hides.
-        val snackbarLift by animateDpAsState(
-            if (onMain) Sizes.bottomBar + Space.l else Space.l,
+        // Moves with the bottom bar instead of jumping when the bar shows or hides. Read in placement
+        // only: as a padding it was read in composition, so the content around it recomposed on
+        // every frame of each page open and close.
+        val snackbarLift = animateDpAsState(
+            if (onMain) Sizes.bottomBar else 0.dp,
             if (motion.reduced) snap() else motion.standard(motion.long), label = "snackbarLift",
         )
         SnackbarHost(
@@ -498,7 +505,8 @@ private fun AppContent(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = snackbarLift),
+                .padding(bottom = Space.l)
+                .offset { IntOffset(0, -snackbarLift.value.roundToPx()) },
         ) { data ->
             Snackbar(
                 data, shape = Radii.control,
@@ -924,6 +932,7 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
         // there, and left the tab the pill passed over dark on black.) Read in the draw phase only.
         val index by animateFloatAsState(current.ordinal.toFloat(), m.indicator(), label = "tabIndicator")
         val pill = c.inverse
+        val presses = remember { Tab.entries.associateWith { MutableInteractionSource() } }
         val pillPath = remember { Path() }
         fun DrawScope.pillPath(): Path {
             val w = size.width / Tab.entries.size
@@ -951,10 +960,11 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Tab.entries.forEach { t ->
-                    TabItem(t, t == current, { onSelect(t) }, c.textSecondary, Modifier.weight(1f))
+                    TabItem(t, t == current, { onSelect(t) }, c.textSecondary, presses.getValue(t), Modifier.weight(1f))
                 }
             }
-            // The light copy: drawing only (no input, not read out).
+            // The light copy: drawing only (no input, not read out). It shares each tab's press, so
+            // both copies of a pressed label shrink together.
             Row(
                 Modifier
                     .matchParentSize()
@@ -962,7 +972,7 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
                     .drawWithContent { clipPath(pillPath()) { this@drawWithContent.drawContent() } },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Tab.entries.forEach { t -> TabLabel(t, c.onInverse, Modifier.weight(1f)) }
+                Tab.entries.forEach { t -> TabLabel(t, c.onInverse, Modifier.weight(1f).pressScale(presses.getValue(t))) }
             }
         }
         DsFab(
@@ -973,10 +983,13 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
 }
 
 @Composable
-private fun TabItem(tab: Tab, selected: Boolean, onClick: () -> Unit, color: Color, modifier: Modifier = Modifier) {
+private fun TabItem(tab: Tab, selected: Boolean, onClick: () -> Unit, color: Color, press: MutableInteractionSource, modifier: Modifier = Modifier) {
     TabLabel(
         tab, color,
-        modifier.clip(Radii.pill).selectable(selected = selected, role = Role.Tab, onClick = onClick),
+        modifier
+            .pressScale(press)
+            .clip(Radii.pill)
+            .selectable(selected = selected, interactionSource = press, indication = LocalIndication.current, role = Role.Tab, onClick = onClick),
     )
 }
 

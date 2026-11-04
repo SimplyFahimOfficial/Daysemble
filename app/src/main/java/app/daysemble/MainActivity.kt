@@ -37,24 +37,20 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        parse(intent)?.let { openRequests.value = it }
-        AppShortcut.fromIntent(intent)?.let { shortcutRequests.value = it }
+        handle(intent)
     }
 
-    private fun parse(intent: Intent?): OpenRequest? {
-        val type = intent?.getStringExtra(EXTRA_TYPE)?.let { runCatching { OwnerType.valueOf(it) }.getOrNull() } ?: return null
-        val id = intent.getStringExtra(EXTRA_ID) ?: return null
-        return OpenRequest(type, id, intent.getStringExtra(EXTRA_KEY))
+    private fun handle(intent: Intent?) {
+        if (!isOwnIntent(intent)) return
+        parse(intent)?.let { openRequests.value = it }
+        AppShortcut.fromIntent(intent)?.let { shortcutRequests.value = it }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
         val container = (application as DaysembleApp).container
-        if (savedInstanceState == null) {
-            parse(intent)?.let { openRequests.value = it }
-            AppShortcut.fromIntent(intent)?.let { shortcutRequests.value = it }
-        }
+        if (savedInstanceState == null) handle(intent)
         lifecycleScope.launch(Dispatchers.Default) { AppShortcuts.publish(applicationContext) }
 
         // Keep the splash until settings are read, so the first frame has the right theme.
@@ -102,6 +98,20 @@ class MainActivity : ComponentActivity() {
         private const val EXTRA_TYPE = "open_type"
         private const val EXTRA_ID = "open_id"
         private const val EXTRA_KEY = "open_key"
+
+        /**
+         * Whether [intent] came from the app itself: notifications and launcher shortcuts target
+         * MainActivity, which isn't exported. The launcher aliases are exported, so any installed app
+         * can start them; their extras and actions are ignored, so another app can't open items or
+         * Quick Add on the user's screen.
+         */
+        internal fun isOwnIntent(intent: Intent?): Boolean = intent?.component?.className == MainActivity::class.java.name
+
+        internal fun parse(intent: Intent?): OpenRequest? {
+            val type = intent?.getStringExtra(EXTRA_TYPE)?.let { runCatching { OwnerType.valueOf(it) }.getOrNull() } ?: return null
+            val id = intent.getStringExtra(EXTRA_ID) ?: return null
+            return OpenRequest(type, id, intent.getStringExtra(EXTRA_KEY))
+        }
 
         fun openIntent(context: Context, type: OwnerType, id: String, occurrenceKey: String?): Intent =
             Intent(context, MainActivity::class.java)
