@@ -74,14 +74,15 @@ class EventRepository(
     suspend fun deleteCalendar(id: String): Boolean {
         val c = calendars.get(id) ?: return false
         if (c.kind != SourceKind.LOCAL) return false
-        if (calendars.byKind(SourceKind.LOCAL).size <= 1) return false
-        // Read the ids in the transaction, so an event added in between doesn't leave reminder rows behind.
+        // Check and read ids in the transaction: two quick deletes could otherwise remove both of the last
+        // calendars, and an event added in between would leave reminder rows behind.
         val ids = db.withTransaction {
+            if (calendars.byKind(SourceKind.LOCAL).size <= 1) return@withTransaction null
             val ids = events.allIn(id).map { it.id }
             ids.forEach { db.reminders().deleteForOwner(OwnerType.EVENT, it) }
             calendars.delete(id)
             ids
-        }
+        } ?: return false
         ids.forEach(listener::onEventChanged)
         return true
     }

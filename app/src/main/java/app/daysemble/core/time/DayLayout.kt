@@ -17,10 +17,15 @@ object DayLayout {
 
     /** Minimum visual height, so very short events stay tappable and legible. */
     const val MIN_DURATION_MIN = 20
+    private const val DAY_MIN = 24 * 60
 
     fun <K> layout(items: List<Item<K>>): List<Placed<K>> {
         if (items.isEmpty()) return emptyList()
-        val sorted = items.map { it.copy(endMin = maxOf(it.endMin, it.startMin + MIN_DURATION_MIN)) }
+        // The minimum length must not push a late event (23:50) past the end of the day.
+        val sorted = items.map {
+            val start = minOf(it.startMin, DAY_MIN - MIN_DURATION_MIN)
+            it.copy(startMin = start, endMin = minOf(DAY_MIN, maxOf(it.endMin, start + MIN_DURATION_MIN)))
+        }
             .sortedWith(compareBy<Item<K>> { it.startMin }.thenByDescending { it.endMin })
         val result = ArrayList<Placed<K>>(items.size)
         var cluster = ArrayList<Item<K>>()

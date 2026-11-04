@@ -80,6 +80,19 @@
     <string name="hours_minutes_short">%1$d h %2$d min</string>
     <string name="date_range">%1$s – %2$s</string>
     <string name="time_range">%1$s – %2$s</string>
+    <string name="swatch_coral">Coral</string>
+    <string name="swatch_violet">Violet</string>
+    <string name="swatch_indigo">Indigo</string>
+    <string name="swatch_teal">Teal</string>
+    <string name="swatch_amber">Amber</string>
+    <string name="swatch_rose">Rose</string>
+    <string name="swatch_sage">Sage</string>
+    <string name="swatch_graphite">Graphite</string>
+    <string name="all_day_more">+%1$d</string>
+    <plurals name="all_day_show_more">
+        <item quantity="one">Show %1$d more all-day event</item>
+        <item quantity="other">Show %1$d more all-day events</item>
+    </plurals>
     <string name="card_repeats">Repeats</string>
     <string name="action_close">Close</string>
     <string name="in_zone">%1$s in %2$s</string>
@@ -324,7 +337,6 @@
     <string name="zone_search_hint">City or region</string>
     <string name="zone_none">No matching time zone</string>
     <string name="event_zone_local">Starts %1$s your time</string>
-    <string name="event_zone_note">Times are in %1$s, the event’s time zone.</string>
     <string name="repeat_none">Never</string>
     <string name="repeat_daily">Daily</string>
     <string name="repeat_weekly">Weekly</string>
@@ -435,29 +447,7 @@
     <string name="about_build">Build</string>
 
     <!-- Support my work -->
-    <string name="support_title">Support my work</string>
-    <string name="support_row_sub">Ko-fi or UPI, always optional</string>
     <string name="support_intro">Your support helps me maintain existing applications, improve features and continue developing independent open-source projects. Every contribution is voluntary and appreciated.</string>
-    <string name="support_section_payment">Ways to support</string>
-    <string name="support_kofi_title">Ko-fi</string>
-    <string name="support_kofi_body">One-off or monthly support through Ko-fi, in your own currency.</string>
-    <string name="support_kofi_action">Support on Ko-fi</string>
-    <string name="support_upi_title">UPI (India)</string>
-    <string name="support_upi_body">Scan the code with any UPI app, or open one on this phone. You choose the amount there.</string>
-    <string name="support_upi_payee_label">Payee name</string>
-    <string name="support_upi_open">Pay with a UPI app</string>
-    <string name="support_upi_copy">Copy UPI ID</string>
-    <string name="support_qr_share">Share QR</string>
-    <string name="support_qr_save">Save QR</string>
-    <string name="support_upi_check">Check that the payee is %1$s before you pay. Opening a UPI app doesn’t mean a payment was made; your UPI app confirms it.</string>
-    <string name="support_upi_chooser">Pay with</string>
-    <string name="support_qr_share_chooser">Share UPI QR code</string>
-    <string name="support_qr_share_text">UPI: %1$s (%2$s)</string>
-    <string name="support_qr_failed">Couldn’t create the QR image. Try again.</string>
-    <string name="support_no_browser">No app can open this link. It was copied instead.</string>
-    <string name="support_section_project">About Daysemble</string>
-    <string name="support_project_body">Daysemble is an independent calendar and task planner by SimplyFahim, released under the Apache License 2.0.</string>
-    <string name="support_repository">Source code on GitHub</string>
 
     <plurals name="minutes_short">
         <item quantity="one">%d min</item>

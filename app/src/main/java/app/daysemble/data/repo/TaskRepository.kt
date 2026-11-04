@@ -91,15 +91,15 @@ class TaskRepository(
     suspend fun deleteList(id: String): Boolean {
         val l = lists.get(id) ?: return false
         if (l.kind != SourceKind.LOCAL) return false
-        if (lists.all().count { it.kind == SourceKind.LOCAL } <= 1) return false
-        // Read the ids in the transaction: a task added in between would be cascade-deleted with
-        // its reminder rows left behind.
+        // Check and read ids in the transaction: two quick deletes could otherwise remove both of the
+        // last lists, and a task added in between would be cascade-deleted with its reminder rows left behind.
         val ids = db.withTransaction {
+            if (lists.all().count { it.kind == SourceKind.LOCAL } <= 1) return@withTransaction null
             val ids = tasks.allIn(id).map { it.id }
             ids.forEach { db.reminders().deleteForOwner(OwnerType.TASK, it) }
             lists.delete(id) // cascades to tasks
             ids
-        }
+        } ?: return false
         ids.forEach(listener::onTaskChanged) // cancels their alarms
         return true
     }
@@ -157,20 +157,22 @@ class TaskRepository(
      */
     suspend fun update(id: String, draft: TaskDraft, scope: SeriesScope = SeriesScope.THIS) {
         require(draft.isValid) { "Task title is required" }
-        val before = tasks.get(id)?.takeIf { !it.isDeleted } ?: return
-        val google = lists.get(before.listId)?.kind == SourceKind.GOOGLE
-        val now = clock.now().toEpochMilli()
-        val active = before.seriesId?.let { series.get(it) }?.takeIf { it.endedAt == null }
-        val rule = draft.repeat?.takeIf { canRepeat(it, isSubtask = before.parentId != null, google = google, due = draft.dueDate) }
         var generated: List<String> = emptyList()
-        db.withTransaction {
+        // Read in the transaction: a concurrent write (a notification's Complete, a delete) must not be
+        // overwritten with what this method read before it.
+        val google = db.withTransaction {
+            val before = tasks.get(id)?.takeIf { !it.isDeleted } ?: return@withTransaction null
+            val google = lists.get(before.listId)?.kind == SourceKind.GOOGLE
+            val now = clock.now().toEpochMilli()
+            val active = before.seriesId?.let { series.get(it) }?.takeIf { it.endedAt == null }
+            val rule = draft.repeat?.takeIf { canRepeat(it, isSubtask = before.parentId != null, google = google, due = draft.dueDate) }
             edit(id) { row ->
                 row.copy(
                     title = draft.title.trim(), notes = draft.notes.trim(),
                     dueDate = draft.dueDate?.toEpochDay(), dueTimeMinutes = draft.dueTime?.toMinutes(),
                     priority = draft.priority.level, countdownEnabled = draft.countdown && draft.dueDate != null, durationMinutes = draft.positiveDuration,
                 )
-            } ?: return@withTransaction
+            } ?: return@withTransaction google
             saveReminders(id, draft)
             when {
                 // A one-off task (or one whose series ended) that should now repeat: start a series here.
@@ -228,7 +230,8 @@ class TaskRepository(
                     }
                 }
             }
-        }
+            google
+        } ?: return
         notify(id, google)
         generated.forEach(listener::onTaskChanged)
     }
@@ -488,6 +491,7 @@ class TaskRepository(
         val before = clock.now().toEpochMilli() - undoWindowMs
         tasks.purgeLocalTombstones(before)
         series.purgeEnded(before)
+        db.reminders().deleteOrphans()
     }
 
     suspend fun get(id: String): Task? = tasks.get(id)?.takeIf { !it.isDeleted }?.let { r ->

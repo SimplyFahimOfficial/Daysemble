@@ -40,7 +40,7 @@ app.daysemble
 └── ui/
     ├── theme/                 Color, Type, Shape, Spacing, Motion, DaysembleTheme
     ├── brand/                 LogoVariant, BrandLogo composable
-    ├── components/            DsButton, DsCard, DsCheck, DsChip, SectionHeader, StateViews, SyncBadge, DateStrip…
+    ├── components/            DsButton, DsCard, DsCheck, DsChip, SectionHeader, StateViews, SyncBadge, WeekStrip…
     ├── navigation/            Routes, DaysembleNavHost, bottom bar
     ├── today/  calendar/  tasks/  event/  task/  search/  settings/  onboarding/
 ```

@@ -15,10 +15,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Repeat
@@ -26,7 +22,6 @@ import androidx.compose.material.icons.rounded.SubdirectoryArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,7 +33,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -61,123 +55,10 @@ import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 import java.time.Instant
-import java.time.LocalDate
 
 /** Theme-aware tone for a stored calendar/event colour. */
 @Composable
 fun eventColor(argb: Int): Color = EventSwatch.nearest(argb).color(DsTheme.colors.isDark)
-
-/**
- * Horizontal day strip (reference: editorial week row). The selected day is an inverted pill;
- * today carries the coral dot. [dotDays] marks days that have items.
- */
-@Composable
-fun DateStrip(
-    selected: LocalDate,
-    today: LocalDate,
-    onSelect: (LocalDate) -> Unit,
-    modifier: Modifier = Modifier,
-    daysBefore: Int = 14,
-    daysAfter: Int = 60,
-    dotDays: Set<LocalDate> = emptySet(),
-) {
-    val p = LocalTimePrefs.current
-    val first = today.minusDays(daysBefore.toLong())
-    val count = daysBefore + daysAfter + 1
-    val reduced = DsTheme.motion.reduced
-    val selectedIdx = (selected.toEpochDay() - first.toEpochDay()).toInt()
-    // Starts at the selected day. The scroll position is saved, so coming back to Today shows the
-    // strip exactly where it was. The effect below used to run on every return as well, before the
-    // first layout, saw no visible items and scrolled the strip during the screen transition.
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIdx - 2).coerceIn(0, count - 1))
-    val firstRun = remember { booleanArrayOf(true) }
-    LaunchedEffect(selected) {
-        if (firstRun[0]) { firstRun[0] = false; return@LaunchedEffect }
-        val idx = selectedIdx
-        if (idx in 0 until count) {
-            val visible = state.layoutInfo.visibleItemsInfo
-            if (visible.none { it.index == idx } || visible.firstOrNull()?.index == idx || visible.lastOrNull()?.index == idx) {
-                val target = (idx - 2).coerceAtLeast(0)
-                if (reduced) state.scrollToItem(target) else state.animateScrollToItem(target)
-            }
-        }
-    }
-    LazyRow(
-        state = state,
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.gutter - Space.xs),
-        horizontalArrangement = Arrangement.spacedBy(Space.xxs),
-    ) {
-        items(count, key = { first.plusDays(it.toLong()).toEpochDay() }) { i ->
-            val d = first.plusDays(i.toLong())
-            DayChip(
-                d, d == selected, d == today, d in dotDays, { onSelect(d) }, Fmt.weekdayShort(d.dayOfWeek, p),
-                Fmt.fullDate(d, p) + if (d == today) ", " + stringResource(R.string.today_suffix) else "",
-            )
-        }
-    }
-}
-
-@Composable
-private fun DayChip(
-    date: LocalDate,
-    selected: Boolean,
-    isToday: Boolean,
-    hasItems: Boolean,
-    onClick: () -> Unit,
-    weekday: String,
-    a11y: String,
-) {
-    val c = DsTheme.colors
-    val m = DsTheme.motion
-    // Same selection language as the calendar: the selected day is the inverted (ink) fill, today is
-    // coral. Only colours change, so the strip never shifts while you tap through days.
-    val bg = app.daysemble.ui.components.animateStateColor(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "dayBg")
-    val number = app.daysemble.ui.components.animateStateColor(
-        when {
-            selected -> c.onInverse
-            isToday -> c.accent
-            else -> c.textPrimary
-        },
-        m.indicator(), label = "dayNumber",
-    )
-    val caption = app.daysemble.ui.components.animateStateColor(
-        when {
-            selected -> c.onInverse.copy(alpha = 0.78f)
-            isToday -> c.accent
-            else -> c.textTertiary
-        },
-        m.indicator(), label = "dayCaption",
-    )
-    Column(
-        Modifier
-            .widthIn(min = 48.dp)
-            .clip(DayChipShape)
-            .background(bg)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = a11y }
-            .padding(top = Space.s + Space.xxs, bottom = Space.s),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(date.dayOfMonth.toString(), style = DsTheme.type.title, color = number)
-        Text(weekday.uppercase().take(3), style = DsTheme.type.caps, color = caption)
-        Spacer(Modifier.height(Space.xs))
-        Box(
-            Modifier
-                .size(4.dp)
-                .clip(Radii.pill)
-                .background(
-                    when {
-                        !hasItems -> Color.Transparent
-                        selected -> c.onInverse
-                        else -> c.outlineStrong
-                    },
-                ),
-        )
-    }
-}
-
-private val DayChipShape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
 
 /** Brand marker: the rounded square from the logo, in the calendar colour. */
 @Composable

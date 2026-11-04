@@ -22,18 +22,26 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import app.daysemble.R
 import app.daysemble.core.time.DayLayout
 import app.daysemble.domain.model.EventOccurrence
 import app.daysemble.ui.components.eventColor
@@ -76,13 +84,28 @@ fun TimeGrid(
     Column(modifier) {
         // All-day lane
         val allDayByDay = days.map { d -> byDate[d].orEmpty().filter { it.isAllDay } }
+        // More than 3 all-day events: "+N" expands the lane, so every event can be opened.
+        var allDayExpanded by remember(days) { mutableStateOf(false) }
         if (allDayByDay.any { it.isNotEmpty() }) {
             Row(Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
                 Box(Modifier.width(GutterWidth))
                 days.forEachIndexed { i, _ ->
                     Column(Modifier.weight(1f).padding(horizontal = 1.dp)) {
-                        allDayByDay[i].take(3).forEach { e -> AllDayChip(e, compact = days.size > 1) { onEvent(e) } }
-                        if (allDayByDay[i].size > 3) Text("+${allDayByDay[i].size - 3}", style = DsTheme.type.caps, color = c.textSecondary)
+                        val all = allDayByDay[i]
+                        all.take(if (allDayExpanded) all.size else 3).forEach { e -> AllDayChip(e, compact = days.size > 1) { onEvent(e) } }
+                        if (all.size > 3 && !allDayExpanded) {
+                            val more = all.size - 3
+                            val label = pluralStringResource(R.plurals.all_day_show_more, more, more)
+                            Text(
+                                stringResource(R.string.all_day_more, more),
+                                style = DsTheme.type.caps, color = c.textSecondary,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(role = Role.Button, onClickLabel = label) { allDayExpanded = true }
+                                    .padding(horizontal = 6.dp, vertical = Space.xs)
+                                    .semantics { contentDescription = label },
+                            )
+                        }
                     }
                 }
             }
@@ -127,7 +150,8 @@ private fun DayColumn(
     val dayEnd = day.plusDays(1).atStartOfDay(p.zone).toInstant()
     // Positions use local wall-clock minutes, the same basis as the hour labels and slot taps, so a
     // 09:00 event sits on the 09:00 row on DST days too (the skipped/repeated hour is simply absent/shared).
-    val untitled = androidx.compose.ui.res.stringResource(app.daysemble.R.string.untitled_event)
+    val untitled = stringResource(R.string.untitled_event)
+    val newEvent = stringResource(R.string.new_event)
     val placed = remember(events, day, p.zone) {
         DayLayout.layout(
             events.map { e ->
@@ -145,6 +169,15 @@ private fun DayColumn(
                     val minute = ((pos.y / HourHeight.toPx()) * 60).toInt().coerceIn(0, 24 * 60 - 30)
                     onEmptySlot(day, minute / 30 * 30)
                 }
+            }
+            // Tapping a slot has no TalkBack equivalent; offer "New event" at the next half hour today, else 09:00.
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction(newEvent) {
+                        val minute = if (isToday) (wallMinutes(now, day, p.zone) / 30 + 1) * 30 else 9 * 60
+                        onEmptySlot(day, minute.coerceAtMost(24 * 60 - 30)); true
+                    },
+                )
             },
     ) {
         val width = maxWidth
@@ -156,9 +189,9 @@ private fun DayColumn(
         placed.forEach { pl ->
             val e = pl.key
             val top = HourHeight * (pl.startMin / 60f)
-            val height = (HourHeight * ((pl.endMin - pl.startMin) / 60f)).coerceAtLeast(22.dp)
+            val height = (HourHeight * ((pl.endMin - pl.startMin) / 60f)).coerceAtLeast(22.dp).coerceAtMost(HourHeight * 24 - top)
             val color = eventColor(e.colorArgb)
-            val a11y = "${e.title.ifBlank { untitled }}, ${Fmt.time(e.start, p)} – ${Fmt.time(e.end, p)}"
+            val a11y = e.title.ifBlank { untitled } + ", " + stringResource(R.string.time_range, Fmt.time(e.start, p), Fmt.time(e.end, p))
             Box(
                 Modifier
                     .offset { IntOffset(with(density) { (width * pl.leftFraction).roundToPx() } + 1, with(density) { top.roundToPx() } + 1) }
