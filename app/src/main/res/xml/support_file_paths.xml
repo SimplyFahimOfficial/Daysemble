@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Only the generated UPI QR image is shareable. -->
-<paths>
-    <cache-path name="support" path="support/" />
-</paths>

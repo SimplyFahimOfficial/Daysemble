@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -42,14 +43,18 @@ object Notifications {
 
     fun build(context: Context, c: Content, hideDetails: Boolean): Notification {
         val id = notificationId(c.reminderId, c.occurrenceKey)
+        // PendingIntents match on action and data, not extras: a unique URI keeps two reminders whose
+        // ids collide from rewriting each other's target.
+        val uri = Uri.Builder().scheme("daysemble").authority("reminder")
+            .appendPath(c.reminderId).appendPath(c.occurrenceKey.substringBefore('#')).build()
         val open = PendingIntent.getActivity(
             context, id,
-            MainActivity.openIntent(context, c.type, c.ownerId, c.occurrenceKey.substringBefore('#')),
+            MainActivity.openIntent(context, c.type, c.ownerId, c.occurrenceKey.substringBefore('#')).setData(uri),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         fun action(kind: String, code: Int) = PendingIntent.getBroadcast(
             context, id * 31 + code,
-            Intent(context, ReminderActionReceiver::class.java).setAction(kind)
+            Intent(context, ReminderActionReceiver::class.java).setAction(kind).setData(uri)
                 .putExtra(ReminderActionReceiver.EXTRA_TYPE, c.type.name)
                 .putExtra(ReminderActionReceiver.EXTRA_OWNER, c.ownerId)
                 .putExtra(ReminderActionReceiver.EXTRA_REMINDER, c.reminderId)

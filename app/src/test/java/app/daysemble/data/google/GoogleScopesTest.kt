@@ -139,4 +139,12 @@ class GoogleScopesTest : SyncTestBase() {
         val other = runCatching { http.get(base("/calendar/v3/users/me/settings").toHttpUrl()) }.exceptionOrNull()
         assertThat(other).isInstanceOf(ApiError.Client::class.java)
     }
+
+    @Test fun `a 403 daily limit is retried later instead of rejecting the change`() = runTest {
+        router.on("GET", "/calendar/v3/users/me/settings") {
+            json(403, """{"error":{"code":403,"errors":[{"reason":"dailyLimitExceeded"}]}}""")
+        }
+        val err = runCatching { http.get(base("/calendar/v3/users/me/settings").toHttpUrl()) }.exceptionOrNull()
+        assertThat(err).isInstanceOf(ApiError.RateLimited::class.java)
+    }
 }

@@ -249,6 +249,26 @@ class BackupManagerTest {
         assertThat(tasks(db).get("t3")!!.dueTime).isEqualTo(LocalTime.of(23, 59))
     }
 
+    @Test fun `events that could never be shown and backwards sleep are skipped`() = runTest {
+        val r = importText(
+            """
+            {"format":"daysemble-backup","version":1,
+             "calendars":[{"id":"c1","kind":"LOCAL","name":"Mine","colorArgb":1}],
+             "events":[
+               {"id":"empty","calendarId":"c1","title":"Empty range","isAllDay":false,"timeZone":"UTC","rangeStartUtc":5,"rangeEndUtc":5,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"},
+               {"id":"back","calendarId":"c1","title":"Ends first","isAllDay":false,"startUtc":10,"endUtc":5,"timeZone":"UTC","rangeStartUtc":1,"rangeEndUtc":20,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"},
+               {"id":"ok","calendarId":"c1","title":"Fine","isAllDay":false,"startUtc":5,"endUtc":10,"timeZone":"UTC","rangeStartUtc":5,"rangeEndUtc":10,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"}
+             ],
+             "sleep":[
+               {"id":"s1","startUtc":200,"endUtc":100,"createdAt":1,"updatedAt":1},
+               {"id":"s2","startUtc":100,"endUtc":200,"createdAt":1,"updatedAt":1}
+             ]}
+            """,
+        )
+        assertThat(r.added).isEqualTo(BackupCounts(events = 1, tasks = 0, sleep = 1))
+        assertThat(r.skipped).isEqualTo(3) // empty, back, s1
+    }
+
     @Test fun `a failure while re-planning reminders doesn't fail the import`() = runTest {
         seed()
         val bytes = export(db)

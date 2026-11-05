@@ -281,6 +281,13 @@ interface ReminderDao {
     @Query("DELETE FROM reminder WHERE ownerType = :type AND ownerId = :ownerId")
     suspend fun deleteForOwner(type: OwnerType, ownerId: String)
 
+    /** Reminder rows have no foreign key; removes those whose task or event is gone (cascades, purges). */
+    @Query(
+        "DELETE FROM reminder WHERE (ownerType = 'EVENT' AND ownerId NOT IN (SELECT id FROM event)) " +
+            "OR (ownerType = 'TASK' AND ownerId NOT IN (SELECT id FROM task))",
+    )
+    suspend fun deleteOrphans()
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(reminders: List<ReminderEntity>)
 

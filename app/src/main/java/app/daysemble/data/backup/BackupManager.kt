@@ -147,7 +147,8 @@ class BackupManager(
         file.skips.forEach { s -> if (s.seriesId in series) tally.addedOther(writes.insertSkip(s)) }
         mergeReminders(file.reminders, tally)
         file.sleep.filter { validId(it.id) }.forEach { s ->
-            if (s.startUtc == null && s.endUtc == null) tally.skipped++ else if (tally.added(writes.insertSleep(s))) tally.sleep++
+            val backwards = s.startUtc != null && s.endUtc != null && s.endUtc < s.startUtc
+            if ((s.startUtc == null && s.endUtc == null) || backwards) tally.skipped++ else if (tally.added(writes.insertSleep(s))) tally.sleep++
         }
         ImportResult(BackupCounts(tally.events, tally.tasks, tally.sleep), tally.skipped, tally.changed)
     }
@@ -190,9 +191,13 @@ class BackupManager(
         }
     }
 
-    /** In an on-device calendar, readable back, and (for a changed occurrence) of an on-device series. */
+    /**
+     * In an on-device calendar, readable back, and (for a changed occurrence) of an on-device series.
+     * The stored query range must be non-empty, or the event would be counted as added yet never shown.
+     */
     private fun usableEvent(e: EventEntity, calendars: Set<String>, seriesIds: Set<String>) =
         e.calendarId in calendars && validZone(e.timeZone) && validEventDays(e) &&
+            e.rangeEndUtc > e.rangeStartUtc && (e.isAllDay || e.endUtc >= e.startUtc) &&
             (e.recurringParentId == null || e.recurringParentId in seriesIds)
 
     /** [e] as on-device data: no Google identity or sync state, whatever the file says. */

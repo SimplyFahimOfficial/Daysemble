@@ -58,6 +58,7 @@ import app.daysemble.ui.components.eventColor
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.EventSwatch
 import app.daysemble.ui.theme.Radii
+import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 import kotlinx.coroutines.launch
 
@@ -194,11 +195,12 @@ private fun NameDialog(
                         EventSwatch.entries.forEach { s ->
                             val argb = s.light.toArgbInt()
                             val selected = EventSwatch.nearest(color!!) == s
+                            val label = stringResource(s.label)
                             Box(
-                                Modifier.size(40.dp).clip(CircleShape).background(s.color(c.isDark))
+                                Modifier.size(Sizes.touch).clip(CircleShape).background(s.color(c.isDark))
                                     .then(if (selected) Modifier.border(3.dp, c.textPrimary, CircleShape) else Modifier)
                                     .selectable(selected, role = Role.RadioButton) { color = argb }
-                                    .semantics { contentDescription = s.name.lowercase().replaceFirstChar { it.uppercase() } },
+                                    .semantics { contentDescription = label },
                                 contentAlignment = Alignment.Center,
                             ) { if (selected) Icon(Icons.Rounded.Check, null, tint = c.background, modifier = Modifier.size(18.dp)) }
                         }

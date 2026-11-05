@@ -45,6 +45,10 @@ class GoogleHttp(
 ) {
     val json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = false }
 
+    // OkHttp may resend a request whose body already reached the server; for a create that makes a remote duplicate.
+    // Writes fail instead, and the sync engine's own retry (with its duplicate-create checks) takes over.
+    private val writeClient by lazy { client.newBuilder().retryOnConnectionFailure(false).build() }
+
     suspend fun get(url: HttpUrl): String = execute { Request.Builder().url(url).get() }
 
     suspend fun send(method: String, url: HttpUrl, body: String?, ifMatch: String? = null): String = execute {
@@ -57,7 +61,7 @@ class GoogleHttp(
         var token = tokens.token() ?: throw ApiError.Auth()
         repeat(2) { attempt ->
             val req = build().header("Authorization", "Bearer $token").header("Accept", "application/json").build()
-            val resp = try { client.newCall(req).execute() } catch (e: IOException) { throw ApiError.Network(e) }
+            val resp = try { (if (req.method == "GET") client else writeClient).newCall(req).execute() } catch (e: IOException) { throw ApiError.Network(e) }
             resp.use { r ->
                 val text = r.body.string()
                 when {
@@ -84,7 +88,9 @@ class GoogleHttp(
             429 -> ApiError.RateLimited(code)
             // The token lacks a scope (a service the user didn't allow): that needs consent, not a retry.
             403 if body.contains("insufficientPermissions") || body.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT") -> ApiError.Auth()
-            403 -> if (reason != null && (reason.contains("RateLimit", true) || reason.contains("quota", true))) ApiError.RateLimited(code) else ApiError.Client(code, reason)
+            // rateLimitExceeded, userRateLimitExceeded, dailyLimitExceeded, quotaExceeded: retry later.
+            403 if reason != null && (reason.contains("Limit", true) || reason.contains("quota", true)) -> ApiError.RateLimited(code)
+            403 -> ApiError.Client(code, reason)
             in 500..599 -> ApiError.Server(code)
             else -> ApiError.Client(code, reason)
         }
@@ -92,11 +98,14 @@ class GoogleHttp(
 
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
+        private const val CALL_TIMEOUT_S = 60L
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            // Caps a whole call, including a server that trickles bytes, so a stopped worker isn't held for minutes.
+            .callTimeout(CALL_TIMEOUT_S, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
 

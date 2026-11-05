@@ -50,7 +50,8 @@ class MainActivity : ComponentActivity() {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
         val container = (application as DaysembleApp).container
-        if (savedInstanceState == null) handle(intent)
+        // Reopening from Recents redelivers the original reminder or shortcut intent; don't replay it.
+        if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) handle(intent)
         lifecycleScope.launch(Dispatchers.Default) { AppShortcuts.publish(applicationContext) }
 
         // Keep the splash until settings are read, so the first frame has the right theme.

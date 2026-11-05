@@ -1,8 +1,10 @@
 package app.daysemble.ui.theme
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import app.daysemble.R
 
 /** Raw brand palette. Feature code must use [DsColors]. */
 object Brand {
@@ -127,15 +129,15 @@ val DarkDsColors = DsColors(
 )
 
 /** Event/calendar swatches. The same index renders a tuned tone per theme. */
-enum class EventSwatch(val light: Color, val dark: Color) {
-    CORAL(Color(0xFFB8381F), Color(0xFFFF7A5C)),
-    VIOLET(Color(0xFF5B3FE0), Color(0xFF9B87FF)),
-    INDIGO(Color(0xFF2F4FA8), Color(0xFF8AA6FF)),
-    TEAL(Color(0xFF0F7A72), Color(0xFF5CCFC4)),
-    AMBER(Color(0xFF9A5B00), Color(0xFFF2B44B)),
-    ROSE(Color(0xFFB0306A), Color(0xFFFF8CC0)),
-    SAGE(Color(0xFF4C7A3A), Color(0xFFA3D58D)),
-    GRAPHITE(Color(0xFF55524D), Color(0xFFB9B5AE));
+enum class EventSwatch(val light: Color, val dark: Color, @param:StringRes val label: Int) {
+    CORAL(Color(0xFFB8381F), Color(0xFFFF7A5C), R.string.swatch_coral),
+    VIOLET(Color(0xFF5B3FE0), Color(0xFF9B87FF), R.string.swatch_violet),
+    INDIGO(Color(0xFF2F4FA8), Color(0xFF8AA6FF), R.string.swatch_indigo),
+    TEAL(Color(0xFF0F7A72), Color(0xFF5CCFC4), R.string.swatch_teal),
+    AMBER(Color(0xFF9A5B00), Color(0xFFF2B44B), R.string.swatch_amber),
+    ROSE(Color(0xFFB0306A), Color(0xFFFF8CC0), R.string.swatch_rose),
+    SAGE(Color(0xFF4C7A3A), Color(0xFFA3D58D), R.string.swatch_sage),
+    GRAPHITE(Color(0xFF55524D), Color(0xFFB9B5AE), R.string.swatch_graphite);
 
     fun color(dark: Boolean) = if (dark) this.dark else light
 

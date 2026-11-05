@@ -119,13 +119,16 @@ class TaskRepositoryTest {
 
     @Test
     fun `tombstones are purged only after the undo window`() = runTest {
-        val id = repo.create(TaskDraft(title = "Temp"), localList)
+        val id = repo.create(TaskDraft(title = "Temp", dueDate = LocalDate.of(2026, 10, 23), reminderMinutesBefore = listOf(15)), localList)
         repo.delete(id)
         repo.purgeExpiredTombstones(10_000)
         assertThat(db.tasks().get(id)).isNotNull()
+        assertThat(db.reminders().forOwner(OwnerType.TASK, id)).hasSize(1) // kept for Undo
         clock.instant = clock.instant.plusSeconds(11)
         repo.purgeExpiredTombstones(10_000)
         assertThat(db.tasks().get(id)).isNull()
+        // Reminder rows have no foreign key; the purge removes them with their task.
+        assertThat(db.reminders().forOwner(OwnerType.TASK, id)).isEmpty()
     }
 
     @Test

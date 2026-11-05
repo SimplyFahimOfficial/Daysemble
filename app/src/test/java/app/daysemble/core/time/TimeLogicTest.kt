@@ -91,4 +91,11 @@ class TimeLogicTest {
         val p = DayLayout.layout(listOf(DayLayout.Item("r", 600, 600))).single()
         assertThat(p.endMin - p.startMin).isEqualTo(DayLayout.MIN_DURATION_MIN)
     }
+
+    @Test
+    fun `a late event keeps its minimum height inside the day`() {
+        val p = DayLayout.layout(listOf(DayLayout.Item("late", 1430, 1440))).single()
+        assertThat(p.endMin).isEqualTo(24 * 60)
+        assertThat(p.endMin - p.startMin).isEqualTo(DayLayout.MIN_DURATION_MIN)
+    }
 }

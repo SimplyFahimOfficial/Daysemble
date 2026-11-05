@@ -171,6 +171,7 @@ class SyncManager(
         db.withTransaction {
             db.calendars().deleteAllGoogle() // cascades to events
             db.taskLists().deleteAllGoogle() // cascades to tasks
+            db.reminders().deleteOrphans()
             db.sync().clearOutbox()
             db.sync().clearStates()
             db.sync().clearConflicts()
