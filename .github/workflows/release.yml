@@ -138,7 +138,7 @@ jobs:
           DAYSEMBLE_KEYSTORE_PASSWORD: ${{ secrets.DAYSEMBLE_KEYSTORE_PASSWORD }}
           DAYSEMBLE_KEY_ALIAS: ${{ secrets.DAYSEMBLE_KEY_ALIAS }}
           DAYSEMBLE_KEY_PASSWORD: ${{ secrets.DAYSEMBLE_KEY_PASSWORD }}
-        run: ./gradlew --no-build-cache assembleRelease :app:cyclonedxDirectBom --stacktrace
+        run: ./gradlew --no-build-cache assembleRelease bundleRelease :app:cyclonedxDirectBom --stacktrace
 
       - name: Remove keystore
         if: always()
@@ -166,8 +166,23 @@ jobs:
             echo "::error title=Release::the signing certificate (SHA-256 $actual, $signers signer(s)) is not the expected release certificate. Check the keystore secrets."
             exit 1
           fi
+          aab=app/build/outputs/bundle/release/app-release.aab
+          if [ ! -f "$aab" ]; then
+            echo "::error title=Release::the signed App Bundle $aab was not produced."
+            exit 1
+          fi
+          if ! jarsigner -verify "$aab" > "$RUNNER_TEMP/aab-verify.txt" 2>&1 || ! grep -qi 'jar verified.' "$RUNNER_TEMP/aab-verify.txt"; then
+            cat "$RUNNER_TEMP/aab-verify.txt"
+            echo "::error title=Release::the App Bundle signature did not verify."
+            exit 1
+          fi
+          aab_cert="$(keytool -printcert -jarfile "$aab" | sed -n 's/^[[:space:]]*SHA256: //p' | head -n1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          if [ "$aab_cert" != "$actual" ]; then
+            echo "::error title=Release::the APK and AAB were signed by different certificates."
+            exit 1
+          fi
           echo "CERT_SHA256=$actual" >> "$GITHUB_ENV"
-          echo "Signed with the release certificate $actual."
+          echo "APK and AAB signed with the release certificate $actual."
 
       - name: Alignment and APK audit
         run: |
@@ -180,6 +195,7 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk "dist/daysemble-$VERSION.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "dist/daysemble-$VERSION.aab"
           cp app/build/reports/sbom/daysemble-bom.json "dist/daysemble-$VERSION-sbom.cdx.json"
           cp app/build/outputs/mapping/release/mapping.txt "dist/daysemble-$VERSION-mapping.txt"
           (cd dist && sha256sum -- * > SHA256SUMS)
@@ -258,6 +274,7 @@ jobs:
           (cd dist && sha256sum --check --strict SHA256SUMS)
           cert="$(cat dist/signing-cert-sha256.txt)"
           apk_sha="$(sha256sum "dist/daysemble-$VERSION.apk" | cut -d' ' -f1)"
+          aab_sha="$(sha256sum "dist/daysemble-$VERSION.aab" | cut -d' ' -f1)"
           {
             echo "## Verify this release"
             echo
@@ -267,6 +284,7 @@ jobs:
             echo '```sh'
             echo 'sha256sum --check SHA256SUMS --ignore-missing'
             echo "apksigner verify --print-certs daysemble-$VERSION.apk   # \"Signer #1 certificate SHA-256 digest\" must match"
+            echo "jarsigner -verify daysemble-$VERSION.aab"
             echo '```'
             echo
             echo "Built by GitHub Actions run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID from commit $GITHUB_SHA."
@@ -277,7 +295,7 @@ jobs:
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Daysemble $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" --generate-notes "${flags[@]}" \
-            "dist/daysemble-$VERSION.apk" "dist/daysemble-$VERSION-sbom.cdx.json" \
+            "dist/daysemble-$VERSION.apk" "dist/daysemble-$VERSION.aab" "dist/daysemble-$VERSION-sbom.cdx.json" \
             "dist/daysemble-$VERSION-mapping.txt" dist/SHA256SUMS
           echo "Published $TAG." >> "$GITHUB_STEP_SUMMARY"
 
@@ -303,4 +321,5 @@ jobs:
         with:
           subject-path: |
             dist/daysemble-*.apk
+            dist/daysemble-*.aab
             dist/daysemble-*-sbom.cdx.json
