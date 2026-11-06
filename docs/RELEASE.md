@@ -76,11 +76,9 @@ pull request.
 
 The environment exists. As of this writing it allows deployments from branch `main` only, has no
 required reviewers, and lets administrators bypass its rules. Add the tag rule (step 1) before the
-first release, and add the secrets only after steps 1 and 4.
+first release, and add the secrets only after step 1.
 
-1. **Deployment branches and tags:** "Selected branches and tags" with exactly two rules:
-   branch `main` (for `ci.yml`'s signed check) and tag `v*` (for `release.yml`). Without the tag
-   rule, release runs are rejected; never add `refs/pull/*`.
+1. **Deployment branches and tags:** "Selected branches and tags" with exactly one rule: tag `v*` (for `release.yml`). Release signing no longer runs on `main`; never add `refs/pull/*`.
 2. **Environment secrets:**
    - `DAYSEMBLE_KEYSTORE_BASE64`: the keystore, base64 on one line (`base64 -w0 daysemble-release.jks`
      on Linux, `base64 -i daysemble-release.jks` on macOS)
@@ -134,7 +132,6 @@ For public repositories with attestations:
 ```bash
 gh attestation verify daysemble-0.2.0.apk --repo Fahimofficial/Daysemble
 ```
-
 
 ## Google Play upload
 
