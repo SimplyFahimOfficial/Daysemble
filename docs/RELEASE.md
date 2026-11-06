@@ -157,6 +157,35 @@ One-time setup:
    and choose the track. Production uploads remain drafts until a maintainer finishes publishing
    in Play Console.
 
+### Narrow Workload Identity Federation trust
+
+Configure the OIDC provider to map:
+
+```
+google.subject=assertion.sub
+attribute.repository=assertion.repository
+attribute.ref=assertion.ref
+attribute.environment=assertion.environment
+```
+
+Restrict its attribute condition to
+`assertion.repository == 'Fahimofficial/Daysemble'`,
+`assertion.ref == 'refs/heads/main'`, and
+`assertion.environment == 'play-store'`. Grant `roles/iam.workloadIdentityUser` to the
+Google service account for a `principalSet` restricted to this repository. The
+`PLAY_WIF_PROVIDER` variable is the full resource name:
+`projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID`.
+Do not grant project-owner permissions.
+
+### App signing compatibility
+
+Google Play App Signing uses the app-signing key to sign APKs delivered to users; the key that
+signs the uploaded AAB is the upload key. When enrolling, preserve Daysemble's existing release
+certificate as the Play app-signing key if users who installed the APK from GitHub must be able
+to update through Play. Configure the accepted upload certificate in Play Console and verify
+the first release using internal testing before production.
+
+
 ## F-Droid status
 
 Daysemble is currently in a private GitHub repository and uses Google Play Services authentication
