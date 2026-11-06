@@ -182,7 +182,6 @@ certificate as the Play app-signing key if users who installed the APK from GitH
 to update through Play. Configure the accepted upload certificate in Play Console and verify
 the first release using internal testing before production.
 
-
 ## F-Droid status
 
 Daysemble is currently in a private GitHub repository and uses Google Play Services authentication
