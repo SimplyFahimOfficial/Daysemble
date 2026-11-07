@@ -14,7 +14,7 @@ import qrcode
 import zxingcpp
 from PIL import Image
 
-UPI_URI = "upi://pay?pa=SimplyFahim@sbi&pn=SimplyFahim&cu=INR"
+UPI_URI = "upi://pay?pa=SimplyFahim@sbi&pn=Md%20Fahim&cu=INR"
 OUT = Path(__file__).resolve().parent.parent / "docs/assets/support/upi-qr.png"
 
 

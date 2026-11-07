@@ -38,7 +38,7 @@ class UpiQrTest {
 
         val read = ImageIO.read(ByteArrayInputStream(png))
         val readPixels = read.getRGB(0, 0, read.width, read.height, null, 0, read.width)
-        assertThat(decode(readPixels, read.width)).isEqualTo("upi://pay?pa=SimplyFahim@sbi&pn=SimplyFahim&cu=INR")
+        assertThat(decode(readPixels, read.width)).isEqualTo("upi://pay?pa=SimplyFahim@sbi&pn=Md%20Fahim&cu=INR")
     }
 
     @Test
