@@ -26,8 +26,9 @@ pushed. Nobody builds or signs release APKs on a laptop for distribution.
 
 4. Approve the `release` environment deployment when GitHub asks (if reviewers are configured).
 5. The workflow publishes a GitHub release with generated notes and these files:
-   - `daysemble-<version>.apk`: the signed universal APK
-   - `daysemble-<version>-sbom.cdx.json`: CycloneDX SBOM of the libraries in the APK
+   - `daysemble-<version>.apk`: the signed universal APK for direct installation
+   - `daysemble-<version>.aab`: the signed Android App Bundle for Google Play
+   - `daysemble-<version>-sbom.cdx.json`: CycloneDX SBOM of the libraries in the APK and bundle
    - `daysemble-<version>-mapping.txt`: R8 mapping, to read obfuscated stack traces
    - `SHA256SUMS`
 
@@ -45,9 +46,9 @@ version was already distributed, release the next version instead.
 | publish | checksums match again; creates the release (`--verify-tag`, pre-release when the tag has a suffix) |
 | attest | public repositories only: signed build provenance for the APK and SBOM |
 
-The release is a universal APK (all four ABIs; the native code is small androidx libraries). There
-is no Android App Bundle because the app is not distributed through Google Play. If it moves to Play,
-build an AAB (`bundleRelease`) and enrol in Play App Signing.
+The release contains both a universal APK and a signed Android App Bundle. The AAB is the artifact
+used by the manual Google Play publishing workflow. Configure Play App Signing in Play Console and
+use the release workflow's certificate as the upload key when setting up the app.
 
 ## Signing key
 
@@ -75,11 +76,9 @@ pull request.
 
 The environment exists. As of this writing it allows deployments from branch `main` only, has no
 required reviewers, and lets administrators bypass its rules. Add the tag rule (step 1) before the
-first release, and add the secrets only after steps 1 and 4.
+first release, and add the secrets only after step 1.
 
-1. **Deployment branches and tags:** "Selected branches and tags" with exactly two rules:
-   branch `main` (for `ci.yml`'s signed check) and tag `v*` (for `release.yml`). Without the tag
-   rule, release runs are rejected; never add `refs/pull/*`.
+1. **Deployment branches and tags:** "Selected branches and tags" with exactly one rule: tag `v*` (for `release.yml`). Release signing no longer runs on `main`; never add `refs/pull/*`.
 2. **Environment secrets:**
    - `DAYSEMBLE_KEYSTORE_BASE64`: the keystore, base64 on one line (`base64 -w0 daysemble-release.jks`
      on Linux, `base64 -i daysemble-release.jks` on macOS)
@@ -133,3 +132,60 @@ For public repositories with attestations:
 ```bash
 gh attestation verify daysemble-0.2.0.apk --repo Fahimofficial/Daysemble
 ```
+
+## Google Play upload
+
+The `.github/workflows/play-publish.yml` workflow uploads the signed AAB from a published stable
+GitHub release. It uses GitHub OIDC / Google Workload Identity Federation; no long-lived Google
+service-account JSON key is stored in GitHub.
+
+One-time setup:
+
+1. Create the Play Console app with package name `app.daysemble`. Complete the initial app setup
+   and make the first manual upload if Play Console requires it.
+2. Enable the Google Play Android Developer API in the Google Cloud project.
+3. Configure a Workload Identity Pool provider for this repository, restricted to the
+   `play-store` GitHub environment. Bind the service account with only the required Play Console
+   app permissions and add it under Play Console API access.
+4. Create a GitHub environment named `play-store`, restrict deployments to the default branch,
+   and add required reviewers. Add environment variables `PLAY_WIF_PROVIDER` (the full provider
+   resource name) and `PLAY_SERVICE_ACCOUNT` (the service-account email).
+5. After a stable release is published, run **Actions → Publish to Google Play**, enter its tag,
+   and choose the track. Production uploads remain drafts until a maintainer finishes publishing
+   in Play Console.
+
+### Narrow Workload Identity Federation trust
+
+Configure the OIDC provider to map:
+
+```
+google.subject=assertion.sub
+attribute.repository=assertion.repository
+attribute.ref=assertion.ref
+attribute.environment=assertion.environment
+```
+
+Restrict its attribute condition to
+`assertion.repository == 'Fahimofficial/Daysemble'`,
+`assertion.ref == 'refs/heads/main'`, and
+`assertion.environment == 'play-store'`. Grant `roles/iam.workloadIdentityUser` to the
+Google service account for a `principalSet` restricted to this repository. The
+`PLAY_WIF_PROVIDER` variable is the full resource name:
+`projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID`.
+Do not grant project-owner permissions.
+
+### App signing compatibility
+
+Google Play App Signing uses the app-signing key to sign APKs delivered to users; the key that
+signs the uploaded AAB is the upload key. When enrolling, preserve Daysemble's existing release
+certificate as the Play app-signing key if users who installed the APK from GitHub must be able
+to update through Play. Configure the accepted upload certificate in Play Console and verify
+the first release using internal testing before production.
+
+## F-Droid status
+
+Daysemble is currently in a private GitHub repository and uses Google Play Services authentication
+(`play-services-auth` and the Play Services coroutine bridge). It cannot be submitted to the
+official public F-Droid repository in this state. That requires publishing the source publicly under
+a FOSS-compatible licence and providing a FOSS build path that replaces the proprietary Google
+authentication integration. See `docs/STORE_DISTRIBUTION.md` for the store-readiness checklist.
