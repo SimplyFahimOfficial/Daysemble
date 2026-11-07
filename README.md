@@ -115,7 +115,7 @@ Daysemble is licensed under the [Apache License 2.0](LICENSE).
 
 Daysemble is free and built independently. If it helps you plan your days, a small donation keeps development going.
 
-<a href="https://quantummpv.vercel.app/pay/"><img src="docs/assets/support/upi-qr.png" width="240" alt="UPI QR code to pay Md Fahim, UPI ID SimplyFahim@sbi. Tap to open UPI payment options."></a>
+<a href="https://quantummpv.vercel.app/pay/"><img src="docs/assets/support/upi-qr.png" width="220" alt="UPI QR code to pay Md Fahim, UPI ID SimplyFahim@sbi. Tap to open UPI payment options."></a>
 
 ### 👆 **Tap the QR to open UPI payment options**
 
