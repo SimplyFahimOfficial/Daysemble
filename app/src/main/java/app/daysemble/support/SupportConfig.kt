@@ -23,12 +23,12 @@ object SupportConfig {
 
     /** Public UPI ID (VPA) and the payee name UPI apps show before the user confirms. */
     const val UPI_ID = "SimplyFahim@sbi"
-    const val UPI_PAYEE_NAME = "SimplyFahim"
+    const val UPI_PAYEE_NAME = "Md Fahim"
     const val UPI_CURRENCY = "INR"
 
     /**
      * Standard UPI payment link that only identifies the payee:
-     * `upi://pay?pa=SimplyFahim@sbi&pn=SimplyFahim&cu=INR`.
+     * `upi://pay?pa=SimplyFahim@sbi&pn=Md%20Fahim&cu=INR`.
      *
      * No amount (`am`) is ever set: the user enters it and confirms in their own UPI app. The same
      * string is the "Open UPI app" intent data and the QR payload. `@` stays literal (valid in a URI

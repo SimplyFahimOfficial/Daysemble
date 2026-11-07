@@ -5,7 +5,7 @@ import org.junit.Test
 
 class SupportConfigTest {
     @Test fun upiLinkIdentifiesThePayeeOnlyWithNoAmount() {
-        assertThat(SupportConfig.upiPaymentUri()).isEqualTo("upi://pay?pa=SimplyFahim@sbi&pn=SimplyFahim&cu=INR")
+        assertThat(SupportConfig.upiPaymentUri()).isEqualTo("upi://pay?pa=SimplyFahim@sbi&pn=Md%20Fahim&cu=INR")
         assertThat(SupportConfig.upiPaymentUri()).doesNotContain("am=")
     }
 
@@ -16,7 +16,7 @@ class SupportConfigTest {
 
     @Test fun supportDetailsAreTheDevelopersOwn() {
         assertThat(SupportConfig.UPI_ID).isEqualTo("SimplyFahim@sbi")
-        assertThat(SupportConfig.UPI_PAYEE_NAME).isEqualTo("SimplyFahim")
+        assertThat(SupportConfig.UPI_PAYEE_NAME).isEqualTo("Md Fahim")
         assertThat(SupportConfig.UPI_CURRENCY).isEqualTo("INR")
         assertThat(SupportConfig.KOFI_URL).isEqualTo("https://ko-fi.com/simplyfahim")
         assertThat(SupportConfig.WEBSITE).isEqualTo("https://SimplyFahim.pages.dev")

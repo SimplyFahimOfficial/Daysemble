@@ -75,7 +75,7 @@ class SupportScreenTest {
             BinaryBitmap(HybridBinarizer(RGBLuminanceSource(bitmap.width, bitmap.height, pixels))),
             mapOf(DecodeHintType.TRY_HARDER to true),
         ).text
-        assertThat(decoded).isEqualTo("upi://pay?pa=SimplyFahim@sbi&pn=SimplyFahim&cu=INR")
+        assertThat(decoded).isEqualTo("upi://pay?pa=SimplyFahim@sbi&pn=Md%20Fahim&cu=INR")
     }
 
     @Test fun linksAndActionsAreWired() {
