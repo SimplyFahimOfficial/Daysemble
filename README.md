@@ -100,7 +100,8 @@ Daysemble is licensed under the [Apache License 2.0](LICENSE).
 <div align="center">
 
 <a href="https://instagram.com/SimplyFahimofficial"><img src="https://img.shields.io/badge/Instagram-@SimplyFahimofficial-E4405F?style=for-the-badge&logo=instagram&logoColor=white" alt="Instagram: @SimplyFahimofficial"></a>
-<a href="mailto:simplyfahimofficial@gmail.com"><img src="https://img.shields.io/badge/Email-simplyfahimofficial@gmail.com-EA4335?style=for-the-badge&logo=gmail&logoColor=white" alt="Email: simplyfahimofficial@gmail.com"></a>
+<a href="mailto:SimplyFahim@tuta.io"><img src="https://img.shields.io/badge/Tuta_Mail-SimplyFahim@tuta.io-850122?style=for-the-badge&logo=tuta&logoColor=white" alt="Tuta Mail: SimplyFahim@tuta.io"></a>
+<a href="mailto:simplyfahimofficial@gmail.com"><img src="https://img.shields.io/badge/Gmail-simplyfahimofficial@gmail.com-EA4335?style=for-the-badge&logo=gmail&logoColor=white" alt="Gmail: simplyfahimofficial@gmail.com"></a>
 <br>
 <a href="https://SimplyFahim.pages.dev"><img src="https://img.shields.io/badge/Website-SimplyFahim.pages.dev-111827?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Website: SimplyFahim.pages.dev"></a>
 <a href="https://github.com/Fahimofficial"><img src="https://img.shields.io/badge/GitHub-Fahimofficial-24292F?style=for-the-badge&logo=github&logoColor=white" alt="GitHub: Fahimofficial"></a>
