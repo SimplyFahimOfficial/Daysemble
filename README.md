@@ -10,7 +10,7 @@ An offline-first Android planner with optional two-way sync for Google Calendar 
 [![Version 0.1.0](https://img.shields.io/badge/Release-v0.1.0_early_development-f97316?style=for-the-badge)](#-download)
 [![Kotlin + Compose](https://img.shields.io/badge/Kotlin-Jetpack_Compose-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](#-tech-stack)
 
-[Features](#-features) · [Download](#-download) · [Build](#-build-from-source) · [Privacy](#-privacy) · [Credits](#-credits) · [Support](#-support-the-project)
+[Features](#-features) · [Download](#-download) · [Build](#-build-from-source) · [Privacy](#-privacy) · [Credits](#-credits) · [Contact](#-contact) · [Support](#-support-the-project)
 
 </div>
 
@@ -95,6 +95,18 @@ Google Calendar and Google Tasks are trademarks of Google LLC. Daysemble is an i
 
 Daysemble is licensed under the [Apache License 2.0](LICENSE).
 
+## 📬 Contact
+
+<div align="center">
+
+<a href="https://instagram.com/SimplyFahimofficial"><img src="https://img.shields.io/badge/Instagram-@SimplyFahimofficial-E4405F?style=for-the-badge&logo=instagram&logoColor=white" alt="Instagram: @SimplyFahimofficial"></a>
+<a href="mailto:simplyfahimofficial@gmail.com"><img src="https://img.shields.io/badge/Email-simplyfahimofficial@gmail.com-EA4335?style=for-the-badge&logo=gmail&logoColor=white" alt="Email: simplyfahimofficial@gmail.com"></a>
+<br>
+<a href="https://SimplyFahim.pages.dev"><img src="https://img.shields.io/badge/Website-SimplyFahim.pages.dev-111827?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Website: SimplyFahim.pages.dev"></a>
+<a href="https://github.com/Fahimofficial"><img src="https://img.shields.io/badge/GitHub-Fahimofficial-24292F?style=for-the-badge&logo=github&logoColor=white" alt="GitHub: Fahimofficial"></a>
+
+</div>
+
 ---
 
 <div align="center">
@@ -103,18 +115,29 @@ Daysemble is licensed under the [Apache License 2.0](LICENSE).
 
 Daysemble is free and built independently. If it helps you plan your days, a small donation keeps development going.
 
-**Payee: Md Fahim**
+<a href="https://quantummpv.vercel.app/pay/"><img src="docs/assets/support/upi-qr.png" width="240" alt="UPI QR code to pay Md Fahim, UPI ID SimplyFahim@sbi. Tap to open UPI payment options."></a>
+
+### 👆 **Tap the QR to open UPI payment options**
+
+<table>
+<tr>
+<td align="center">
+
+**Payee:** Md Fahim<br>
+**UPI ID**
 
 ```
 SimplyFahim@sbi
 ```
 
-<img src="docs/assets/support/upi-qr.png" width="220" alt="UPI QR code to pay Md Fahim, UPI ID SimplyFahim@sbi">
+</td>
+</tr>
+</table>
 
-<sub>Scan with any UPI app and choose your own amount. Check that your app shows <b>Md Fahim</b> before you pay.</sub>
-
-<br><br>
-
+<a href="https://quantummpv.vercel.app/pay/"><img src="https://img.shields.io/badge/Pay_with-UPI-009E3B?style=for-the-badge&logo=googlepay&logoColor=white" height="44" alt="Pay with UPI"></a>
+&nbsp;
 <a href="https://ko-fi.com/simplyfahim"><img src="https://img.shields.io/badge/Support_me_on-Ko--fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white" height="44" alt="Support me on Ko-fi"></a>
+
+<sub>You choose the amount. Check that your UPI app shows <b>Md Fahim</b> before you pay.</sub>
 
 </div>
