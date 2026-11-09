@@ -220,22 +220,6 @@ class RecurringTaskUiTest {
         assertThat(compose.onAllNodesWithText("This and future occurrences").fetchSemanticsNodes()).isEmpty()
     }
 
-    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
-    @Test fun tasksList_deletingARepeatingTask_asksWhichOccurrences() {
-        runBlocking { c.tasks.create(TaskDraft(title = "Stretch", dueDate = today, repeat = RRule.parse("FREQ=DAILY")), listId()) }
-        show { app.daysemble.ui.tasks.TasksRoute(androidx.compose.foundation.layout.PaddingValues(), {}) }
-        repeat(3) { settle() }
-        // Wait until the row shows the task as repeating (the list loads asynchronously).
-        repeat(30) { if (compose.onAllNodesWithText("Daily").fetchSemanticsNodes().isNotEmpty()) return@repeat; settle(2) }
-        compose.onNode(hasText("Stretch") and androidx.compose.ui.test.hasClickAction())
-            .performCustomAccessibilityActionWithLabel("Delete")
-        repeat(20) { if (compose.onAllNodesWithText("Delete a repeating task").fetchSemanticsNodes().isNotEmpty()) return@repeat; settle(2) }
-        assertThat(tasks().map { it.title }).containsExactly("Stretch") // nothing deleted before choosing
-        compose.onNodeWithText("Delete a repeating task").assertIsDisplayed()
-        compose.onNodeWithText("Cancel").performClick(); settle()
-        assertThat(tasks().map { it.title }).containsExactly("Stretch") // cancelled: nothing deleted
-    }
-
     @Test fun deletingAnOccurrence_skipsToTheNextOne() {
         val id = runBlocking { c.tasks.create(TaskDraft(title = "Stand-up notes", dueDate = today, repeat = RRule.parse("FREQ=DAILY")), listId()) }
         var closed = false

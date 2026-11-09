@@ -26,6 +26,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -114,6 +115,29 @@ fun HairlineDivider(modifier: Modifier = Modifier, inset: Boolean = false) {
     )
 }
 
+/** Size of the tile behind a row's icon, and how strongly it is tinted. */
+private val ICON_TILE = 36.dp
+private const val TILE_ALPHA = 0.12f
+
+/**
+ * A group of settings rows in one rounded card. Put [CardDivider] between the rows.
+ */
+@Composable
+fun SettingsCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = Space.l)
+            .clip(Radii.tile)
+            .background(DsTheme.colors.surfaceVariant),
+        content = content,
+    )
+}
+
+/** The hairline between two rows of a [SettingsCard], inset past the icon tile. */
+@Composable
+fun CardDivider() = HairlineDivider(Modifier.padding(start = Space.gutter), inset = false)
+
 /** Standard list row: optional leading icon, title, optional subtitle, optional trailing slot. */
 @Composable
 fun DsRow(
@@ -121,7 +145,7 @@ fun DsRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     icon: ImageVector? = null,
-    iconTint: Color = DsTheme.colors.textSecondary,
+    iconTint: Color = Color.Unspecified,
     onClick: (() -> Unit)? = null,
     role: Role = Role.Button,
     enabled: Boolean = true,
@@ -137,7 +161,14 @@ fun DsRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.l),
     ) {
-        if (icon != null) Icon(icon, null, tint = if (enabled) iconTint else c.textTertiary, modifier = Modifier.size(Sizes.icon))
+        if (icon != null) {
+            // A soft tinted tile behind the icon, in the accent unless a tint was asked for.
+            val tint = if (!enabled) c.textTertiary else if (iconTint.isSpecified) iconTint else c.accent
+            Box(
+                Modifier.size(ICON_TILE).clip(Radii.control).background(tint.copy(alpha = TILE_ALPHA)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(icon, null, tint = tint, modifier = Modifier.size(Sizes.icon)) }
+        }
         Column(Modifier.weight(1f)) {
             Text(title, style = DsTheme.type.bodyStrong, color = if (enabled) c.textPrimary else c.textTertiary)
             if (subtitle != null) {

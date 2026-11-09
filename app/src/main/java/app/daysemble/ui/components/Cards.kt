@@ -36,7 +36,6 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -118,6 +117,7 @@ fun AgendaEventCard(
             .pressScale(interaction, large = true)
             .clip(CardShape)
             .background(bg)
+            .newItemHighlight(event.eventId)
             .itemClick(onClick, onLongClick, interaction)
             .semantics(mergeDescendants = true) { contentDescription = a11y }
             .padding(start = Space.l, end = Space.m, top = Space.m, bottom = Space.l),
@@ -198,6 +198,7 @@ fun AgendaTaskCard(
             .pressScale(interaction, large = true)
             .clip(CardShape)
             .background(c.surfaceVariant)
+            .newItemHighlight(task.id)
             .itemClick(onClick, onLongClick, interaction)
             .semantics { if (actions.isNotEmpty()) customActions = actions }
             .padding(start = Space.xxs, end = Space.l, top = Space.xs, bottom = Space.xs),

@@ -13,13 +13,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -39,8 +40,6 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -49,6 +48,9 @@ import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
+
+/** Peak scale of the check circle's pop. */
+private const val CHECK_POP = 1.2f
 
 /** Filter / choice chip. Selected = inverted (ink on cream / cream on ink). */
 @Composable
@@ -60,14 +62,19 @@ fun DsChip(
     icon: ImageVector? = null,
     /** Tab for filters/segments, Checkbox for multi-select, Button for actions. */
     role: Role = Role.Tab,
+    /** A count shown after the label when above 0; it scales in the first time it appears. */
+    count: Int = 0,
+    /** Tints the count red (overdue). */
+    alert: Boolean = false,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
-    val bg = animateStateColor(if (selected) c.inverse else c.surfaceVariant, m.standard(m.medium), label = "chipBg")
-    val fg = animateStateColor(if (selected) c.onInverse else c.textPrimary, m.standard(m.medium), label = "chipFg")
+    val bg = animateStateColor(if (selected) c.inverse else c.surfaceVariant, m.snappy(), label = "chipBg")
+    val fg = animateStateColor(if (selected) c.onInverse else c.textPrimary, m.snappy(), label = "chipFg")
     // The 48dp row takes the touch; the press is shown on the pill the user sees (ripple clipped to
     // it, and a small press scale), not as a rectangle around it.
     val interaction = remember { MutableInteractionSource() }
+    val haptics = rememberHaptics()
     Row(
         modifier
             .heightIn(min = Sizes.touch)
@@ -77,7 +84,14 @@ fun DsChip(
                         value = selected, interactionSource = interaction, indication = null, role = role, onValueChange = { onClick() },
                     )
                     Role.Button -> Modifier.clickable(interactionSource = interaction, indication = null, role = role, onClick = onClick)
-                    else -> Modifier.selectable(selected = selected, interactionSource = interaction, indication = null, role = role, onClick = onClick)
+                    // A filter or choice being picked ticks; tapping the one already picked does not.
+                    else -> Modifier.selectable(
+                        selected = selected, interactionSource = interaction, indication = null, role = role,
+                        onClick = {
+                            if (!selected) haptics.tick()
+                            onClick()
+                        },
+                    )
                 },
             ),
         verticalAlignment = Alignment.CenterVertically,
@@ -94,8 +108,34 @@ fun DsChip(
         ) {
             if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(16.dp))
             Text(text, style = DsTheme.type.label, color = fg, maxLines = 1)
+            if (count > 0) CountBadge(count, selected, alert)
         }
     }
+}
+
+/** The small number after a chip's label. It scales in once, when it first appears. */
+@Composable
+private fun CountBadge(count: Int, selected: Boolean, alert: Boolean) {
+    val c = DsTheme.colors
+    val m = DsTheme.motion
+    val scale = remember { androidx.compose.animation.core.Animatable(if (m.enabled) 0f else 1f) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (scale.value < 1f) scale.animateTo(1f, m.snappy()) }
+    val (bg, fg) = when {
+        alert && selected -> c.error to Color.White
+        alert -> c.error.copy(alpha = 0.16f) to c.error
+        selected -> c.onInverse.copy(alpha = 0.2f) to c.onInverse
+        else -> c.textPrimary.copy(alpha = 0.1f) to c.textSecondary
+    }
+    Box(
+        Modifier
+            .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+            .heightIn(min = 18.dp)
+            .widthIn(min = 18.dp)
+            .clip(Radii.pill)
+            .background(bg)
+            .padding(horizontal = Space.xs + Space.xxs),
+        contentAlignment = Alignment.Center,
+    ) { Text(count.toString(), style = DsTheme.type.caps, color = fg, maxLines = 1) }
 }
 
 /**
@@ -114,6 +154,7 @@ fun <T> DsSegmented(
     val m = DsTheme.motion
     val index = options.indexOf(selected).coerceAtLeast(0)
     val animIndex by animateFloatAsState(index.toFloat(), m.indicator(), label = "seg")
+    val haptics = rememberHaptics()
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
@@ -142,7 +183,14 @@ fun <T> DsSegmented(
                         .weight(1f)
                         .heightIn(min = 48.dp)
                         .clip(Radii.pill)
-                        .selectable(selected = isSel, role = Role.Tab, onClick = { onSelect(opt) }),
+                        .selectable(
+                            selected = isSel,
+                            role = Role.Tab,
+                            onClick = {
+                                if (!isSel) haptics.tick()
+                                onSelect(opt)
+                            },
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -165,10 +213,10 @@ fun <T> DsSegmented(
  */
 @Composable
 private fun Modifier.hapticCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit): Modifier {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberHaptics()
     val change by rememberUpdatedState(onCheckedChange)
     return toggleable(value = checked, role = Role.Checkbox, onValueChange = {
-        haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+        if (it) haptics.confirm() else haptics.tick()
         change(it)
     })
 }
@@ -189,6 +237,13 @@ fun DsCheck(
     val c = DsTheme.colors
     val m = DsTheme.motion
     val progress by animateFloatAsState(if (checked) 1f else 0f, m.standard(m.short), label = "check")
+    // A small pop when it becomes checked (not for a row that is already checked when it appears).
+    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+    val wasChecked = remember { booleanArrayOf(checked) }
+    androidx.compose.runtime.LaunchedEffect(checked) {
+        if (checked && !wasChecked[0]) with(m) { pop.pop(peak = CHECK_POP) }
+        wasChecked[0] = checked
+    }
     Box(
         modifier
             .size(Sizes.touch)
@@ -199,7 +254,7 @@ fun DsCheck(
         contentAlignment = Alignment.Center,
     ) {
         val ringColor = if (checked) tint else c.outlineStrong
-        Canvas(Modifier.size(Sizes.checkbox)) {
+        Canvas(Modifier.size(Sizes.checkbox).graphicsLayer { scaleX = pop.value; scaleY = pop.value }) {
             val stroke = 1.75.dp.toPx()
             val r = size.minDimension / 2 - stroke / 2
             drawCircle(

@@ -2,8 +2,49 @@ package app.daysemble.ui.calendar
 
 import app.daysemble.ui.components.itemMotion
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.unit.offset
+import app.daysemble.ui.components.ContentSwap
+import app.daysemble.ui.components.DayMarks
+import app.daysemble.ui.components.DayPeek
+import app.daysemble.ui.components.DiscMap
+import app.daysemble.ui.components.LocalContentFresh
+import app.daysemble.ui.components.TASK_MARK
+import app.daysemble.ui.components.animateStateColor
+import app.daysemble.ui.components.discCell
+import app.daysemble.ui.components.discContainer
+import app.daysemble.ui.components.rememberHaptics
+import app.daysemble.ui.components.rememberSlidingDisc
+import app.daysemble.ui.components.staggeredEntrance
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,7 +61,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -30,7 +70,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
@@ -56,14 +95,12 @@ import app.daysemble.ui.components.AgendaEventCard
 import app.daysemble.ui.components.AgendaTaskCard
 import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.StateMessage
-import app.daysemble.ui.components.eventColor
 import app.daysemble.ui.daysembleViewModel
 import app.daysemble.ui.format.Fmt
 import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.dayLabel
 import app.daysemble.ui.format.rememberMinuteTicker
 import app.daysemble.ui.theme.DsTheme
-import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Space
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.time.Instant
@@ -74,6 +111,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 
 private const val PAGES = 20_000
 private const val CENTER = PAGES / 2
+private const val COLLAPSE_FADE_FACTOR = 1.5f
 
 @Composable
 fun CalendarRoute(
@@ -90,20 +128,31 @@ fun CalendarRoute(
     LaunchedEffect(now) { vm.onTick(now) }
     val c = DsTheme.colors
     val m = DsTheme.motion
+    val haptics = rememberHaptics()
 
     val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    // 0 = Month, 1 = Week: one value for the control and for the vertical drag on the grid. The
+    // grid's rows collapse to the selected week as it grows (see MonthWeekMode).
+    val morph = remember { Animatable(if (state.mode == CalendarMode.WEEK) 1f else 0f) }
+    LaunchedEffect(state.mode) {
+        when (state.mode) {
+            CalendarMode.WEEK -> morph.animateTo(1f, m.spring())
+            CalendarMode.MONTH -> morph.animateTo(0f, m.spring())
+            else -> Unit
+        }
+    }
     Column(Modifier.fillMaxSize().background(c.background)) {
         Row(
             Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.xs, top = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // The title changes only when the month (or, in Day view, the day) changes, and fades
-            // through in the direction of travel instead of cross-fading two titles over each other.
+            // The title changes only when the month (or, in Day view, the day) changes. It slides a
+            // little in the direction of travel while the grid below slides a full page: parallax.
             val mode = state.mode
             AnimatedContent(
                 state.selected,
                 contentKey = { if (mode == CalendarMode.DAY) it else YearMonth.from(it) },
-                transitionSpec = { m.fadeThrough(targetState.compareTo(initialState).coerceIn(-1, 1), rtl) },
+                transitionSpec = { m.titleSlide(targetState.compareTo(initialState).coerceIn(-1, 1), rtl) },
                 label = "calTitle", modifier = Modifier.weight(1f),
             ) { d ->
                 val t = titleFor(mode, d)
@@ -113,7 +162,15 @@ fun CalendarRoute(
                     modifier = Modifier.semantics { heading() },
                 )
             }
-            if (state.selected != state.today) DsChip(stringResource(R.string.day_today), false, vm::today, role = Role.Button)
+            // Appears (scale and fade) when another month or date is showing; tapping it goes back to
+            // today in the right direction. The title is not a button.
+            AnimatedVisibility(
+                visible = state.selected != state.today,
+                enter = scaleIn(m.snappy(), initialScale = 0.6f) + fadeIn(m.snappy()),
+                exit = scaleOut(m.snappy(), targetScale = 0.6f) + fadeOut(m.snappy()),
+            ) {
+                DsChip(stringResource(R.string.day_today), false, { haptics.tick(); vm.today() }, role = Role.Button)
+            }
             DsIconButton(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, stringResource(R.string.cd_previous), { vm.step(-1) })
             DsIconButton(Icons.AutoMirrored.Rounded.KeyboardArrowRight, stringResource(R.string.cd_next), { vm.step(1) })
         }
@@ -122,16 +179,17 @@ fun CalendarRoute(
             label = { stringResource(modeLabel(it)) }, onSelect = vm::setMode,
             modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
         )
-        // Changing the view swaps the area below the switcher only; header and switcher stay put.
+        // Month and Week are one view that morphs; Day and Agenda cross-fade. Header and switcher stay put.
+        val group = when (state.mode) { CalendarMode.MONTH, CalendarMode.WEEK -> CalendarMode.MONTH; else -> state.mode }
         AnimatedContent(
-            state.mode,
-            transitionSpec = { m.fadeThrough(Integer.signum(targetState.ordinal - initialState.ordinal), rtl) },
+            group,
+            transitionSpec = { fadeIn(tween(m.medium)) togetherWith fadeOut(tween(m.short)) },
             label = "calMode",
             modifier = Modifier.weight(1f),
-        ) { mode ->
-            when (mode) {
-                CalendarMode.MONTH -> MonthMode(state, now, vm, contentPadding, onOpenEvent, onOpenTask, onCreateAt)
-                CalendarMode.WEEK, CalendarMode.DAY -> GridMode(state, now, vm, mode, contentPadding, onOpenEvent, onCreateAt)
+        ) { g ->
+            when (g) {
+                CalendarMode.MONTH, CalendarMode.WEEK -> MonthWeekMode(state, now, vm, morph, contentPadding, onOpenEvent, onOpenTask, onCreateAt)
+                CalendarMode.DAY -> GridMode(state, now, vm, CalendarMode.DAY, contentPadding, onOpenEvent, onCreateAt)
                 CalendarMode.AGENDA -> AgendaMode(state, now, vm, contentPadding, onOpenEvent, onOpenTask)
             }
         }
@@ -162,7 +220,7 @@ private fun SyncPager(pager: PagerState, targetPage: Int, onPageSettled: (Int) -
     LaunchedEffect(targetPage) {
         if (pager.currentPage != targetPage) {
             // Arrow/"Today" jumps use the app's motion curve instead of the pager's default spring.
-            if (m.reduced) pager.scrollToPage(targetPage) else pager.animateScrollToPage(targetPage, animationSpec = m.enter(m.long))
+            if (!m.enabled) pager.scrollToPage(targetPage) else pager.animateScrollToPage(targetPage, animationSpec = m.spring())
         }
     }
     LaunchedEffect(pager) {
@@ -170,8 +228,112 @@ private fun SyncPager(pager: PagerState, targetPage: Int, onPageSettled: (Int) -
     }
 }
 
+/**
+ * Month and Week as one view. [morph] (0 = Month, 1 = Week) is driven both by the mode control and by
+ * a vertical drag on the grid: the rows other than the selected week collapse and fade, the
+ * selected week stays, and the weekday header and the week's cells slide into the columns of the
+ * time grid. The day list fades out as the time grid fades in.
+ */
 @Composable
-private fun MonthMode(
+private fun MonthWeekMode(
+    state: CalendarUiState,
+    now: Instant,
+    vm: CalendarViewModel,
+    morph: Animatable<Float, AnimationVector1D>,
+    contentPadding: PaddingValues,
+    onOpenEvent: (String, String) -> Unit,
+    onOpenTask: (String) -> Unit,
+    onCreateAt: (LocalDate, Int?) -> Unit,
+) {
+    val p = LocalTimePrefs.current
+    val m = DsTheme.motion
+    val haptics = rememberHaptics()
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val base = YearMonth.from(state.today)
+    val page = CENTER + ChronoUnit.MONTHS.between(base, YearMonth.from(state.selected)).toInt()
+    val pager = androidx.compose.runtime.key(base) { rememberPagerState(initialPage = page) { PAGES } }
+    SyncPager(pager, page) { settled ->
+        val ym = base.plusMonths((settled - CENTER).toLong())
+        if (YearMonth.from(vm.state.value.selected) != ym) vm.select(if (ym == base) state.today else ym.atDay(1))
+    }
+    val showList by remember { derivedStateOf { morph.value < 0.999f } }
+    val showWeek by remember { derivedStateOf { morph.value > 0.001f } }
+    var peek by remember { mutableStateOf<Pair<LocalDate, Rect?>?>(null) }
+    // The drag covers the five rows that collapse.
+    val travel = with(density) { (MONTH_ROW_HEIGHT * (MONTH_ROWS - 1)).toPx() }
+    var armed by remember { mutableStateOf(false) }
+    val drag = rememberDraggableState { dy ->
+        val next = (morph.value - dy / travel).coerceIn(0f, 1f)
+        scope.launch { morph.snapTo(next) }
+        val past = next > 0.5f
+        if (past != armed) { armed = past; haptics.tick() }
+    }
+    Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.draggable(
+                drag, Orientation.Vertical,
+                onDragStopped = { velocity ->
+                    // Past halfway, or flung toward the other state: settle there.
+                    val toWeek = if (kotlin.math.abs(velocity) > 600f) velocity < 0f else morph.value > 0.5f
+                    armed = false
+                    vm.setMode(if (toWeek) CalendarMode.WEEK else CalendarMode.MONTH)
+                    scope.launch { morph.animateTo(if (toWeek) 1f else 0f, m.spring()) }
+                },
+            ),
+        ) {
+            Row(Modifier.morphInset({ morph.value })) {
+                (0 until 7).forEach { i ->
+                    Text(
+                        Fmt.weekdayNarrow(p.firstDayOfWeek.plus(i.toLong()), p),
+                        style = DsTheme.type.caps, color = DsTheme.colors.textTertiary,
+                        modifier = Modifier.weight(1f).padding(vertical = Space.xs),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
+            }
+            HorizontalPager(pager, beyondViewportPageCount = 1, userScrollEnabled = morph.value < 0.5f) { pg ->
+                val ym = base.plusMonths((pg - CENTER).toLong())
+                MonthGrid(
+                    ym, vm.gridStart(ym), state, collapse = { morph.value },
+                    onSelect = vm::select, onPeek = { d, r -> peek = d to r },
+                )
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (showList) {
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - morph.value * 2f).coerceIn(0f, 1f) }) {
+                    DayList(state, now, vm, contentPadding, onOpenEvent, onOpenTask, onCreateAt)
+                }
+            }
+            if (showWeek) {
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = (morph.value * 2f - 1f).coerceIn(0f, 1f) }) {
+                    GridMode(state, now, vm, CalendarMode.WEEK, contentPadding, onOpenEvent, onCreateAt)
+                }
+            }
+        }
+    }
+    peek?.let { (d, r) -> DayPeek(d, r, onDismiss = { peek = null }, onAddEvent = { onCreateAt(it, null) }) }
+}
+
+/** Height of one month row at normal font size; also how far a vertical drag travels per collapsed row. */
+private val MONTH_ROW_HEIGHT = 52.dp
+
+/** Insets the content from the start by the month grid's margin, easing to the time grid's gutter as [p] goes 0 to 1. */
+private fun Modifier.morphInset(p: () -> Float): Modifier = layout { measurable, constraints ->
+    val t = p().coerceIn(0f, 1f)
+    val start = androidx.compose.ui.unit.lerp(Space.m, TIME_GUTTER, t).roundToPx()
+    val end = androidx.compose.ui.unit.lerp(Space.m, 0.dp, t).roundToPx()
+    val placeable = measurable.measure(constraints.offset(horizontal = -(start + end)))
+    layout(placeable.width + start + end, placeable.height) { placeable.place(start, 0) }
+}
+
+/** The width of the hour labels at the start of the time grid. */
+private val TIME_GUTTER = 52.dp
+
+/** The selected day's events and tasks under the month grid, entering in a stagger when the day changes. */
+@Composable
+private fun DayList(
     state: CalendarUiState,
     now: Instant,
     vm: CalendarViewModel,
@@ -182,83 +344,87 @@ private fun MonthMode(
 ) {
     val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     val p = LocalTimePrefs.current
-    val base = YearMonth.from(state.today)
-    val page = CENTER + ChronoUnit.MONTHS.between(base, YearMonth.from(state.selected)).toInt()
-    val pager = androidx.compose.runtime.key(base) { rememberPagerState(initialPage = page) { PAGES } }
-    SyncPager(pager, page) { settled ->
-        val ym = base.plusMonths((settled - CENTER).toLong())
-        if (YearMonth.from(vm.state.value.selected) != ym) vm.select(if (ym == base) state.today else ym.atDay(1))
-    }
-    // The selected day's rows are replaced as a whole when another day is picked: they appear at once
-    // (no row fading out over the next day's rows); within the same day they animate as they change.
-    var freshDay by remember(state.selected) { mutableStateOf(true) }
-    LaunchedEffect(state.selected) { withFrameNanos { }; withFrameNanos { }; freshDay = false }
-    app.daysemble.ui.components.ItemsAppearInstantly(freshDay) {
-    LazyColumn(contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + Space.xxl)) {
-        item(key = "weekdays") {
-            Row(Modifier.padding(horizontal = Space.m)) {
-                (0 until 7).forEach { i ->
+    val itemActions = app.daysemble.ui.actions.LocalItemActions.current
+    // Another day replaces the list as a whole; its first rows then enter one after the other.
+    ContentSwap(state.selected, fade = false) {
+        val fresh = LocalContentFresh.current
+        val entering = remember { fresh }
+        LazyColumn(contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + Space.xxl)) {
+            item(key = "dayHeader") {
+                SectionHeader(dayLabel(state.selected, state.today, p), Modifier.padding(top = Space.l).staggeredEntrance(0, entering)) {
+                    DsChip(stringResource(R.string.add_event), false, { onCreateAt(state.selected, null) }, role = Role.Button)
+                }
+            }
+            val evs = state.byDate[state.selected].orEmpty()
+            val tasks = state.tasksByDate[state.selected].orEmpty()
+            if (evs.isEmpty() && tasks.isEmpty() && !state.isLoading) {
+                item(key = "empty") {
                     Text(
-                        Fmt.weekdayNarrow(p.firstDayOfWeek.plus(i.toLong()), p),
-                        style = DsTheme.type.caps, color = DsTheme.colors.textTertiary,
-                        modifier = Modifier.weight(1f).padding(vertical = Space.xs),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        stringResource(R.string.day_empty), style = DsTheme.type.bodySmall, color = DsTheme.colors.textSecondary,
+                        modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m).staggeredEntrance(1, entering),
                     )
                 }
             }
-        }
-        item(key = "grid") {
-            HorizontalPager(pager, beyondViewportPageCount = 1) { pg ->
-                val ym = base.plusMonths((pg - CENTER).toLong())
-                MonthGrid(ym, vm.gridStart(ym), state, onSelect = vm::select)
+            val day = state.selected
+            itemsIndexed(evs, key = { _, e -> "e$day" + e.stableKey }) { i, e ->
+                AgendaEventCard(
+                    e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) },
+                    onLongClick = itemActions?.let { a -> { a.onEventLongPress(e) } },
+                    showCountdown = state.selected == state.today,
+                    modifier = Modifier.staggeredEntrance(i + 1, entering).then(itemMotion(fadeOut = false)),
+                )
             }
-        }
-        item(key = "dayHeader") {
-            SectionHeader(dayLabel(state.selected, state.today, p), Modifier.padding(top = Space.l)) {
-                DsChip(stringResource(R.string.add_event), false, { onCreateAt(state.selected, null) }, role = Role.Button)
-            }
-        }
-        val evs = state.byDate[state.selected].orEmpty()
-        val tasks = state.tasksByDate[state.selected].orEmpty()
-        if (evs.isEmpty() && tasks.isEmpty() && !state.isLoading) {
-            item(key = "empty") {
-                Text(
-                    stringResource(R.string.day_empty), style = DsTheme.type.bodySmall, color = DsTheme.colors.textSecondary,
-                    modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
+            itemsIndexed(tasks, key = { _, t -> "t$day" + t.id }) { i, t ->
+                AgendaTaskCard(
+                    t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) },
+                    modifier = Modifier.staggeredEntrance(evs.size + i + 1, entering).then(itemMotion(fadeOut = false)),
+                    onLongClick = itemActions?.let { a -> { a.onTaskLongPress(t) } },
                 )
             }
         }
-        val day = state.selected
-        items(evs, key = { "e$day" + it.stableKey }) { e ->
-            AgendaEventCard(
-                e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) },
-                onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onEventLongPress(e) } },
-                showCountdown = state.selected == state.today, modifier = Modifier.then(itemMotion(fadeOut = false)),
-            )
-        }
-        items(tasks, key = { "t$day" + it.id }) { t ->
-            AgendaTaskCard(t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion(fadeOut = false)), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(t) } })
-        }
-    }
     }
 }
 
 @Composable
-private fun MonthGrid(ym: YearMonth, gridStart: LocalDate, state: CalendarUiState, onSelect: (LocalDate) -> Unit) {
+private fun MonthGrid(
+    ym: YearMonth,
+    gridStart: LocalDate,
+    state: CalendarUiState,
+    collapse: () -> Float,
+    onSelect: (LocalDate) -> Unit,
+    onPeek: (LocalDate, Rect?) -> Unit,
+) {
     // Always six rows (the most a month needs), so the grid, and everything under it, keeps its
     // height while paging between 5- and 6-week months instead of jumping when a swipe settles.
-    // The days of the neighbouring months are shown dimmed, as before. The view model loads 42 days
-    // from each grid start, so they have their events.
-    val weeks = MONTH_ROWS
-    Column(Modifier.padding(horizontal = Space.m)) {
-        repeat(weeks) { w ->
-            Row {
+    // The days of the neighbouring months are shown dimmed. The view model loads 42 days from each
+    // grid start, so they have their events.
+    val haptics = rememberHaptics()
+    val selectedIndex = ChronoUnit.DAYS.between(gridStart, state.selected).toInt().takeIf { it in 0 until MONTH_ROWS * 7 }
+    val disc = rememberSlidingDisc(selectedIndex?.let { it % 7 to it / 7 }, pop = true)
+    val map = remember { DiscMap(7, MONTH_ROWS) }
+    val ink = DsTheme.colors.inverse
+    // The selected week stays when the rest collapses; a page without the selection keeps the first row.
+    val keepRow = selectedIndex?.div(7) ?: 0
+    Column(
+        Modifier
+            .morphInset(collapse)
+            .discContainer(map)
+            .drawBehind { disc.draw(this, map, ink) },
+    ) {
+        repeat(MONTH_ROWS) { w ->
+            Row(Modifier.collapsing(if (w == keepRow) null else collapse)) {
                 repeat(7) { i ->
                     val d = gridStart.plusDays((w * 7 + i).toLong())
                     MonthCell(
                         d, inMonth = YearMonth.from(d) == ym, selected = d == state.selected, isToday = d == state.today,
                         events = state.byDate[d].orEmpty(), taskCount = state.tasksByDate[d]?.size ?: 0,
-                        onClick = { onSelect(d) }, modifier = Modifier.weight(1f),
+                        index = w * 7 + i, map = map, column = i,
+                        onClick = {
+                            if (d != state.selected) haptics.tick()
+                            onSelect(d)
+                        },
+                        onLongClick = { r -> haptics.tick(); onPeek(d, r) },
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -266,6 +432,18 @@ private fun MonthGrid(ym: YearMonth, gridStart: LocalDate, state: CalendarUiStat
     }
 }
 
+/** A row that shrinks to nothing and fades as [collapse] goes 0 to 1 (null: it never collapses). */
+private fun Modifier.collapsing(collapse: (() -> Float)?): Modifier =
+    if (collapse == null) this
+    else this
+        .layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            val h = (placeable.height * (1f - collapse().coerceIn(0f, 1f))).roundToInt()
+            layout(placeable.width, h) { placeable.place(0, 0) }
+        }
+        .graphicsLayer { alpha = (1f - collapse().coerceIn(0f, 1f) * COLLAPSE_FADE_FACTOR).coerceIn(0f, 1f); clip = true }
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MonthCell(
     d: LocalDate,
@@ -274,45 +452,54 @@ private fun MonthCell(
     isToday: Boolean,
     events: List<EventOccurrence>,
     taskCount: Int,
+    index: Int,
+    map: DiscMap,
+    column: Int,
     onClick: () -> Unit,
+    onLongClick: (Rect?) -> Unit,
     modifier: Modifier,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     val p = LocalTimePrefs.current
-    val bg = app.daysemble.ui.components.animateStateColor(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "cellBg")
     val count = events.size + taskCount
     val a11y = Fmt.fullDate(d, p) + (if (isToday) ", " + stringResource(R.string.today_suffix) else "") + ", " + pluralStringResource(R.plurals.n_items, count, count)
+    val marks = remember(events, taskCount) {
+        val colors = events.map { it.colorArgb }.take(3)
+        if (colors.size < 3 && taskCount > 0) colors + TASK_MARK else colors
+    }
+    val coords = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
     // The whole cell stays the touch target, but its press/focus feedback is drawn only on the date
-    // circle (see DateDisc). The cell used the default bounded ripple, which filled its rectangle
-    // and showed as a grey square around the circle on every tap.
+    // circle (see DateDisc), and the selected circle itself is drawn by the grid (it slides).
     val interaction = remember { MutableInteractionSource() }
     Column(
         modifier
-            .heightIn(min = 52.dp)
-            .selectable(selected = selected, interactionSource = interaction, indication = null, role = Role.Tab, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = a11y }
+            .heightIn(min = MONTH_ROW_HEIGHT)
+            .onPlaced { coords[0] = it }
+            .combinedClickable(
+                interactionSource = interaction, indication = null, role = Role.Tab, onClick = onClick,
+                onLongClick = { onLongClick(coords[0]?.takeIf { it.isAttached }?.boundsInRoot()) },
+            )
+            .semantics(mergeDescendants = true) { this.selected = selected; contentDescription = a11y }
             .padding(vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        DateDisc(interaction, bg, ring = if (isToday && !selected) c.accentFill else Color.Transparent) {
-            Text(
-                d.dayOfMonth.toString(),
-                style = DsTheme.type.bodyStrong,
-                color = when {
-                    selected -> c.onInverse
-                    isToday -> c.accent
-                    inMonth -> c.textPrimary
-                    else -> c.textTertiary
-                },
-            )
+        val number = animateStateColor(
+            when {
+                selected -> c.onInverse
+                isToday -> c.accent
+                inMonth -> c.textPrimary
+                else -> c.textTertiary
+            },
+            m.snappy(), label = "monthNumber",
+        )
+        DateDisc(interaction, Color.Transparent, Modifier.discCell(map, index), ring = if (isToday && !selected) c.accentFill else Color.Transparent) {
+            Text(d.dayOfMonth.toString(), style = DsTheme.type.bodyStrong, color = number)
         }
-        Row(Modifier.height(8.dp).padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            events.take(3).forEach { e ->
-                Box(Modifier.size(5.dp).clip(Radii.pill).background(eventColor(e.colorArgb).copy(alpha = if (inMonth) 1f else 0.4f)))
-            }
-            if (events.size < 3 && taskCount > 0) Box(Modifier.size(5.dp).clip(Radii.pill).background(c.outlineStrong))
-        }
+        DayMarks(
+            marks, delayMs = column * m.markStagger, modifier = Modifier.padding(top = 3.dp), dim = !inMonth,
+            overflow = events.size + (if (taskCount > 0) 1 else 0) > 3,
+        )
     }
 }
 
@@ -344,30 +531,6 @@ private fun GridMode(
             val start = if (isWeek) baseStart.plusWeeks((pg - CENTER).toLong()) else baseStart.plusDays((pg - CENTER).toLong())
             val days = (0 until if (isWeek) 7 else 1).map { start.plusDays(it.toLong()) }
             Column {
-                if (isWeek) {
-                    Row(Modifier.fillMaxWidth().padding(start = 52.dp)) {
-                        days.forEach { d ->
-                            val sel = d == state.selected
-                            val selBg = app.daysemble.ui.components.animateStateColor(if (sel) c.inverse else Color.Transparent, DsTheme.motion.indicator(), label = "weekSel")
-                            val selFg = app.daysemble.ui.components.animateStateColor(
-                                if (sel) c.onInverse else if (d == state.today) c.accent else c.textPrimary, DsTheme.motion.indicator(), label = "weekSelText",
-                            )
-                            val interaction = remember { MutableInteractionSource() }
-                            Column(
-                                Modifier
-                                    .weight(1f)
-                                    .selectable(sel, interactionSource = interaction, indication = null, role = Role.Tab) { vm.select(d) }
-                                    .padding(vertical = Space.xs),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Text(Fmt.weekdayNarrow(d.dayOfWeek, p), style = DsTheme.type.caps, color = if (d == state.today) c.accent else c.textTertiary)
-                                DateDisc(interaction, selBg, Modifier.padding(top = 2.dp), size = 32.dp) {
-                                    Text(d.dayOfMonth.toString(), style = DsTheme.type.bodyStrong, color = selFg)
-                                }
-                            }
-                        }
-                    }
-                }
                 TimeGrid(
                     days = days, byDate = state.byDate, today = state.today, now = now,
                     onEvent = { onOpenEvent(it.eventId, it.occurrenceKey) },

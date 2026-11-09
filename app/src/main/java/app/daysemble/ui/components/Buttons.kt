@@ -33,10 +33,10 @@ import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 
 /**
- * Primary: ink pill. Accent: coral. Secondary: tonal. Raised: one step above a tonal tile (a
+ * Primary: ink pill. Accent: coral. Tint: the ink at 8 % (empty-state actions). Secondary: tonal. Raised: one step above a tonal tile (a
  * Secondary button would vanish into one). Ghost: outlined. Text: no container (lowest emphasis).
  */
-enum class DsButtonStyle { Primary, Accent, Secondary, Raised, Ghost, Text, Destructive }
+enum class DsButtonStyle { Primary, Accent, Secondary, Raised, Ghost, Text, Destructive, Tint }
 
 /**
  * Subtle press feedback: a small scale-down on touch-down, back on release. [large] is for
@@ -74,6 +74,7 @@ fun DsButton(
         DsButtonStyle.Ghost -> Triple(Color.Transparent, c.textPrimary, c.outline)
         DsButtonStyle.Text -> Triple(Color.Transparent, c.textSecondary, Color.Transparent)
         DsButtonStyle.Destructive -> Triple(c.errorContainer, c.error, Color.Transparent)
+        DsButtonStyle.Tint -> Triple(c.inverse.copy(alpha = 0.08f), c.textPrimary, Color.Transparent)
     }
     val interaction = remember { MutableInteractionSource() }
     Row(

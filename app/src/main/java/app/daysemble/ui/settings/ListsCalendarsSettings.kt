@@ -8,14 +8,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
@@ -49,6 +46,7 @@ import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
 import app.daysemble.ui.components.DsConfirmDialog
 import app.daysemble.ui.components.DsRow
+import app.daysemble.ui.components.SettingsCard
 import app.daysemble.ui.components.DsSwitchRow
 import app.daysemble.ui.components.DsTextField
 import app.daysemble.ui.components.DsTopBar
@@ -102,12 +100,14 @@ fun ListsCalendarsRoute(onBack: () -> Unit) {
             DsButton(stringResource(R.string.new_calendar), { editing = Editing.NewCalendar() }, style = DsButtonStyle.Secondary, icon = Icons.Rounded.Add, modifier = Modifier.padding(horizontal = Space.gutter))
 
             SectionHeader(stringResource(R.string.task_lists_title), Modifier.padding(top = Space.xl))
-            lists.forEach { l ->
-                DsRow(
-                    l.title,
-                    subtitle = stringResource(if (l.kind == SourceKind.GOOGLE) R.string.list_google_sub else R.string.on_this_device),
-                    onClick = if (l.kind == SourceKind.LOCAL) ({ editing = Editing.RenameList(l.id, l.title) }) else null,
-                )
+            SettingsCard {
+                lists.forEach { l ->
+                    DsRow(
+                        l.title,
+                        subtitle = stringResource(if (l.kind == SourceKind.GOOGLE) R.string.list_google_sub else R.string.on_this_device),
+                        onClick = if (l.kind == SourceKind.LOCAL) ({ editing = Editing.RenameList(l.id, l.title) }) else null,
+                    )
+                }
             }
             Hint(stringResource(R.string.list_google_note))
             DsButton(stringResource(R.string.new_list), { editing = Editing.NewList() }, style = DsButtonStyle.Secondary, icon = Icons.Rounded.Add, modifier = Modifier.padding(horizontal = Space.gutter))

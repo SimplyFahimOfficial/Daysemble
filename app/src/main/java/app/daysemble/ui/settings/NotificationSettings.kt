@@ -17,11 +17,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BatteryAlert
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -46,6 +43,8 @@ import app.daysemble.reminders.ReminderScheduler
 import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
 import app.daysemble.ui.components.DsRow
+import app.daysemble.ui.components.CardDivider
+import app.daysemble.ui.components.SettingsCard
 import app.daysemble.ui.components.DsSwitchRow
 import app.daysemble.ui.components.DsTimePickerDialog
 import app.daysemble.ui.components.DsTopBar
@@ -83,13 +82,16 @@ fun NotificationSettingsRoute(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().background(c.background)) {
         DsTopBar(stringResource(R.string.settings_notifications), onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = Space.x3)) {
-            DsSwitchRow(
-                stringResource(R.string.setting_reminders_enabled), s.remindersEnabled,
-                { v -> scope.launch { container.settings.setRemindersEnabled(v); container.reminders.rescheduleAll() } },
-                subtitle = stringResource(R.string.setting_reminders_enabled_sub),
-            )
+            SettingsCard {
+                DsSwitchRow(
+                    stringResource(R.string.setting_reminders_enabled), s.remindersEnabled,
+                    { v -> scope.launch { container.settings.setRemindersEnabled(v); container.reminders.rescheduleAll() } },
+                    subtitle = stringResource(R.string.setting_reminders_enabled_sub),
+                )
+            }
 
             SectionHeader(stringResource(R.string.setting_permissions), Modifier.padding(top = Space.l))
+            SettingsCard {
             DsRow(
                 stringResource(R.string.perm_notifications),
                 subtitle = stringResource(if (notificationsAllowed) R.string.perm_allowed else R.string.perm_blocked),
@@ -101,6 +103,7 @@ fun NotificationSettingsRoute(onBack: () -> Unit) {
                     } else open(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName))
                 }, style = DsButtonStyle.Secondary)
             }
+            CardDivider()
             val exact = health != ReminderHealth.INEXACT
             DsRow(
                 stringResource(R.string.perm_exact),
@@ -111,6 +114,7 @@ fun NotificationSettingsRoute(onBack: () -> Unit) {
                     open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, ("package:" + ctx.packageName).toUri()))
                 }, style = DsButtonStyle.Secondary)
             }
+            CardDivider()
             DsRow(
                 stringResource(R.string.perm_battery),
                 subtitle = stringResource(if (ignoringBattery) R.string.perm_battery_unrestricted else R.string.perm_battery_optimized),
@@ -120,9 +124,10 @@ fun NotificationSettingsRoute(onBack: () -> Unit) {
                     open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 }, style = DsButtonStyle.Ghost)
             }
+            }
 
             SectionHeader(stringResource(R.string.setting_default_event_reminder), Modifier.padding(top = Space.l))
-            Column(Modifier.selectableGroup()) {
+            SettingsCard(Modifier.selectableGroup()) {
                 (listOf<Int?>(null) + EventReminderOptions).forEach { m ->
                     app.daysemble.ui.components.DsRadioRow(
                         if (m == null) stringResource(R.string.reminder_none) else reminderLabel(m, forTask = false),
@@ -137,22 +142,26 @@ fun NotificationSettingsRoute(onBack: () -> Unit) {
 
             SectionHeader(stringResource(R.string.setting_default_task_time), Modifier.padding(top = Space.l))
             val t = LocalTime.of(s.defaultTaskReminderMinuteOfDay / 60, s.defaultTaskReminderMinuteOfDay % 60)
-            DsRow(Fmt.time(t, p), subtitle = stringResource(R.string.setting_default_task_time_sub), onClick = { pickTime = true })
+            SettingsCard { DsRow(Fmt.time(t, p), subtitle = stringResource(R.string.setting_default_task_time_sub), onClick = { pickTime = true }) }
 
             SectionHeader(stringResource(R.string.setting_privacy_lock), Modifier.padding(top = Space.l))
-            DsSwitchRow(
-                stringResource(R.string.setting_hide_details), s.hideNotificationDetails,
-                { v -> scope.launch { container.settings.setHideNotificationDetails(v) } },
-                subtitle = stringResource(R.string.setting_hide_details_sub),
-            )
+            SettingsCard {
+                DsSwitchRow(
+                    stringResource(R.string.setting_hide_details), s.hideNotificationDetails,
+                    { v -> scope.launch { container.settings.setHideNotificationDetails(v) } },
+                    subtitle = stringResource(R.string.setting_hide_details_sub),
+                )
+            }
 
             SectionHeader(stringResource(R.string.about_troubleshooting), Modifier.padding(top = Space.l))
-            DsRow(
-                stringResource(R.string.reschedule_reminders),
-                subtitle = stringResource(if (rescheduled) R.string.reschedule_done else R.string.reschedule_sub),
-                icon = Icons.Rounded.Refresh,
-                onClick = { scope.launch { container.reminders.rescheduleAll(); rescheduled = true } },
-            )
+            SettingsCard {
+                DsRow(
+                    stringResource(R.string.reschedule_reminders),
+                    subtitle = stringResource(if (rescheduled) R.string.reschedule_done else R.string.reschedule_sub),
+                    icon = Icons.Rounded.Refresh,
+                    onClick = { scope.launch { container.reminders.rescheduleAll(); rescheduled = true } },
+                )
+            }
             Text(
                 stringResource(R.string.reminder_limits_note), style = DsTheme.type.bodySmall, color = c.textSecondary,
                 modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),

@@ -30,20 +30,21 @@ data class TaskSection(val bucket: TaskBucket?, val tasks: List<Task>)
 
 @Immutable
 data class TasksUiState(
-    val query: String = "",
     val filter: TaskFilter = TaskFilter.ALL,
     val sort: TaskSort = TaskSort.DUE,
     val listId: String? = null,
     val lists: List<TaskList> = emptyList(),
     val sections: List<TaskSection> = emptyList(),
     val totalOpen: Int = 0,
+    /** How many tasks each filter shows (the list chosen is respected); drives the counts on the chips. */
+    val counts: Map<TaskFilter, Int> = emptyMap(),
     val isLoading: Boolean = true,
 ) {
-    /** Drag-to-reorder is offered in "List order" when not searching and only open tasks are shown. */
-    val canReorder: Boolean get() = sort == TaskSort.MANUAL && query.isBlank() && filter == TaskFilter.ALL
+    /** Drag-to-reorder is offered in "List order" when only open tasks are shown. */
+    val canReorder: Boolean get() = sort == TaskSort.MANUAL && filter == TaskFilter.ALL
 }
 
-private data class TaskQuery(val query: String, val filter: TaskFilter, val listId: String?)
+private data class TaskQuery(val filter: TaskFilter, val listId: String?)
 
 class TasksViewModel(
     private val repo: TaskRepository,
@@ -57,21 +58,11 @@ class TasksViewModel(
 
     private val query = MutableStateFlow(
         TaskQuery(
-            query = handle["q"] ?: "",
             filter = handle.get<String>("f")?.let { runCatching { TaskFilter.valueOf(it) }.getOrNull() } ?: TaskFilter.ALL,
             listId = handle["l"],
         ),
     )
     private val tick = MutableStateFlow(clock.now())
-
-    /**
-     * The search field's text, updated synchronously on every keystroke. The field must not show
-     * [TasksUiState.query]: that is rebuilt with the task list on a background dispatcher and arrives
-     * a frame or more later, so typing quickly reset the field to an older value (lost characters,
-     * jumping cursor, broken IME composition).
-     */
-    var searchText by androidx.compose.runtime.mutableStateOf(query.value.query)
-        private set
 
     // Grouping, sorting and recurrence expansion run off the main thread, so a month change or a tab
     // switch never waits for them; the result is collected on the main thread as before.
@@ -79,18 +70,12 @@ class TasksViewModel(
         combine(repo.allTasks, repo.taskLists) { a, b -> a to b }, settings.settings, query, tick, time,
     ) { (tasks, lists), s, q, now, _ -> build(tasks, lists, s.taskSort, q, now) }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TasksUiState())
 
-    fun setQuery(q: String) {
-        searchText = q
-        update { it.copy(query = q) }
-        handle["q"] = q
-    }
     fun setFilter(f: TaskFilter) = update { it.copy(filter = f) }.also { handle["f"] = f.name }
     fun setList(id: String?) = update { it.copy(listId = id) }.also { handle["l"] = id }
     fun setSort(s: TaskSort) = viewModelScope.launch { settings.setTaskSort(s) }
     fun onTick(now: Instant) { tick.value = now }
 
     fun setCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -> Unit = {}) = viewModelScope.launch { repo.setCompleted(id, done)?.let(onResult) }
-    fun delete(id: String, scope: app.daysemble.domain.model.SeriesScope = app.daysemble.domain.model.SeriesScope.THIS) = viewModelScope.launch { repo.delete(id, scope) }
     fun restore(id: String) = viewModelScope.launch { repo.restore(id) }
     fun purgeTombstones() = viewModelScope.launch { repo.purgeExpiredTombstones() }
     fun reorder(ids: List<String>) = viewModelScope.launch { repo.reorder(ids) }
@@ -100,25 +85,26 @@ class TasksViewModel(
     private fun build(all: List<Task>, lists: List<TaskList>, sort: TaskSort, q: TaskQuery, now: Instant): TasksUiState {
         val z = zone()
         val listId = q.listId?.takeIf { id -> lists.any { it.id == id } }
-        val searching = q.query.isNotBlank()
         val candidates = all.filter { t ->
             (listId == null || t.listId == listId) &&
-                // Subtasks show inside their parent, except when searching.
-                (t.parentId == null || searching) &&
-                TaskRules.matchesQuery(t, q.query) &&
-                (if (searching && q.filter == TaskFilter.ALL) true else TaskRules.matches(t, q.filter, now, z))
+                // Subtasks show inside their parent.
+                t.parentId == null &&
+                TaskRules.matches(t, q.filter, now, z)
         }.sortedWith(TaskRules.comparator(sort, z))
 
-        val sections = if (q.filter == TaskFilter.ALL && sort == TaskSort.DUE && !searching) {
+        val sections = if (q.filter == TaskFilter.ALL && sort == TaskSort.DUE) {
             val order = listOf(TaskBucket.OVERDUE, TaskBucket.TODAY, TaskBucket.UPCOMING, TaskBucket.NO_DATE)
             val grouped = candidates.groupBy { TaskRules.bucket(it, now, z) }
             order.mapNotNull { b -> grouped[b]?.let { TaskSection(b, it) } }
         } else listOf(TaskSection(null, candidates)).filter { it.tasks.isNotEmpty() }
 
         return TasksUiState(
-            query = q.query, filter = q.filter, sort = sort, listId = listId, lists = lists,
+            filter = q.filter, sort = sort, listId = listId, lists = lists,
             sections = sections,
             totalOpen = all.count { !it.isCompleted && it.parentId == null },
+            counts = listOf(TaskFilter.TODAY, TaskFilter.UPCOMING, TaskFilter.OVERDUE).associateWith { f ->
+                all.count { t -> t.parentId == null && (listId == null || t.listId == listId) && TaskRules.matches(t, f, now, z) }
+            },
             isLoading = false,
         )
     }

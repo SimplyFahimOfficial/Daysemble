@@ -221,22 +221,26 @@ fun TaskRow(
     isSubtask: Boolean = false,
     actions: List<androidx.compose.ui.semantics.CustomAccessibilityAction> = emptyList(),
     onLongClick: (() -> Unit)? = null,
+    /** Shows the task as completed before the completion is saved (the strike sweeps, then the row leaves). */
+    forceCompleted: Boolean = false,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     val p = LocalTimePrefs.current
+    val completed = task.isCompleted || forceCompleted
     val today = now.atZone(p.zone).toLocalDate()
     val overdue = TaskRules.isOverdue(task, now, p.zone)
-    val textColor = app.daysemble.ui.components.animateStateColor(if (task.isCompleted) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskText")
+    val textColor = app.daysemble.ui.components.animateStateColor(if (completed) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskText")
     // Reduced motion: the line appears in full at once (only the text colour fades).
     val strike by animateFloatAsState(
-        if (task.isCompleted) 1f else 0f,
+        if (completed) 1f else 0f,
         if (m.reduced) androidx.compose.animation.core.snap() else m.standard(m.medium), label = "strike",
     )
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = Sizes.rowMin)
+            .newItemHighlight(task.id)
             .itemClick(onClick, onLongClick)
             .semantics { if (actions.isNotEmpty()) customActions = actions }
             .padding(start = if (isSubtask) Space.gutter + Space.xl else Space.gutter - 13.dp, end = Space.gutter, top = Space.xxs, bottom = Space.xxs),
@@ -244,16 +248,16 @@ fun TaskRow(
         horizontalArrangement = Arrangement.spacedBy(Space.xs),
     ) {
         DsCheck(
-            checked = task.isCompleted,
+            checked = completed,
             onCheckedChange = onToggle,
-            contentDescription = stringResource(if (task.isCompleted) R.string.cd_mark_incomplete else R.string.cd_mark_complete, task.title),
-            tint = if (task.priority == Priority.HIGH && !task.isCompleted) c.accent else c.textPrimary,
+            contentDescription = stringResource(if (completed) R.string.cd_mark_incomplete else R.string.cd_mark_complete, task.title),
+            tint = if (task.priority == Priority.HIGH && !completed) c.accent else c.textPrimary,
             dashed = isSubtask,
         )
         Column(Modifier.weight(1f).padding(vertical = Space.s)) {
             StrikeTitle(task.title, strike, textColor, DsTheme.type.bodyStrong)
             val due = task.dueDate
-            val countdown = task.countdownEnabled && !task.isCompleted && due != null
+            val countdown = task.countdownEnabled && !completed && due != null
             val hasMeta = (showDue && due != null) || task.subtaskCount > 0 || task.isRecurring || countdown
             if (hasMeta) {
                 FlowRow(
@@ -285,7 +289,7 @@ fun TaskRow(
                             Text(app.daysemble.ui.task.repeatLabel(r), style = DsTheme.type.label, color = c.textSecondary, maxLines = 1)
                         }
                     }
-                    if (countdown) CountdownPill(task.dueMoment(p.zone), task.isCompleted, now, p.zone)
+                    if (countdown) CountdownPill(task.dueMoment(p.zone), completed, now, p.zone)
                 }
             }
         }

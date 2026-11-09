@@ -27,7 +27,8 @@ object Radii {
     val tile = RoundedCornerShape(20.dp)
     /** Top of the Today agenda panel. */
     val panel = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-    val sheet = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    val sheetCorner = 24.dp
+    val sheet = RoundedCornerShape(topStart = sheetCorner, topEnd = sheetCorner)
     val dialog = RoundedCornerShape(24.dp)
     val pill = RoundedCornerShape(percent = 50)
 }

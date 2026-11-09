@@ -27,7 +27,10 @@ import androidx.compose.material.icons.rounded.SyncProblem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +47,14 @@ import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Space
 
+/**
+ * An empty-state action fades in after the message, [index] x the stagger later, with a small rise.
+ * Used by the buttons of [StateMessage].
+ */
+@Composable
+fun Modifier.emptyActionEntrance(index: Int): Modifier =
+    staggeredEntrance(index, baseDelay = DsTheme.motion.medium)
+
 /** Centered message used for empty / error / offline states. */
 @Composable
 fun StateMessage(
@@ -54,6 +65,17 @@ fun StateMessage(
     tint: Color = DsTheme.colors.textSecondary,
     action: (@Composable () -> Unit)? = null,
 ) {
+    val m = DsTheme.motion
+    // The icon breathes (1.00 to 1.04, one cycle per 3 s) while it is on screen. It pauses when the
+    // screen is not resumed or its tab is hidden, and it does not move at all with motion off.
+    val resumed by androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val active = m.enabled && LocalTabVisible.current && resumed.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+    val breath = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(active) {
+        if (!active) { breath.snapTo(1f); return@LaunchedEffect }
+        val half = tween<Float>(m.breathePeriod / 2, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+        while (true) { breath.animateTo(m.breatheScale, half); breath.animateTo(1f, half) }
+    }
     Column(
         modifier
             .fillMaxWidth()
@@ -63,6 +85,7 @@ fun StateMessage(
     ) {
         Box(
             Modifier
+                .graphicsLayer { scaleX = breath.value; scaleY = breath.value }
                 .size(56.dp)
                 .clip(Radii.pill)
                 .background(DsTheme.colors.surfaceVariant),

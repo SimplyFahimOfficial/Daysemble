@@ -87,7 +87,10 @@ fun DaysembleTheme(
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-    val reduced = reducedMotionOverride ?: isSystemReducedMotion()
+    // Motion runs only when both the Appearance setting and Android's animator scale allow it:
+    // "Full" never overrides Android's "Remove animations".
+    val systemReduced = isSystemReducedMotion()
+    val reduced = reducedMotionOverride == true || systemReduced
     val motion = remember(reduced) { DsMotion(reduced) }
     val crossfade = rememberThemeCrossfade(targetDark, motion)
     // The palette changes once, in one recomposition. (It used to animate every colour for 300 ms,
@@ -151,7 +154,7 @@ private fun rememberThemeCrossfade(targetDark: Boolean, motion: DsMotion): Theme
         state.dark = targetDark
         if (shot != null) {
             try {
-                state.fade.animateTo(0f, tween(motion.medium + 30, easing = DsMotion.Standard))
+                state.fade.animateTo(0f, tween(motion.medium, easing = DsMotion.Standard))
             } finally {
                 state.snapshot = null
             }

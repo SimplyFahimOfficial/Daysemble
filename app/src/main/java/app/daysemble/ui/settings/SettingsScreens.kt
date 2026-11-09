@@ -2,6 +2,7 @@ package app.daysemble.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -14,7 +15,6 @@ import androidx.compose.material.icons.automirrored.rounded.ListAlt
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Notifications
@@ -37,7 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -51,11 +50,14 @@ import app.daysemble.data.prefs.AppSettings
 import app.daysemble.data.prefs.ClockFormat
 import app.daysemble.data.prefs.TaskSort
 import androidx.compose.ui.unit.dp
-import app.daysemble.ui.brand.BrandLogo
 import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
 import app.daysemble.ui.components.DsConfirmDialog
+import app.daysemble.ui.components.CardDivider
 import app.daysemble.ui.components.DsRow
+import app.daysemble.ui.components.SettingsCard
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.ui.draw.clip
 import app.daysemble.ui.components.DsRadioRow
 import androidx.compose.foundation.selection.selectableGroup
 import app.daysemble.ui.components.DsSegmented
@@ -129,35 +131,80 @@ fun SettingsHomeRoute(onBack: () -> Unit, onOpen: (SettingsPage) -> Unit) {
         val chevron: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = DsTheme.colors.textTertiary)
         }
+        // Shown once, until the name is set or the prompt is dismissed.
+        val showNameHint = s != null && s.displayName == null && !s.nameHintDismissed
+        androidx.compose.animation.AnimatedVisibility(showNameHint, enter = DsTheme.motion.expandIn(), exit = DsTheme.motion.collapseOut()) {
+            NameHint(onAdd = { editName = true }, onDismiss = { scope.launch { container.settings.dismissNameHint() } })
+        }
         SectionHeader(stringResource(R.string.settings_section_sync))
-        DsRow(stringResource(R.string.settings_accounts), subtitle = stringResource(R.string.settings_accounts_sub), icon = Icons.Rounded.Sync, onClick = { onOpen(SettingsPage.ACCOUNTS) }, trailing = chevron)
+        SettingsCard {
+            DsRow(stringResource(R.string.settings_accounts), subtitle = stringResource(R.string.settings_accounts_sub), icon = Icons.Rounded.Sync, onClick = { onOpen(SettingsPage.ACCOUNTS) }, trailing = chevron)
+        }
         SectionHeader(stringResource(R.string.settings_section_general), Modifier.padding(top = Space.l))
-        DsRow(
-            stringResource(R.string.settings_your_name),
-            subtitle = s?.displayName ?: stringResource(R.string.settings_your_name_unset),
-            icon = Icons.Rounded.Person, onClick = { editName = true }, trailing = chevron,
-        )
-        DsRow(
-            stringResource(R.string.settings_schedule),
-            subtitle = s?.schedule?.default?.let { d -> stringResource(R.string.time_range, Fmt.time(d.wake, LocalTimePrefs.current), Fmt.time(d.bed, LocalTimePrefs.current)) }
-                ?: stringResource(R.string.settings_schedule_sub),
-            icon = androidx.compose.material.icons.Icons.Rounded.Bedtime, onClick = { onOpen(SettingsPage.SCHEDULE) }, trailing = chevron,
-        )
-        DsRow(stringResource(R.string.settings_appearance), subtitle = stringResource(R.string.settings_appearance_sub), icon = Icons.Rounded.Palette, onClick = { onOpen(SettingsPage.APPEARANCE) }, trailing = chevron)
-        DsRow(stringResource(R.string.settings_notifications), subtitle = stringResource(R.string.settings_notifications_sub), icon = Icons.Rounded.Notifications, onClick = { onOpen(SettingsPage.NOTIFICATIONS) }, trailing = chevron)
-        DsRow(stringResource(R.string.settings_date_time), subtitle = stringResource(R.string.settings_date_time_sub), icon = Icons.Rounded.CalendarMonth, onClick = { onOpen(SettingsPage.DATE_TIME) }, trailing = chevron)
-        DsRow(
-            stringResource(R.string.settings_lists_calendars), subtitle = stringResource(R.string.settings_lists_calendars_sub),
-            icon = Icons.AutoMirrored.Rounded.ListAlt, onClick = { onOpen(SettingsPage.LISTS_CALENDARS) }, trailing = chevron,
-        )
-        DsRow(stringResource(R.string.settings_tasks), subtitle = stringResource(R.string.settings_tasks_sub), icon = Icons.Rounded.TaskAlt, onClick = { onOpen(SettingsPage.TASKS) }, trailing = chevron)
+        SettingsCard {
+            DsRow(
+                stringResource(R.string.settings_your_name),
+                subtitle = s?.displayName ?: stringResource(R.string.settings_your_name_unset),
+                icon = Icons.Rounded.Person, onClick = { editName = true }, trailing = chevron,
+            )
+            CardDivider()
+            DsRow(
+                stringResource(R.string.settings_schedule),
+                subtitle = s?.schedule?.default?.let { d -> stringResource(R.string.time_range, Fmt.time(d.wake, LocalTimePrefs.current), Fmt.time(d.bed, LocalTimePrefs.current)) }
+                    ?: stringResource(R.string.settings_schedule_sub),
+                icon = androidx.compose.material.icons.Icons.Rounded.Bedtime, onClick = { onOpen(SettingsPage.SCHEDULE) }, trailing = chevron,
+            )
+            CardDivider()
+            DsRow(stringResource(R.string.settings_appearance), subtitle = stringResource(R.string.settings_appearance_sub), icon = Icons.Rounded.Palette, onClick = { onOpen(SettingsPage.APPEARANCE) }, trailing = chevron)
+            CardDivider()
+            DsRow(stringResource(R.string.settings_notifications), subtitle = stringResource(R.string.settings_notifications_sub), icon = Icons.Rounded.Notifications, onClick = { onOpen(SettingsPage.NOTIFICATIONS) }, trailing = chevron)
+            CardDivider()
+            DsRow(stringResource(R.string.settings_date_time), subtitle = stringResource(R.string.settings_date_time_sub), icon = Icons.Rounded.CalendarMonth, onClick = { onOpen(SettingsPage.DATE_TIME) }, trailing = chevron)
+            CardDivider()
+            DsRow(
+                stringResource(R.string.settings_lists_calendars), subtitle = stringResource(R.string.settings_lists_calendars_sub),
+                icon = Icons.AutoMirrored.Rounded.ListAlt, onClick = { onOpen(SettingsPage.LISTS_CALENDARS) }, trailing = chevron,
+            )
+            CardDivider()
+            DsRow(stringResource(R.string.settings_tasks), subtitle = stringResource(R.string.settings_tasks_sub), icon = Icons.Rounded.TaskAlt, onClick = { onOpen(SettingsPage.TASKS) }, trailing = chevron)
+        }
         SectionHeader(stringResource(R.string.settings_section_privacy), Modifier.padding(top = Space.l))
-        DsRow(stringResource(R.string.settings_data), subtitle = stringResource(R.string.settings_data_sub), icon = Icons.Rounded.Shield, onClick = { onOpen(SettingsPage.DATA) }, trailing = chevron)
-        DsRow(stringResource(R.string.settings_about), subtitle = stringResource(R.string.version_label, BuildConfig.VERSION_NAME), icon = Icons.Rounded.Info, onClick = { onOpen(SettingsPage.ABOUT) }, trailing = chevron)
-        DsRow(
-            stringResource(R.string.support_my_work), subtitle = stringResource(R.string.support_my_work_sub),
-            icon = Icons.Rounded.Favorite, onClick = { onOpen(SettingsPage.SUPPORT) }, trailing = chevron,
+        SettingsCard {
+            DsRow(stringResource(R.string.settings_data), subtitle = stringResource(R.string.settings_data_sub), icon = Icons.Rounded.Shield, onClick = { onOpen(SettingsPage.DATA) }, trailing = chevron)
+            CardDivider()
+            DsRow(stringResource(R.string.settings_about), subtitle = stringResource(R.string.version_label, BuildConfig.VERSION_NAME), icon = Icons.Rounded.Info, onClick = { onOpen(SettingsPage.ABOUT) }, trailing = chevron)
+            CardDivider()
+            DsRow(
+                stringResource(R.string.support_my_work), subtitle = stringResource(R.string.support_my_work_sub),
+                icon = Icons.Rounded.Favorite, onClick = { onOpen(SettingsPage.SUPPORT) }, trailing = chevron,
+            )
+        }
+    }
+}
+
+/** A one-time prompt at the top of Settings for the name that Today greets you with. */
+@Composable
+private fun NameHint(onAdd: () -> Unit, onDismiss: () -> Unit) {
+    val c = DsTheme.colors
+    androidx.compose.foundation.layout.Row(
+        Modifier
+            .padding(horizontal = Space.l, vertical = Space.s)
+            .fillMaxWidth()
+            .clip(app.daysemble.ui.theme.Radii.tile)
+            .background(c.accent.copy(alpha = 0.10f))
+            .padding(start = Space.l, top = Space.s, bottom = Space.s, end = Space.xs),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Space.s),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.name_hint_title), style = DsTheme.type.bodyStrong, color = c.textPrimary)
+            Text(stringResource(R.string.name_hint_body), style = DsTheme.type.bodySmall, color = c.textSecondary)
+        }
+        DsButton(
+            stringResource(R.string.name_hint_action), onAdd, style = DsButtonStyle.Primary,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.l, vertical = Space.s),
         )
+        app.daysemble.ui.components.DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_dismiss_hint), onDismiss, tint = c.textTertiary)
     }
 }
 
@@ -206,7 +253,7 @@ fun DateTimeSettingsRoute(onBack: () -> Unit) {
         )
         SectionHeader(stringResource(R.string.setting_first_day), Modifier.padding(top = Space.xl))
         val options = listOf<DayOfWeek?>(null, DayOfWeek.MONDAY, DayOfWeek.SUNDAY, DayOfWeek.SATURDAY)
-        Column(Modifier.selectableGroup()) {
+        SettingsCard(Modifier.selectableGroup()) {
             options.forEach { d ->
                 DsRadioRow(
                     if (d == null) stringResource(R.string.first_day_locale) else Fmt.weekdayFull(d, p),
@@ -215,7 +262,7 @@ fun DateTimeSettingsRoute(onBack: () -> Unit) {
             }
         }
         SectionHeader(stringResource(R.string.setting_event_duration), Modifier.padding(top = Space.xl))
-        Column(Modifier.selectableGroup()) {
+        SettingsCard(Modifier.selectableGroup()) {
             listOf(15, 30, 45, 60, 90, 120).forEach { m ->
                 DsRadioRow(durationText(m.toLong()), settings.defaultEventDurationMinutes == m, { scope.launch { container.settings.setDefaultEventDuration(m) } })
             }
@@ -235,20 +282,22 @@ fun TaskSettingsRoute(onBack: () -> Unit) {
     val lists = loadedLists.orEmpty()
     SettingsScaffold(stringResource(R.string.settings_tasks), onBack, loaded = loadedLists != null) {
         val settings = s ?: return@SettingsScaffold
-        DsSwitchRow(
-            stringResource(R.string.setting_show_completed_today), settings.showCompletedOnToday,
-            { scope.launch { container.settings.setShowCompletedOnToday(it) } },
-            subtitle = stringResource(R.string.setting_show_completed_today_sub),
-        )
+        SettingsCard {
+            DsSwitchRow(
+                stringResource(R.string.setting_show_completed_today), settings.showCompletedOnToday,
+                { scope.launch { container.settings.setShowCompletedOnToday(it) } },
+                subtitle = stringResource(R.string.setting_show_completed_today_sub),
+            )
+        }
         SectionHeader(stringResource(R.string.setting_default_sort), Modifier.padding(top = Space.l))
-        Column(Modifier.selectableGroup()) {
+        SettingsCard(Modifier.selectableGroup()) {
             TaskSort.entries.forEach { srt ->
                 DsRadioRow(stringResource(sortLabel(srt)), settings.taskSort == srt, { scope.launch { container.settings.setTaskSort(srt) } })
             }
         }
         if (lists.size > 1) {
             SectionHeader(stringResource(R.string.setting_default_list), Modifier.padding(top = Space.l))
-            Column(Modifier.selectableGroup()) {
+            SettingsCard(Modifier.selectableGroup()) {
                 lists.forEach { l ->
                     val selected = settings.defaultTaskListId == l.id || (settings.defaultTaskListId == null && !l.isGoogle && l == lists.firstOrNull { !it.isGoogle })
                     DsRadioRow(l.title, selected, { scope.launch { container.settings.setDefaultTaskList(l.id) } }, subtitle = l.accountEmail)
@@ -405,9 +454,12 @@ fun AboutRoute(onBack: () -> Unit) {
         }
         HairlineDivider()
         SectionHeader(stringResource(R.string.about_troubleshooting), Modifier.padding(top = Space.l))
+        SettingsCard {
         DsRow(stringResource(R.string.about_zone), subtitle = LocalTimePrefs.current.zone.id)
+        CardDivider()
         DsRow(stringResource(R.string.about_build), subtitle = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · ${BuildConfig.BUILD_TYPE}")
         if (BuildConfig.DEBUG) {
+            CardDivider()
             val container = (LocalContext.current.applicationContext as DaysembleApp).container
             val scope = rememberCoroutineScope()
             var loaded by rememberSaveable { mutableStateOf(false) }
@@ -417,6 +469,6 @@ fun AboutRoute(onBack: () -> Unit) {
                 onClick = { if (!loaded) scope.launch { app.daysemble.data.SampleData.load(container); loaded = true } },
             )
         }
+        }
     }
 }
-

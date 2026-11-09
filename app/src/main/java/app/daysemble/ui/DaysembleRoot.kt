@@ -1,6 +1,8 @@
 package app.daysemble.ui
 
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -13,6 +15,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import app.daysemble.ui.components.LocalNewItem
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.Animatable
@@ -26,6 +32,17 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -63,7 +80,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -101,14 +117,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavDestination
@@ -139,12 +156,11 @@ import app.daysemble.ui.navigation.EventDetailRoute
 import app.daysemble.ui.navigation.EventEditorRoute
 import app.daysemble.ui.navigation.MainRoute
 import app.daysemble.ui.navigation.NavMotion
-import app.daysemble.ui.navigation.SearchRoute
 import app.daysemble.ui.navigation.SettingsPageRoute
 import app.daysemble.ui.navigation.SettingsRoute
 import app.daysemble.ui.navigation.TaskDetailRoute
 import app.daysemble.ui.navigation.TaskEditorRoute
-import app.daysemble.ui.search.SearchRoute as SearchScreenRoute
+import app.daysemble.ui.search.SearchResults
 import app.daysemble.ui.settings.AboutRoute
 import app.daysemble.ui.settings.AppearanceRoute
 import app.daysemble.ui.settings.DataSettingsRoute
@@ -162,6 +178,7 @@ import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 import app.daysemble.ui.today.TodayRoute as TodayScreenRoute
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -169,6 +186,7 @@ import java.time.ZoneId
 import androidx.compose.runtime.setValue
 
 val LocalSnackbar = staticCompositionLocalOf { SnackbarHostState() }
+
 
 /**
  * The settings the app is currently running with (already loaded before the first frame). Settings
@@ -213,6 +231,12 @@ val LocalTaskRescheduled = staticCompositionLocalOf<(String, java.time.LocalDate
  * hasn't been touched. One-off tasks stay in place, struck through, so they need no snackbar.
  */
 val LocalTaskCompleted = staticCompositionLocalOf<(String, app.daysemble.data.repo.TaskRepository.Completion) -> Unit> { { _, _ -> } }
+
+/**
+ * Call after a one-off task was completed from a list that it then leaves (the Tasks tab). Shows
+ * "Task completed · Undo" from the root scope, like [LocalTaskDeleted].
+ */
+val LocalTaskDone = staticCompositionLocalOf<(String) -> Unit> { {} }
 
 internal enum class Tab(val icon: ImageVector, val label: Int) {
     TODAY(Icons.Rounded.WbSunny, R.string.tab_today),
@@ -306,6 +330,15 @@ fun DaysembleRoot(
             }
         }
     }
+    val completedMsg = stringResource(R.string.task_completed)
+    val onTaskDone: (String) -> Unit = remember(container, completedMsg, undoLabel) {
+        { id ->
+            rootScope.launch {
+                val res = snackbar.showSnackbar(completedMsg, undoLabel, duration = SnackbarDuration.Short)
+                if (res == SnackbarResult.ActionPerformed) container.tasks.setCompleted(id, false)
+            }
+        }
+    }
     CompositionLocalProvider(
         LocalTimePrefs provides prefs,
         LocalAppClock provides container.clock,
@@ -314,6 +347,7 @@ fun DaysembleRoot(
         LocalEventDeleted provides onEventDeleted,
         LocalTaskRescheduled provides onTaskRescheduled,
         LocalTaskCompleted provides onTaskCompleted,
+        LocalTaskDone provides onTaskDone,
         LocalAppSettings provides settings,
         LocalSyncStatus provides syncStatus,
     ) {
@@ -376,8 +410,18 @@ private fun AppContent(
     // The selected tab lives here (saved across rotation and process death), not in the back stack.
     var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
     var showAdd by rememberSaveable { mutableStateOf(false) }
+    // The header search: the icon expands into a field and the results cover the tabs.
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     var addDate by rememberSaveable { mutableStateOf<Long?>(null) }
     var addKind by rememberSaveable { mutableStateOf(app.daysemble.ui.add.AddKind.TASK) }
+    // What Quick Add last created: the + on Today opens on it (Tasks opens on Task, Calendar on Event).
+    var lastKind by rememberSaveable { mutableStateOf(app.daysemble.ui.add.AddKind.TASK) }
+    // The task or event just created, tinted briefly where it appears (see newItemHighlight).
+    var newItem by remember { mutableStateOf<String?>(null) }
+    val addSheet = remember { app.daysemble.ui.add.AddSheetState() }
+    LaunchedEffect(showAdd) { if (showAdd) addSheet.open(motion) else if (addSheet.present) addSheet.close(motion) }
+    LaunchedEffect(newItem) { if (newItem != null) { delay((motion.long * 4).toLong()); newItem = null } }
     // The day each date-based tab is showing, used to prefill quick add for that tab.
     var todayFocus by rememberSaveable { mutableStateOf<Long?>(null) }
     var calendarFocus by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -404,7 +448,9 @@ private fun AppContent(
         onOpenEvent = { id, key -> EventDetailRoute(id, key).let { if (!nav.isShowing(it)) nav.navigate(it) } },
         onEditEvent = { id, key -> nav.navigate(EventEditorRoute(eventId = id, occurrenceKey = key)) },
     ) {
-    Box(Modifier.fillMaxSize().background(c.background)) {
+    CompositionLocalProvider(LocalNewItem provides newItem) {
+    // Test tags are exposed as resource ids so the macrobenchmarks (UiAutomator) can find tabs and lists.
+    Box(Modifier.fillMaxSize().background(c.background).semantics { testTagsAsResourceId = true }) {
         // Paused (lifecycle CREATED) while a page covers it completely: see VisibilityLifecycle.
         app.daysemble.ui.components.VisibilityLifecycle(visible = onMain || mainShown > 0) {
         MainScreen(
@@ -413,14 +459,31 @@ private fun AppContent(
             backEnabled = onMain,
             displayName = settings.displayName,
             syncStatus = syncStatus?.takeIf { it.account.isConnected },
-            onSearch = { nav.openFromMain(SearchRoute) },
+            onSearch = { searching = true },
+            searching = searching,
+            searchQuery = searchQuery,
+            onSearchQuery = { searchQuery = it },
+            onCloseSearch = { searching = false; searchQuery = "" },
+            searchResults = {
+                SearchResults(
+                    searchQuery,
+                    onOpenEvent = { id, key -> nav.openFromMain(EventDetailRoute(id, key)) },
+                    onOpenTask = { id -> nav.openFromMain(TaskDetailRoute(id)) },
+                )
+            },
             onSettings = { nav.openFromMain(SettingsRoute) },
             onOpenSync = { nav.openFromMain(SettingsPageRoute(SettingsPage.ACCOUNTS.name)) },
             onAdd = {
                 addDate = when (tab) { Tab.TODAY -> todayFocus; Tab.CALENDAR -> calendarFocus; Tab.TASKS -> null }
-                addKind = app.daysemble.ui.add.AddKind.TASK
+                addKind = when (tab) {
+                    Tab.TASKS -> app.daysemble.ui.add.AddKind.TASK
+                    Tab.CALENDAR -> app.daysemble.ui.add.AddKind.EVENT
+                    Tab.TODAY -> lastKind
+                }
                 showAdd = true
             },
+            addOpen = addSheet.present,
+            addSheet = addSheet,
             modifier = Modifier
                 .fillMaxSize()
                 // Recorded, not drawn here: the NavHost placeholder draws it (see AppContent's doc).
@@ -448,7 +511,10 @@ private fun AppContent(
                     onCreateAt = { d, min -> nav.openFromMain(EventEditorRoute(dateEpochDay = d.toEpochDay(), startMinute = min)) },
                     onFocusedDate = { calendarFocus = it.toEpochDay() },
                 )
-                Tab.TASKS -> TasksScreenRoute(bottomPadding, onOpenTask = openTask)
+                Tab.TASKS -> TasksScreenRoute(
+                    bottomPadding, onOpenTask = openTask,
+                    onAdd = { addDate = null; addKind = app.daysemble.ui.add.AddKind.TASK; showAdd = true },
+                )
             }
         }
         }
@@ -472,7 +538,11 @@ private fun AppContent(
         LaunchedEffect(shortcut) {
             val s = shortcut ?: return@LaunchedEffect
             when (s) {
-                app.daysemble.AppShortcut.SEARCH -> if (nav.currentBackStackEntry?.destination?.hasRoute<SearchRoute>() != true) nav.navigate(SearchRoute)
+                app.daysemble.AppShortcut.SEARCH -> {
+                    // Back to the main screen first if a page is open on top of it.
+                    if (!nav.currentBackStackEntry?.destination.isMain()) nav.popBackStack(MainRoute, inclusive = false)
+                    searching = true
+                }
                 app.daysemble.AppShortcut.NEW_TASK, app.daysemble.AppShortcut.NEW_EVENT -> {
                     val task = s == app.daysemble.AppShortcut.NEW_TASK
                     if (nav.currentBackStackEntry?.destination.isMain()) {
@@ -492,6 +562,24 @@ private fun AppContent(
                 onAccountsOpened()
                 nav.navigate(SettingsPageRoute(SettingsPage.ACCOUNTS.name))
             }
+        }
+        // Quick Add: the FAB's container grows into the sheet, and shrinks back into it on close.
+        if (addSheet.present) {
+            QuickAddSheet(
+                sheetState = addSheet,
+                open = showAdd,
+                container = container,
+                initialDate = addDate?.let(LocalDate::ofEpochDay),
+                initialKind = addKind,
+                onDismiss = { showAdd = false },
+                onSaved = { id, kind -> newItem = id; lastKind = kind },
+                onMoreEventOptions = { pre ->
+                    nav.openFromMain(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
+                },
+                onMoreTaskOptions = { title, d, minute ->
+                    nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay(), dueMinute = minute, title = title.takeIf { it.isNotBlank() }))
+                },
+            )
         }
         // Moves with the bottom bar instead of jumping when the bar shows or hides. Read in placement
         // only: as a padding it was read in composition, so the content around it recomposed on
@@ -515,20 +603,6 @@ private fun AppContent(
         }
     }
     }
-
-    if (showAdd) {
-        QuickAddSheet(
-            container = container,
-            initialDate = addDate?.let(LocalDate::ofEpochDay),
-            initialKind = addKind,
-            onDismiss = { showAdd = false },
-            onMoreEventOptions = { pre ->
-                nav.openFromMain(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
-            },
-            onMoreTaskOptions = { title, d, minute ->
-                nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay(), dueMinute = minute, title = title.takeIf { it.isNotBlank() }))
-            },
-        )
     }
 }
 
@@ -578,9 +652,17 @@ private fun NavHostController.backFrom(from: NavBackStackEntry) {
  * still on top, so it can't close a different page. The main screen is never popped.
  */
 private fun NavHostController.closeFrom(from: NavBackStackEntry) {
+    // A page is still animating out: a second tap would land on the page being revealed under it.
+    if (pagesLeaving > 0) return
     val top = currentBackStackEntry ?: return
     if (top.id == from.id && !top.destination.hasRoute<MainRoute>()) popBackStack()
 }
+
+/**
+ * How many pages are currently animating out after Back. Pages slide sideways, so the page being
+ * revealed is not fully covered by the one leaving; [closeFrom] ignores taps meanwhile. Main thread only.
+ */
+private var pagesLeaving = 0
 
 /**
  * A page opened over the main screen. It takes all touches inside its bounds (pages draw an opaque
@@ -591,6 +673,10 @@ private fun NavHostController.closeFrom(from: NavBackStackEntry) {
 @Composable
 private fun AnimatedContentScope.Page(content: @Composable () -> Unit) {
     val leaving = transition.targetState == EnterExitState.PostExit
+    DisposableEffect(leaving) {
+        if (leaving) pagesLeaving++
+        onDispose { if (leaving) pagesLeaving-- }
+    }
     Box(
         Modifier
             .fillMaxSize()
@@ -612,8 +698,8 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
         navController = nav,
         startDestination = MainRoute,
         enterTransition = { with(NavMotion) { enter(m, rtl, density) } },
-        exitTransition = { with(NavMotion) { exit(m) } },
-        popEnterTransition = { with(NavMotion) { popEnter() } },
+        exitTransition = { with(NavMotion) { exit(m, rtl, density) } },
+        popEnterTransition = { with(NavMotion) { popEnter(m, rtl, density) } },
         popExitTransition = { with(NavMotion) { popExit(m, rtl, density) } },
         predictivePopEnterTransition = { NavMotion.predictivePopEnter() },
         predictivePopExitTransition = { edge -> NavMotion.predictivePopExit(m, density, edge) },
@@ -663,15 +749,6 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
                 )
             }
         }
-        composable<SearchRoute> { e ->
-            Page {
-                SearchScreenRoute(
-                    onBack = { nav.backFrom(e) },
-                    onOpenEvent = { id, key -> nav.openFrom(e, EventDetailRoute(id, key)) },
-                    onOpenTask = { id -> nav.openFrom(e, TaskDetailRoute(id)) },
-                )
-            }
-        }
         composable<SettingsRoute> { e ->
             Page { SettingsHomeRoute(onBack = { nav.backFrom(e) }, onOpen = { nav.openFrom(e, SettingsPageRoute(it.name)) }) }
         }
@@ -710,22 +787,69 @@ private fun MainScreen(
     displayName: String?,
     syncStatus: SyncStatus?,
     onSearch: () -> Unit,
+    searching: Boolean,
+    searchQuery: String,
+    onSearchQuery: (String) -> Unit,
+    onCloseSearch: () -> Unit,
+    searchResults: @Composable () -> Unit,
     onSettings: () -> Unit,
     onOpenSync: () -> Unit,
     onAdd: () -> Unit,
+    addOpen: Boolean,
+    addSheet: app.daysemble.ui.add.AddSheetState,
     modifier: Modifier = Modifier,
     content: @Composable (Tab) -> Unit,
 ) {
     BackHandler(enabled = backEnabled && tab != Tab.TODAY) { onTab(Tab.TODAY) }
+    // Registered after the one above, so it wins: Back closes the search first.
+    BackHandler(enabled = backEnabled && searching, onBack = onCloseSearch)
+    // The FAB scales away while the content scrolls down and returns when it scrolls up, on another
+    // tab, or when Quick Add opens. The connection only watches; it never consumes a scroll.
+    var fabShown by remember { mutableStateOf(true) }
+    LaunchedEffect(tab, addOpen) { fabShown = true }
+    val fabWatcher = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    if (available.y < -FAB_SCROLL_SLOP) fabShown = false else if (available.y > FAB_SCROLL_SLOP) fabShown = true
+                }
+                return Offset.Zero
+            }
+        }
+    }
     Box(modifier.background(DsTheme.colors.background)) {
         Column(Modifier.fillMaxSize()) {
-            MainHeader(displayName, syncStatus, onSearch, onSettings, onOpenSync)
-            TabHost(tab, Modifier.weight(1f).fillMaxWidth(), content)
+            MainHeader(
+                displayName, syncStatus, onSearch, onSettings, onOpenSync,
+                searching = searching, query = searchQuery, onQuery = onSearchQuery, onCloseSearch = onCloseSearch,
+            )
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                TabHost(
+                    tab,
+                    Modifier.fillMaxSize().nestedScroll(fabWatcher).then(if (searching) Modifier.clearAndSetSemantics { } else Modifier),
+                    content,
+                )
+                // The results cover the tabs, which stay composed (and keep their state) underneath.
+                val m = DsTheme.motion
+                val reveal by animateFloatAsState(if (searching) 1f else 0f, m.spring(), label = "searchReveal")
+                if (reveal > 0.001f || searching) {
+                    val shift = with(LocalDensity.current) { m.contentShift.toPx() }
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = reveal.coerceIn(0f, 1f); translationY = (1f - reveal) * shift }
+                            .then(if (searching) Modifier else Modifier.clearAndSetSemantics { }),
+                    ) { searchResults() }
+                }
+            }
         }
         BottomBar(
             current = tab,
             onSelect = { t -> if (t != tab) onTab(t) },
             onAdd = onAdd,
+            addOpen = addOpen,
+            addSheet = addSheet,
+            fabShown = fabShown,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
@@ -744,29 +868,98 @@ internal fun MainHeader(
     onSettings: () -> Unit,
     onOpenSync: () -> Unit,
     modifier: Modifier = Modifier,
+    searching: Boolean = false,
+    query: String = "",
+    onQuery: (String) -> Unit = {},
+    onCloseSearch: () -> Unit = {},
 ) {
     val p = LocalTimePrefs.current
-    Row(
+    val m = DsTheme.motion
+    // 0 = the search icon, 1 = the open field: the field grows out of the icon toward the start.
+    val open by animateFloatAsState(if (searching) 1f else 0f, m.spring(), label = "searchOpen")
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(searching) { if (searching) runCatching { focus.requestFocus() } }
+    BoxWithConstraints(
         modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .heightIn(min = 60.dp)
-            .padding(start = Space.gutter, end = Space.xs),
-        verticalAlignment = Alignment.CenterVertically,
+            .heightIn(min = 60.dp),
+        contentAlignment = Alignment.CenterStart,
     ) {
-        BrandNameplate(displayName, Modifier.weight(1f).padding(end = Space.s))
-        if (syncStatus != null) {
-            SyncBadge(
-                syncIndicator(syncStatus), syncLabel(syncStatus, p),
+        val settingsSlot = Sizes.touch + Space.xs
+        // The field spans from the gutter to the settings button.
+        val fullWidth = maxWidth - Space.gutter - settingsSlot
+        Row(
+            Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                Modifier.weight(1f).graphicsLayer { alpha = (1f - open * 2f).coerceIn(0f, 1f) }
+                    .then(if (searching) Modifier.clearAndSetSemantics { } else Modifier),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BrandNameplate(displayName, Modifier.weight(1f).padding(end = Space.s))
+                if (syncStatus != null) {
+                    SyncBadge(
+                        syncIndicator(syncStatus), syncLabel(syncStatus, p),
+                        Modifier
+                            .weight(1f, fill = false)
+                            .minimumInteractiveComponentSize()
+                            .clip(Radii.pill)
+                            .clickable(enabled = !searching, role = Role.Button, onClick = onOpenSync),
+                    )
+                }
+            }
+            // The icon holds the field's place; once open it is replaced by the field's own icon.
+            DsIconButton(
+                Icons.Rounded.Search, stringResource(R.string.cd_search), onSearch,
+                Modifier.graphicsLayer { alpha = 1f - open }, enabled = !searching,
+            )
+            DsIconButton(Icons.Rounded.Settings, stringResource(R.string.cd_settings), onSettings)
+        }
+        if (open > 0.001f || searching) {
+            HeaderSearchField(
+                query, onQuery, onCloseSearch, focus,
                 Modifier
-                    .weight(1f, fill = false)
-                    .minimumInteractiveComponentSize()
-                    .clip(Radii.pill)
-                    .clickable(role = Role.Button, onClick = onOpenSync),
+                    .align(Alignment.CenterEnd)
+                    .padding(end = settingsSlot)
+                    .requiredWidth(androidx.compose.ui.unit.lerp(Sizes.touch, fullWidth, open.coerceIn(0f, 1f)))
+                    .graphicsLayer { alpha = (open * 3f).coerceIn(0f, 1f) },
             )
         }
-        DsIconButton(Icons.Rounded.Search, stringResource(R.string.cd_search), onSearch)
-        DsIconButton(Icons.Rounded.Settings, stringResource(R.string.cd_settings), onSettings)
+    }
+}
+
+/** The search field that grows out of the header's search icon: icon, text, and a button that closes the search. */
+@Composable
+private fun HeaderSearchField(query: String, onQuery: (String) -> Unit, onClose: () -> Unit, focus: FocusRequester, modifier: Modifier = Modifier) {
+    val c = DsTheme.colors
+    val hint = stringResource(R.string.search_hint)
+    // The field's own text, updated synchronously on every keystroke: the app-level query comes back
+    // a recomposition later, and typing quickly would otherwise lose characters. The field leaves the
+    // composition when the search closes, so it always starts from the current query.
+    var text by remember { mutableStateOf(query) }
+    Row(
+        modifier
+            .heightIn(min = Sizes.touch)
+            .clip(Radii.pill)
+            .background(c.surfaceVariant)
+            .padding(start = Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+    ) {
+        Icon(Icons.Rounded.Search, null, tint = c.textSecondary, modifier = Modifier.size(Sizes.iconSmall))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (text.isEmpty()) Text(hint, style = DsTheme.type.body, color = c.textTertiary, maxLines = 1)
+            BasicTextField(
+                value = text, onValueChange = { text = it; onQuery(it) }, singleLine = true,
+                textStyle = DsTheme.type.body.copy(color = c.textPrimary),
+                cursorBrush = SolidColor(c.accent),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = hint },
+            )
+        }
+        DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_close_search), onClose, tint = c.textSecondary)
     }
 }
 
@@ -776,18 +969,15 @@ internal fun MainHeader(
  * opened yet are composed in the background, one at a time, when the main thread is idle (never
  * during a scroll, a transition or the splash), so even the first switch has nothing to build.
  *
- * Switching: the new tab is placed on top and fades in over the old one, which stays fully drawn
- * underneath until it is covered and is then hidden. So no frame is ever blank. (The previous
- * fade-through faded the old tab out before the new one came in, which left one or two nearly
- * empty frames on every switch, seen as a flash.) The new tab comes in on a fast-starting curve
- * with a small shift in tab order. Alpha and shift are read only in the draw phase, so nothing
- * recomposes per frame; a switch that interrupts another simply continues from the current values.
+ * Switching is a Material fade-through, the same for every pair of tabs: the tab you leave fades
+ * out, then the new one fades in from 92 % to full size (see [DsMotion.fadeThrough]). Alpha and
+ * scale are read only in the draw phase, so nothing recomposes per frame, and a switch that
+ * interrupts another continues from the current values. With motion off the new tab appears at once.
  */
 @Composable
 private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab) -> Unit) {
     val m = DsTheme.motion
     val c = DsTheme.colors
-    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val holder = rememberSaveableStateHolder()
     var visited by rememberSaveable { mutableStateOf(listOf(current.name)) }
     androidx.compose.runtime.SideEffect { if (current.name !in visited) visited = visited + current.name }
@@ -807,22 +997,32 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
     androidx.compose.runtime.SideEffect { if (current.name !in seen) seen = seen + current.name }
 
     val alpha = remember { Tab.entries.associateWith { Animatable(if (it == current) 1f else 0f) } }
-    // Tabs being drawn, bottom to top. Usually just the current one; during a switch the one being
-    // covered is under it.
+    val scale = remember { Tab.entries.associateWith { Animatable(1f) } }
+    // Tabs being drawn, bottom to top. Usually just the current one; during a switch the ones
+    // fading out are under it.
     var stack by remember { mutableStateOf(listOf(current)) }
-    var direction by remember { mutableIntStateOf(0) }
     LaunchedEffect(current) {
         if (stack.last() == current) return@LaunchedEffect
-        direction = Integer.signum(current.ordinal - stack.last().ordinal)
-        stack = stack.filter { it != current } + current
+        val leaving = stack.filter { it != current }
+        stack = leaving + current
         val incoming = alpha.getValue(current)
-        if (m.reduced) incoming.snapTo(1f) else incoming.animateTo(1f, m.tabEnter())
-        // Covered completely: the others are hidden (and unplaced) until they are shown again.
-        Tab.entries.forEach { t -> if (t != current) alpha.getValue(t).snapTo(0f) }
+        val grow = scale.getValue(current)
+        if (!m.enabled) {
+            incoming.snapTo(1f)
+        } else {
+            coroutineScope {
+                // Out first, then in: the tabs being left fade out while the new one waits.
+                leaving.forEach { t -> launch { alpha.getValue(t).animateTo(0f, m.fadeThroughOut()) } }
+                if (incoming.value == 0f) grow.snapTo(m.fadeThroughScale)
+                launch { grow.animateTo(1f, m.fadeThroughIn()) }
+                incoming.animateTo(1f, m.fadeThroughIn())
+            }
+        }
+        // Covered or faded completely: the others are hidden (and unplaced) until they are shown again.
+        Tab.entries.forEach { t -> if (t != current) { alpha.getValue(t).snapTo(0f); scale.getValue(t).snapTo(1f) } }
         stack = listOf(current)
     }
     val currentTab by rememberUpdatedState(current)
-    val shift = with(LocalDensity.current) { m.tabShift.toPx() }
     // A hidden tab stays composed, so it must not keep keyboard focus (typing would go on editing
     // it, e.g. the Tasks search) or take focus while hidden. Focus held by the tab you leave is
     // cleared as you switch; hidden tabs refuse focus moving into them.
@@ -841,10 +1041,9 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                         Modifier
                             .layoutId(t)
                             .graphicsLayer {
-                                val a = alpha.getValue(t).value
-                                this.alpha = a
-                                val dir = if (rtl) -direction else direction
-                                translationX = if (t == currentTab) dir * shift * (1f - a) else 0f
+                                this.alpha = alpha.getValue(t).value
+                                val sc = scale.getValue(t).value
+                                scaleX = sc; scaleY = sc
                             }
                             // Opaque, so the tab being covered never shows through the finished one.
                             .background(c.background)
@@ -854,7 +1053,9 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                             .focusGroup(),
                     ) {
                         app.daysemble.ui.components.VisibilityLifecycle(visible = t == current || t in stack || t.name !in seen) {
-                            holder.SaveableStateProvider(t.name) { content(t) }
+                            holder.SaveableStateProvider(t.name) {
+                                CompositionLocalProvider(app.daysemble.ui.components.LocalTabVisible provides (t == current)) { content(t) }
+                            }
                         }
                     }
                 }
@@ -895,7 +1096,10 @@ private suspend fun awaitMainThreadIdle(timeoutMs: Long) {
 private val ScrollEdgeFade = 28.dp
 
 @Composable
-private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier) {
+private fun BottomBar(
+    current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, addOpen: Boolean, addSheet: app.daysemble.ui.add.AddSheetState,
+    fabShown: Boolean, modifier: Modifier = Modifier,
+) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     // Soft: with the scroll-edge fade the bar no longer needs a heavy shadow to stand off the list.
@@ -931,6 +1135,13 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
         // label's own colour instead turned the target white on the white bar before the pill got
         // there, and left the tab the pill passed over dark on black.) Read in the draw phase only.
         val index by animateFloatAsState(current.ordinal.toFloat(), m.indicator(), label = "tabIndicator")
+        // The tab you land on gives its icon a small bounce; the labels of the other tabs sit back.
+        val bounce = remember { Tab.entries.associateWith { Animatable(1f) } }
+        var lastTab by remember { mutableStateOf(current) }
+        LaunchedEffect(current) {
+            if (lastTab != current) with(m) { bounce.getValue(current).pop(peak = TAB_BOUNCE) }
+            lastTab = current
+        }
         val pill = c.inverse
         val presses = remember { Tab.entries.associateWith { MutableInteractionSource() } }
         val pillPath = remember { Path() }
@@ -960,7 +1171,11 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Tab.entries.forEach { t ->
-                    TabItem(t, t == current, { onSelect(t) }, c.textSecondary, presses.getValue(t), Modifier.weight(1f))
+                    TabItem(
+                        t, t == current, { onSelect(t) }, c.textSecondary, presses.getValue(t), Modifier.weight(1f),
+                        iconScale = { bounce.getValue(t).value },
+                        labelAlpha = { TAB_REST_ALPHA + (1f - TAB_REST_ALPHA) * (1f - kotlin.math.abs(index - t.ordinal)).coerceIn(0f, 1f) },
+                    )
                 }
             }
             // The light copy: drawing only (no input, not read out). It shares each tab's press, so
@@ -972,30 +1187,64 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
                     .drawWithContent { clipPath(pillPath()) { this@drawWithContent.drawContent() } },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Tab.entries.forEach { t -> TabLabel(t, c.onInverse, Modifier.weight(1f).pressScale(presses.getValue(t))) }
+                Tab.entries.forEach { t ->
+                    TabLabel(t, c.onInverse, Modifier.weight(1f).pressScale(presses.getValue(t)), iconScale = { bounce.getValue(t).value })
+                }
             }
         }
-        DsFab(
-            Icons.Rounded.Add, stringResource(R.string.cd_add), onAdd,
-            Modifier.requiredSize(Sizes.fab).shadow(Elevation.floating, Radii.pill, ambientColor = shadow, spotColor = shadow),
-        )
+        AddFab(addOpen, addSheet, fabShown, onAdd, shadow)
     }
 }
 
+/**
+ * The + button. While Quick Add is present the sheet's container is drawn over it (it grows from
+ * these bounds and shrinks back to them), so the button itself is invisible and does not respond.
+ */
 @Composable
-private fun TabItem(tab: Tab, selected: Boolean, onClick: () -> Unit, color: Color, press: MutableInteractionSource, modifier: Modifier = Modifier) {
+private fun AddFab(open: Boolean, sheet: app.daysemble.ui.add.AddSheetState, fabShown: Boolean, onAdd: () -> Unit, shadow: Color) {
+    val m = DsTheme.motion
+    val scale by animateFloatAsState(if (fabShown) 1f else 0f, m.snappy(), label = "fabScale")
+    DsFab(
+        Icons.Rounded.Add, stringResource(R.string.cd_add), onAdd,
+        Modifier
+            .requiredSize(Sizes.fab)
+            .onGloballyPositioned { sheet.fab = it.boundsInRoot() }
+            .graphicsLayer {
+                val k = if (open) 1f else scale
+                scaleX = k; scaleY = k
+                alpha = if (open) 0f else 1f
+            }
+            .then(if (fabShown && !open) Modifier else Modifier.clearAndSetSemantics { })
+            .shadow(Elevation.floating, Radii.pill, ambientColor = shadow, spotColor = shadow),
+    )
+}
+
+@Composable
+private fun TabItem(
+    tab: Tab, selected: Boolean, onClick: () -> Unit, color: Color, press: MutableInteractionSource, modifier: Modifier = Modifier,
+    iconScale: () -> Float = { 1f }, labelAlpha: () -> Float = { 1f },
+) {
     TabLabel(
         tab, color,
         modifier
             .pressScale(press)
             .clip(Radii.pill)
+            .testTag("tab_" + tab.name.lowercase())
             .selectable(selected = selected, interactionSource = press, indication = LocalIndication.current, role = Role.Tab, onClick = onClick),
+        iconScale, labelAlpha,
     )
 }
 
+/** The scroll distance (px) that hides or shows the FAB. */
+private const val FAB_SCROLL_SLOP = 2f
+
+/** Peak scale of a tab icon's bounce, and the opacity of a tab label that is not selected. */
+private const val TAB_BOUNCE = 1.18f
+private const val TAB_REST_ALPHA = 0.72f
+
 /** Icon and label of a tab; they never move or resize. */
 @Composable
-private fun TabLabel(tab: Tab, color: Color, modifier: Modifier = Modifier) {
+private fun TabLabel(tab: Tab, color: Color, modifier: Modifier = Modifier, iconScale: () -> Float = { 1f }, labelAlpha: () -> Float = { 1f }) {
     Column(
         modifier
             .heightIn(min = Sizes.bottomBar - 16.dp)
@@ -1004,8 +1253,11 @@ private fun TabLabel(tab: Tab, color: Color, modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(tab.icon, null, tint = color, modifier = Modifier.size(20.dp))
-        Text(stringResource(tab.label), style = DsTheme.type.caps, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(tab.icon, null, tint = color, modifier = Modifier.size(20.dp).graphicsLayer { iconScale().let { scaleX = it; scaleY = it } })
+        Text(
+            stringResource(tab.label), style = DsTheme.type.caps, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.graphicsLayer { alpha = labelAlpha() },
+        )
     }
 }
 

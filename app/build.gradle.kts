@@ -18,6 +18,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Only the benchmark build type seeds data (see BenchmarkSeed); constant false elsewhere, so R8 drops the call.
+        buildConfigField("boolean", "BENCHMARK_DATA", "false")
     }
 
     // Release signing comes only from environment variables (CI secrets or your shell); no keys in the repo.
@@ -38,6 +40,15 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+        }
+        // For the macrobenchmark module: the release build (minified, not debuggable) signed with the
+        // debug key, with sample data seeded on first start. Never distributed.
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            isDebuggable = false
+            buildConfigField("boolean", "BENCHMARK_DATA", "true")
         }
         release {
             releaseSigning?.let { signingConfig = it }
