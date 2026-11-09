@@ -237,6 +237,7 @@ fun TaskRow(
         modifier
             .fillMaxWidth()
             .heightIn(min = Sizes.rowMin)
+            .newItemHighlight(task.id)
             .itemClick(onClick, onLongClick)
             .semantics { if (actions.isNotEmpty()) customActions = actions }
             .padding(start = if (isSubtask) Space.gutter + Space.xl else Space.gutter - 13.dp, end = Space.gutter, top = Space.xxs, bottom = Space.xxs),
