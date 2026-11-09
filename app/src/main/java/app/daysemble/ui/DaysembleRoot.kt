@@ -162,6 +162,7 @@ import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 import app.daysemble.ui.today.TodayRoute as TodayScreenRoute
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -776,18 +777,15 @@ internal fun MainHeader(
  * opened yet are composed in the background, one at a time, when the main thread is idle (never
  * during a scroll, a transition or the splash), so even the first switch has nothing to build.
  *
- * Switching: the new tab is placed on top and fades in over the old one, which stays fully drawn
- * underneath until it is covered and is then hidden. So no frame is ever blank. (The previous
- * fade-through faded the old tab out before the new one came in, which left one or two nearly
- * empty frames on every switch, seen as a flash.) The new tab comes in on a fast-starting curve
- * with a small shift in tab order. Alpha and shift are read only in the draw phase, so nothing
- * recomposes per frame; a switch that interrupts another simply continues from the current values.
+ * Switching is a Material fade-through, the same for every pair of tabs: the tab you leave fades
+ * out, then the new one fades in from 92 % to full size (see [DsMotion.fadeThrough]). Alpha and
+ * scale are read only in the draw phase, so nothing recomposes per frame, and a switch that
+ * interrupts another continues from the current values. With motion off the new tab appears at once.
  */
 @Composable
 private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab) -> Unit) {
     val m = DsTheme.motion
     val c = DsTheme.colors
-    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val holder = rememberSaveableStateHolder()
     var visited by rememberSaveable { mutableStateOf(listOf(current.name)) }
     androidx.compose.runtime.SideEffect { if (current.name !in visited) visited = visited + current.name }
@@ -807,22 +805,32 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
     androidx.compose.runtime.SideEffect { if (current.name !in seen) seen = seen + current.name }
 
     val alpha = remember { Tab.entries.associateWith { Animatable(if (it == current) 1f else 0f) } }
-    // Tabs being drawn, bottom to top. Usually just the current one; during a switch the one being
-    // covered is under it.
+    val scale = remember { Tab.entries.associateWith { Animatable(1f) } }
+    // Tabs being drawn, bottom to top. Usually just the current one; during a switch the ones
+    // fading out are under it.
     var stack by remember { mutableStateOf(listOf(current)) }
-    var direction by remember { mutableIntStateOf(0) }
     LaunchedEffect(current) {
         if (stack.last() == current) return@LaunchedEffect
-        direction = Integer.signum(current.ordinal - stack.last().ordinal)
-        stack = stack.filter { it != current } + current
+        val leaving = stack.filter { it != current }
+        stack = leaving + current
         val incoming = alpha.getValue(current)
-        if (m.reduced) incoming.snapTo(1f) else incoming.animateTo(1f, m.tabEnter())
-        // Covered completely: the others are hidden (and unplaced) until they are shown again.
-        Tab.entries.forEach { t -> if (t != current) alpha.getValue(t).snapTo(0f) }
+        val grow = scale.getValue(current)
+        if (!m.enabled) {
+            incoming.snapTo(1f)
+        } else {
+            coroutineScope {
+                // Out first, then in: the tabs being left fade out while the new one waits.
+                leaving.forEach { t -> launch { alpha.getValue(t).animateTo(0f, m.fadeThroughOut()) } }
+                if (incoming.value == 0f) grow.snapTo(m.fadeThroughScale)
+                launch { grow.animateTo(1f, m.fadeThroughIn()) }
+                incoming.animateTo(1f, m.fadeThroughIn())
+            }
+        }
+        // Covered or faded completely: the others are hidden (and unplaced) until they are shown again.
+        Tab.entries.forEach { t -> if (t != current) { alpha.getValue(t).snapTo(0f); scale.getValue(t).snapTo(1f) } }
         stack = listOf(current)
     }
     val currentTab by rememberUpdatedState(current)
-    val shift = with(LocalDensity.current) { m.tabShift.toPx() }
     // A hidden tab stays composed, so it must not keep keyboard focus (typing would go on editing
     // it, e.g. the Tasks search) or take focus while hidden. Focus held by the tab you leave is
     // cleared as you switch; hidden tabs refuse focus moving into them.
@@ -841,10 +849,9 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                         Modifier
                             .layoutId(t)
                             .graphicsLayer {
-                                val a = alpha.getValue(t).value
-                                this.alpha = a
-                                val dir = if (rtl) -direction else direction
-                                translationX = if (t == currentTab) dir * shift * (1f - a) else 0f
+                                this.alpha = alpha.getValue(t).value
+                                val sc = scale.getValue(t).value
+                                scaleX = sc; scaleY = sc
                             }
                             // Opaque, so the tab being covered never shows through the finished one.
                             .background(c.background)
@@ -931,6 +938,13 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
         // label's own colour instead turned the target white on the white bar before the pill got
         // there, and left the tab the pill passed over dark on black.) Read in the draw phase only.
         val index by animateFloatAsState(current.ordinal.toFloat(), m.indicator(), label = "tabIndicator")
+        // The tab you land on gives its icon a small bounce; the labels of the other tabs sit back.
+        val bounce = remember { Tab.entries.associateWith { Animatable(1f) } }
+        var lastTab by remember { mutableStateOf(current) }
+        LaunchedEffect(current) {
+            if (lastTab != current) with(m) { bounce.getValue(current).pop(peak = TAB_BOUNCE) }
+            lastTab = current
+        }
         val pill = c.inverse
         val presses = remember { Tab.entries.associateWith { MutableInteractionSource() } }
         val pillPath = remember { Path() }
@@ -960,7 +974,11 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Tab.entries.forEach { t ->
-                    TabItem(t, t == current, { onSelect(t) }, c.textSecondary, presses.getValue(t), Modifier.weight(1f))
+                    TabItem(
+                        t, t == current, { onSelect(t) }, c.textSecondary, presses.getValue(t), Modifier.weight(1f),
+                        iconScale = { bounce.getValue(t).value },
+                        labelAlpha = { TAB_REST_ALPHA + (1f - TAB_REST_ALPHA) * (1f - kotlin.math.abs(index - t.ordinal)).coerceIn(0f, 1f) },
+                    )
                 }
             }
             // The light copy: drawing only (no input, not read out). It shares each tab's press, so
@@ -972,7 +990,9 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
                     .drawWithContent { clipPath(pillPath()) { this@drawWithContent.drawContent() } },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Tab.entries.forEach { t -> TabLabel(t, c.onInverse, Modifier.weight(1f).pressScale(presses.getValue(t))) }
+                Tab.entries.forEach { t ->
+                    TabLabel(t, c.onInverse, Modifier.weight(1f).pressScale(presses.getValue(t)), iconScale = { bounce.getValue(t).value })
+                }
             }
         }
         DsFab(
@@ -983,19 +1003,27 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
 }
 
 @Composable
-private fun TabItem(tab: Tab, selected: Boolean, onClick: () -> Unit, color: Color, press: MutableInteractionSource, modifier: Modifier = Modifier) {
+private fun TabItem(
+    tab: Tab, selected: Boolean, onClick: () -> Unit, color: Color, press: MutableInteractionSource, modifier: Modifier = Modifier,
+    iconScale: () -> Float = { 1f }, labelAlpha: () -> Float = { 1f },
+) {
     TabLabel(
         tab, color,
         modifier
             .pressScale(press)
             .clip(Radii.pill)
             .selectable(selected = selected, interactionSource = press, indication = LocalIndication.current, role = Role.Tab, onClick = onClick),
+        iconScale, labelAlpha,
     )
 }
 
+/** Peak scale of a tab icon's bounce, and the opacity of a tab label that is not selected. */
+private const val TAB_BOUNCE = 1.18f
+private const val TAB_REST_ALPHA = 0.72f
+
 /** Icon and label of a tab; they never move or resize. */
 @Composable
-private fun TabLabel(tab: Tab, color: Color, modifier: Modifier = Modifier) {
+private fun TabLabel(tab: Tab, color: Color, modifier: Modifier = Modifier, iconScale: () -> Float = { 1f }, labelAlpha: () -> Float = { 1f }) {
     Column(
         modifier
             .heightIn(min = Sizes.bottomBar - 16.dp)
@@ -1004,8 +1032,11 @@ private fun TabLabel(tab: Tab, color: Color, modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(tab.icon, null, tint = color, modifier = Modifier.size(20.dp))
-        Text(stringResource(tab.label), style = DsTheme.type.caps, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(tab.icon, null, tint = color, modifier = Modifier.size(20.dp).graphicsLayer { iconScale().let { scaleX = it; scaleY = it } })
+        Text(
+            stringResource(tab.label), style = DsTheme.type.caps, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.graphicsLayer { alpha = labelAlpha() },
+        )
     }
 }
 

@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
  * | Role                      | Spec                                   | Where                                    |
  * |---------------------------|----------------------------------------|------------------------------------------|
  * | Feedback                  | [feedback] 100 ms, [indicator] spring  | press, selection pills, toggles, chips   |
- * | Primary tabs              | [tabEnter] 160 ms over the old tab     | Today / Calendar / Tasks (TabHost)       |
+ * | Primary tabs              | [fadeThroughIn] / [fadeThroughOut]     | Today / Calendar / Tasks (TabHost)       |
  * | Open / close a page       | [pushIn]/[pushOut] over a still page   | Search, Settings and its pages           |
  * | Editors and event detail  | [riseIn]/[sinkOut] over a still page   | task/event editors, event detail         |
  * | Theme change              | snapshot cross-fade, draw phase only   | DaysembleTheme                           |
@@ -172,13 +172,13 @@ data class DsMotion(val reduced: Boolean = false) {
     // ---- Primary tabs (see TabHost in DaysembleRoot) --------------------------------------------
 
     /**
-     * Incoming tab: fades in over the outgoing one (which stays drawn until covered) on a curve that
-     * starts fast, so the new tab is mostly there within a few frames. No delay, so a tap shows a
-     * response on the next frame. Shift of [tabShift] in tab order hints at the direction.
+     * Material fade-through: the outgoing tab fades out in [fadeThroughOutMillis], the incoming one
+     * then fades in over [medium] ms while growing from [fadeThroughScale] to full size.
      */
-    val tabEnterMillis: Int get() = if (reduced) 0 else 160
-    val tabShift get() = if (reduced) 0.dp else 8.dp
-    fun tabEnter(): FiniteAnimationSpec<Float> = tween(tabEnterMillis, easing = EmphasizedDecelerate)
+    val fadeThroughOutMillis: Int get() = (short * 0.6f).toInt()
+    val fadeThroughScale: Float get() = 0.92f
+    fun fadeThroughOut(): FiniteAnimationSpec<Float> = tween(fadeThroughOutMillis, easing = Standard)
+    fun fadeThroughIn(): FiniteAnimationSpec<Float> = tween(medium, delayMillis = fadeThroughOutMillis, easing = EmphasizedDecelerate)
 
     // ---- Content replaced inside a screen -------------------------------------------------------
 
