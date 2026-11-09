@@ -579,9 +579,17 @@ private fun NavHostController.backFrom(from: NavBackStackEntry) {
  * still on top, so it can't close a different page. The main screen is never popped.
  */
 private fun NavHostController.closeFrom(from: NavBackStackEntry) {
+    // A page is still animating out: a second tap would land on the page being revealed under it.
+    if (pagesLeaving > 0) return
     val top = currentBackStackEntry ?: return
     if (top.id == from.id && !top.destination.hasRoute<MainRoute>()) popBackStack()
 }
+
+/**
+ * How many pages are currently animating out after Back. Pages slide sideways, so the page being
+ * revealed is not fully covered by the one leaving; [closeFrom] ignores taps meanwhile. Main thread only.
+ */
+private var pagesLeaving = 0
 
 /**
  * A page opened over the main screen. It takes all touches inside its bounds (pages draw an opaque
@@ -592,6 +600,10 @@ private fun NavHostController.closeFrom(from: NavBackStackEntry) {
 @Composable
 private fun AnimatedContentScope.Page(content: @Composable () -> Unit) {
     val leaving = transition.targetState == EnterExitState.PostExit
+    DisposableEffect(leaving) {
+        if (leaving) pagesLeaving++
+        onDispose { if (leaving) pagesLeaving-- }
+    }
     Box(
         Modifier
             .fillMaxSize()
@@ -613,8 +625,8 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
         navController = nav,
         startDestination = MainRoute,
         enterTransition = { with(NavMotion) { enter(m, rtl, density) } },
-        exitTransition = { with(NavMotion) { exit(m) } },
-        popEnterTransition = { with(NavMotion) { popEnter() } },
+        exitTransition = { with(NavMotion) { exit(m, rtl, density) } },
+        popEnterTransition = { with(NavMotion) { popEnter(m, rtl, density) } },
         popExitTransition = { with(NavMotion) { popExit(m, rtl, density) } },
         predictivePopEnterTransition = { NavMotion.predictivePopEnter() },
         predictivePopExitTransition = { edge -> NavMotion.predictivePopExit(m, density, edge) },

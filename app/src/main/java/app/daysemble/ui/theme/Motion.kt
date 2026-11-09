@@ -9,17 +9,17 @@ import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Density
@@ -33,8 +33,7 @@ import androidx.compose.ui.unit.dp
  * |---------------------------|----------------------------------------|------------------------------------------|
  * | Feedback                  | [feedback] 100 ms, [indicator] spring  | press, selection pills, toggles, chips   |
  * | Primary tabs              | [fadeThroughIn] / [fadeThroughOut]     | Today / Calendar / Tasks (TabHost)       |
- * | Open / close a page       | [pushIn]/[pushOut] over a still page   | Search, Settings and its pages           |
- * | Editors and event detail  | [riseIn]/[sinkOut] over a still page   | task/event editors, event detail         |
+ * | Open / close a page       | [sharedAxisEnter]/[sharedAxisExit]     | Settings and its pages, editors, details |
  * | Theme change              | snapshot cross-fade, draw phase only   | DaysembleTheme                           |
  * | Content change in place   | [fadeThrough]                          | day summary, calendar view, quick add    |
  * | List for another day      | ContentSwap: at once + [swapShift]     | Today agenda, selected day in Month view |
@@ -213,44 +212,46 @@ data class DsMotion(val reduced: Boolean = false) {
 
     // ---- Screen transitions (NavMotion) ---------------------------------------------------------
     //
-    // A page opens over the one it came from and closes off it: the page underneath stays still and
-    // fully drawn throughout, so no frame is ever blank and nothing under the moving page moves. The
-    // same rule holds for the predictive back gesture, so the gesture and a tap on Back look alike.
+    // Shared axis X: the page being left fades out and drifts [axisDistance] one way while the new
+    // page fades in (after the old one is gone) and drifts in from the other. Going back mirrors it.
+    // The slide is a spring, so a tap during the transition reverses it from where it is. Offsets
+    // flip in right-to-left layouts. Reduced motion: the new page fades in over the old one, which
+    // stays drawn underneath until it is covered.
 
-    /** A page arriving: slides [axisDistance] in from the end edge while fading in quickly. */
-    fun pushIn(rtl: Boolean, density: Density): EnterTransition {
+    /** A page arriving: [forward] from the end edge, or back (the page being revealed) from the start edge. */
+    fun sharedAxisEnter(forward: Boolean, rtl: Boolean, density: Density): EnterTransition {
         if (reduced) return fadeIn(tween(short, easing = Standard))
-        val d = with(density) { axisDistance.roundToPx() } * if (rtl) -1 else 1
-        return fadeIn(tween(PAGE_FADE, easing = EmphasizedDecelerate)) +
-            slideInHorizontally(tween(long, easing = EmphasizedDecelerate)) { d }
+        val d = axisPx(forward, rtl, density, leaving = false)
+        return fadeIn(fadeThroughIn()) + slideInHorizontally(spring()) { d }
     }
 
-    /** A page leaving (Back): drifts [axisDistance] toward the end edge while fading out. */
-    fun pushOut(rtl: Boolean, density: Density): ExitTransition {
-        if (reduced) return fadeOut(tween(short, easing = Standard))
-        val d = with(density) { axisDistance.roundToPx() } * if (rtl) -1 else 1
-        return fadeOut(tween(PAGE_FADE, easing = Standard)) + slideOutHorizontally(tween(PAGE_OUT, easing = Standard)) { d }
+    /** A page leaving: covered by a new page ([forward]), or closed by Back. */
+    fun sharedAxisExit(forward: Boolean, rtl: Boolean, density: Density): ExitTransition {
+        // An alpha that stays 1 keeps the page composed and drawn until the new one has covered it.
+        if (reduced) return fadeOut(tween(short), targetAlpha = 1f)
+        val d = axisPx(forward, rtl, density, leaving = true)
+        return fadeOut(fadeThroughOut()) + slideOutHorizontally(spring()) { d }
     }
 
-    /** Editors and the event detail rise in from just below. */
-    fun riseIn(density: Density): EnterTransition {
-        if (reduced) return fadeIn(tween(short, easing = Standard))
-        val d = with(density) { axisDistance.roundToPx() }
-        return fadeIn(tween(PAGE_FADE, easing = EmphasizedDecelerate)) +
-            slideInVertically(tween(long, easing = EmphasizedDecelerate)) { d }
-    }
-
-    fun sinkOut(density: Density): ExitTransition {
-        if (reduced) return fadeOut(tween(short, easing = Standard))
-        val d = with(density) { axisDistance.roundToPx() }
-        return fadeOut(tween(PAGE_FADE, easing = Standard)) + slideOutVertically(tween(PAGE_OUT, easing = Standard)) { d }
+    private fun axisPx(forward: Boolean, rtl: Boolean, density: Density, leaving: Boolean): Int {
+        val dist = with(density) { axisDistance.roundToPx() }
+        // Forward: arrives from +x, the old page leaves toward -x. Back: the revealed page arrives from -x, the closing one leaves toward +x.
+        val sign = if (forward == leaving) -1 else 1
+        return sign * dist * if (rtl) -1 else 1
     }
 
     /**
-     * The page underneath while another one opens over it: unchanged and fully drawn until the
-     * new page has finished arriving (an alpha that stays 1, which keeps it in the transition).
+     * The page under the back gesture: shrinks to [backScale] and drifts away from the edge the
+     * gesture started at (0 = left, 1 = right), fading in its last part, while the page beneath
+     * (already complete) is revealed. Scrubbed by the finger; this spec only plays on commit.
      */
-    fun holdUnderneath(): ExitTransition = fadeOut(tween(long), targetAlpha = 1f)
+    val backScale: Float get() = 0.92f
+    fun predictiveBackExit(density: Density, swipeEdge: Int): ExitTransition {
+        if (reduced) return fadeOut(tween(short))
+        val shift = with(density) { axisDistance.roundToPx() } * if (swipeEdge == 1) -1 else 1
+        return scaleOut(spring(), targetScale = backScale) + slideOutHorizontally(spring()) { shift } +
+            fadeOut(keyframes { durationMillis = long; 1f at (long * 0.6f).toInt() using Standard; 0f at long })
+    }
 
     /** One-off onboarding entrance: total length; groups are staggered by [entranceStagger]. */
     val entrance: Int get() = if (reduced) 0 else 420
@@ -263,10 +264,6 @@ data class DsMotion(val reduced: Boolean = false) {
          */
         const val OUT = 90
         const val IN_DELAY = 60
-        /** Fade of a page opening or closing over a still page. */
-        const val PAGE_FADE = 150
-        /** Drift of a page closing. */
-        const val PAGE_OUT = 200
         /** Stiffness of [settle]. With mass 1, response = 2π / √650 ≈ 0.25 s. */
         const val SETTLE_STIFFNESS = 650f
         const val PRESS_SCALE = 0.96f

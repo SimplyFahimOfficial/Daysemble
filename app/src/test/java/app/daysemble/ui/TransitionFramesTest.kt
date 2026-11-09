@@ -156,13 +156,13 @@ class TransitionFramesTest {
         assertThat(during.count { it > dark + 0.1 * (light - dark) && it < light - 0.1 * (light - dark) }).isAtLeast(3)
     }
 
-    @Test fun openingAndClosingSettings_neverShowsABlankFrame() {
-        assertNoBlankFrame("open Settings") { compose.onNodeWithContentDescription("Settings").performClick() }
-        assertNoBlankFrame("open Appearance") { compose.onAllNodesWithText("Appearance").onFirst().performClick() }
-        assertNoBlankFrame("back to Settings") {
+    @Test fun openingAndClosingSettings_fadesThroughAndComesBack() {
+        assertFadesThrough("open Settings") { compose.onNodeWithContentDescription("Settings").performClick() }
+        assertFadesThrough("open Appearance") { compose.onAllNodesWithText("Appearance").onFirst().performClick() }
+        assertFadesThrough("back to Settings") {
             compose.onNode(hasContentDescription("Back") and hasClickAction()).performClick()
         }
-        assertNoBlankFrame("back to Today") {
+        assertFadesThrough("back to Today") {
             compose.onNode(hasContentDescription("Back") and hasClickAction()).performClick()
         }
         assertThat(compose.onAllNodesWithText("Your name").fetchSemanticsNodes()).isEmpty()
