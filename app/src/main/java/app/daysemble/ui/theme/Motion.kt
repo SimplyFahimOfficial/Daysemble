@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.dp
  * | Open / close a page       | [sharedAxisEnter]/[sharedAxisExit]     | Settings and its pages, editors, details |
  * | Theme change              | snapshot cross-fade, draw phase only   | DaysembleTheme                           |
  * | Content change in place   | [fadeThrough]                          | day summary, calendar view, quick add    |
- * | List for another day      | ContentSwap: at once + [swapShift]     | Today agenda, selected day in Month view |
+ * | List for another day      | ContentSwap: at once, fade + [contentShift] | Today agenda, selected day in Month view |
  * | Rows changing in a list   | itemMotion (animateItem)               | completion, delete, add, reorder         |
  * | Expand / collapse         | [expandIn]/[collapseOut]               | subtasks, field errors, repeat options   |
  * | Overview panel drag       | finger, then [settle] with its velocity| Today (moved in placement, not measured) |
@@ -103,9 +103,6 @@ data class DsMotion(val reduced: Boolean = false) {
     val contentShift get() = 12.dp
     /** The same for a list whose filter changed. */
     val listShift get() = 8.dp
-
-    /** Shift of a list swapped for another day (ContentSwap): a hint of direction, drawn only. */
-    val swapShift get() = contentShift
 
     /** Resting size of a pop (selected day) at its peak, and the lift of a held row. */
     val popScale: Float get() = 1.15f

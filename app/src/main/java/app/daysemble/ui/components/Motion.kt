@@ -18,8 +18,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.LayoutDirection
 import app.daysemble.ui.theme.DsTheme
 
 /**
@@ -51,28 +49,32 @@ fun LazyItemScope.itemMotion(fadeOut: Boolean = true): Modifier {
 }
 
 /**
- * Content that is replaced as a whole when [key] changes (a list for another day). Rows of the new
- * content appear immediately, in one piece, with no per-row fade (which, together with the old rows
- * fading out, showed two days on top of each other and made the list flash). Only a short shift of
- * [app.daysemble.ui.theme.DsMotion.swapShift] in [direction] (+1 forward, -1 back) says which way the day moved; it is drawn,
- * not laid out, so nothing re-measures. Reduced motion: no shift.
+ * Content that is replaced as a whole when [key] changes (a list for another day). The new content
+ * appears at once, in one piece (no per-row fade, which together with the old rows fading out
+ * showed two days on top of each other), fading in while it rises by
+ * [app.daysemble.ui.theme.DsMotion.contentShift]. Both are drawn, not laid out, so nothing
+ * re-measures. Motion off: no fade, no rise.
  *
  * The caller keys anything that belongs to one version of the content (e.g. its LazyListState)
  * inside [content], which is re-created per [key].
  */
 @Composable
-fun <K> ContentSwap(key: K, direction: Int, content: @Composable () -> Unit) {
+fun <K> ContentSwap(key: K, content: @Composable () -> Unit) {
     val m = DsTheme.motion
-    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val shiftPx = with(LocalDensity.current) { m.swapShift.toPx() }
+    val shiftPx = with(LocalDensity.current) { m.contentShift.toPx() }
     androidx.compose.runtime.key(key) {
         // Rows appear at once for the first frames of this version, then item motion is normal again.
         var fresh by remember { mutableStateOf(true) }
         LaunchedEffect(Unit) { withFrameNanos { }; withFrameNanos { }; fresh = false }
-        val shift = remember { Animatable(if (m.reduced || direction == 0) 0f else 1f) }
-        LaunchedEffect(Unit) { if (shift.value != 0f) shift.animateTo(0f, m.enter(m.medium)) }
-        val dir = (if (rtl) -direction else direction).toFloat()
-        androidx.compose.foundation.layout.Box(Modifier.graphicsLayer { translationX = dir * shiftPx * shift.value }) {
+        val enter = remember { Animatable(if (m.enabled) 0f else 1f) }
+        LaunchedEffect(Unit) { if (enter.value < 1f) enter.animateTo(1f, m.spring()) }
+        androidx.compose.foundation.layout.Box(
+            Modifier.graphicsLayer {
+                val p = enter.value
+                alpha = p.coerceIn(0f, 1f)
+                translationY = (1f - p) * shiftPx
+            },
+        ) {
             CompositionLocalProvider(LocalItemsAppear provides !fresh) { content() }
         }
     }

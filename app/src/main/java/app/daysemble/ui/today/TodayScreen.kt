@@ -3,7 +3,14 @@ package app.daysemble.ui.today
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.onSizeChanged
+import kotlin.math.sign
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -231,6 +238,7 @@ fun TodayScreen(
     val expandedTarget = panel.state.targetValue == OverviewValue.Expanded
     val overviewScroll = remember(panel) { OverviewScroll(panel) }
     val overviewScrollState = rememberScrollState()
+    val swipe = remember { DaySwipeState() }
 
     Layout(
         modifier = Modifier.fillMaxSize().background(c.background).testTag(TodayTags.SCREEN),
@@ -244,6 +252,7 @@ fun TodayScreen(
                         val p = panel.progress()
                         alpha = (1f - p / 0.35f).coerceIn(0f, 1f)
                         translationY = -p * 8.dp.toPx()
+                        translationX = swipe.offset * DaySwipeState.PARALLAX
                     }
                     .then(if (expandedTarget) Modifier.clearAndSetSemantics { } else Modifier),
             ) { CompactOverview(state) }
@@ -254,7 +263,10 @@ fun TodayScreen(
                     Modifier
                         .nestedScroll(overviewScroll)
                         .verticalScroll(overviewScrollState, overscrollEffect = null)
-                        .graphicsLayer { alpha = ((panel.progress() - 0.35f) / 0.65f).coerceIn(0f, 1f) },
+                        .graphicsLayer {
+                            alpha = ((panel.progress() - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                            translationX = swipe.offset * DaySwipeState.PARALLAX
+                        },
                 ) {
                     ExpandedOverview(
                         state, now, displayName, interactive = expandedTarget,
@@ -267,7 +279,7 @@ fun TodayScreen(
                 state, now, contentPadding, panel,
                 onToggle = { scope.launch { panel.animateTo(if (expandedTarget) OverviewValue.Collapsed else OverviewValue.Expanded) } },
                 onSelectDate = onSelectDate, onToday = onToday, onToggleTask = onToggleTask,
-                onOpenEvent = onOpenEvent, onOpenTask = onOpenTask, onAddEvent = onAddEvent, onAddTask = onAddTask, marks = marks,
+                onOpenEvent = onOpenEvent, onOpenTask = onOpenTask, onAddEvent = onAddEvent, onAddTask = onAddTask, marks = marks, swipe = swipe,
             )
         },
     ) { measurables, constraints ->
@@ -541,6 +553,7 @@ private fun AgendaPanel(
     onAddEvent: (LocalDate) -> Unit,
     onAddTask: (LocalDate) -> Unit,
     marks: Map<LocalDate, List<Int>>,
+    swipe: DaySwipeState,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
@@ -571,17 +584,15 @@ private fun AgendaPanel(
         var showCompleted by rememberSaveable { mutableStateOf(false) }
         // Another day replaces the list as a whole (no row-by-row cross-fade of two days) and it
         // starts at the top; within a day, rows animate as they change. See ContentSwap.
-        var shownDate by remember { mutableStateOf(state.date) }
-        val direction = state.date.compareTo(shownDate).coerceIn(-1, 1)
-        androidx.compose.runtime.SideEffect { shownDate = state.date }
-        app.daysemble.ui.components.ContentSwap(state.date, direction) {
+        DaySwipe(swipe, state.date, onSelectDate) {
+        app.daysemble.ui.components.ContentSwap(state.date) {
         val list = rememberLazyListState()
         val startedAtTop = remember { booleanArrayOf(false) }
         val listScroll = remember(panel) { AgendaScroll(panel) { startedAtTop[0] } }
         LazyColumn(
             state = list,
             modifier = Modifier
-                .weight(1f)
+                .fillMaxSize()
                 .testTag(TodayTags.AGENDA)
                 .pointerInput(list) {
                     // Remember whether the gesture began with the list at its top: only then may a
@@ -665,6 +676,7 @@ private fun AgendaPanel(
                     }
                 }
             }
+        }
         }
         }
     }
@@ -823,4 +835,69 @@ private class AgendaScroll(private val panel: OverviewPanel, private val started
 
     override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity =
         if (!panel.isAtAnchor()) { panel.settle(available.y); available } else Velocity.Zero
+}
+
+// ---- Swiping the day ----------------------------------------------------------------------------
+
+/** How far the agenda has been dragged sideways (px), shared with the header so it can trail behind it. */
+@Stable
+class DaySwipeState {
+    var offset by mutableFloatStateOf(0f)
+
+    companion object {
+        /** The header moves this share of the content's drag: a slight parallax. */
+        const val PARALLAX = 0.2f
+        /** The share of the width, or the speed (dp/s), that commits the swipe to the next or previous day. */
+        const val COMMIT_SHARE = 0.28f
+        const val COMMIT_VELOCITY = 900
+        /** Resistance while dragging: the content follows the finger by this share. */
+        const val RESISTANCE = 0.85f
+    }
+}
+
+/**
+ * A horizontal swipe on the agenda changes the day: the content follows the finger (with a little
+ * resistance) and the header trails it at [DaySwipeState.PARALLAX]; past the threshold (one tick) it
+ * slides off and the next or previous day fades in, otherwise it springs back. The week strip
+ * follows the selected date by itself. Vertical scrolling and the panel drag are untouched.
+ */
+@Composable
+private fun DaySwipe(state: DaySwipeState, date: LocalDate, onSelect: (LocalDate) -> Unit, content: @Composable () -> Unit) {
+    val m = DsTheme.motion
+    val haptics = app.daysemble.ui.components.rememberHaptics()
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val density = LocalDensity.current
+    val velocityPx = with(density) { DaySwipeState.COMMIT_VELOCITY.dp.toPx() }
+    var width by remember { mutableIntStateOf(0) }
+    var armed by remember { mutableStateOf(false) }
+    val select by androidx.compose.runtime.rememberUpdatedState(onSelect)
+    val shown by androidx.compose.runtime.rememberUpdatedState(date)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onSizeChanged { width = it.width }
+            .draggable(
+                rememberDraggableState { delta ->
+                    state.offset += delta * DaySwipeState.RESISTANCE
+                    val past = abs(state.offset) > width * DaySwipeState.COMMIT_SHARE
+                    if (past != armed) { armed = past; if (past) haptics.tick() }
+                },
+                Orientation.Horizontal,
+                onDragStopped = { velocity ->
+                    armed = false
+                    // Dragging toward the start edge (left in LTR) goes to the next day.
+                    val toward = if (state.offset != 0f) -sign(state.offset) else -sign(velocity)
+                    val next = if (rtl) -toward else toward
+                    val commit = abs(state.offset) > width * DaySwipeState.COMMIT_SHARE || abs(velocity) > velocityPx
+                    if (commit && abs(state.offset) > 0f) {
+                        animate(state.offset, sign(state.offset) * width * 0.5f, animationSpec = m.snappy()) { v, _ -> state.offset = v }
+                        select(shown.plusDays(next.toLong()))
+                        state.offset = 0f
+                    } else {
+                        animate(state.offset, 0f, animationSpec = m.spring()) { v, _ -> state.offset = v }
+                    }
+                },
+            )
+            .graphicsLayer { translationX = state.offset },
+    ) { content() }
 }
