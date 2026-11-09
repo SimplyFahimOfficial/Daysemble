@@ -144,6 +144,7 @@ fun TodayRoute(
 ) {
     val vm = daysembleViewModel { c, h -> TodayViewModel(c.events, c.tasks, c.settings, c.clock, c.timeContext, h, sleepRepo = c.sleep, seriesReader = c.taskSeries) }
     val state by vm.state.collectAsStateWithLifecycle()
+    val marks by vm.marks.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()
     val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     val container = (androidx.compose.ui.platform.LocalContext.current.applicationContext as app.daysemble.DaysembleApp).container
@@ -158,6 +159,7 @@ fun TodayRoute(
         onToggleTask = { id, done -> vm.setCompleted(id, done) { r -> if (done) onCompleted(id, r) } }, onOpenEvent = onOpenEvent, onOpenTask = onOpenTask,
         onAddEvent = onAddEvent, onAddTask = onAddTask,
         sleep = TodaySleep(sleepActions, records, onOpenSchedule),
+        marks = marks,
     )
     app.daysemble.ui.sleep.SleepPrompts(sleepActions)
 }
@@ -210,6 +212,7 @@ fun TodayScreen(
     onAddEvent: (LocalDate) -> Unit = {},
     onAddTask: (LocalDate) -> Unit = {},
     sleep: TodaySleep = TodaySleep(),
+    marks: Map<LocalDate, List<Int>> = emptyMap(),
 ) {
     val sleepActions = sleep.actions
     val onOpenSchedule = sleep.onOpenSchedule
@@ -264,7 +267,7 @@ fun TodayScreen(
                 state, now, contentPadding, panel,
                 onToggle = { scope.launch { panel.animateTo(if (expandedTarget) OverviewValue.Collapsed else OverviewValue.Expanded) } },
                 onSelectDate = onSelectDate, onToday = onToday, onToggleTask = onToggleTask,
-                onOpenEvent = onOpenEvent, onOpenTask = onOpenTask, onAddEvent = onAddEvent, onAddTask = onAddTask,
+                onOpenEvent = onOpenEvent, onOpenTask = onOpenTask, onAddEvent = onAddEvent, onAddTask = onAddTask, marks = marks,
             )
         },
     ) { measurables, constraints ->
@@ -537,6 +540,7 @@ private fun AgendaPanel(
     onOpenTask: (String) -> Unit,
     onAddEvent: (LocalDate) -> Unit,
     onAddTask: (LocalDate) -> Unit,
+    marks: Map<LocalDate, List<Int>>,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
@@ -561,7 +565,7 @@ private fun AgendaPanel(
         // The handle row: dragging it (or the week strip under it) moves the panel; tapping toggles.
         Column(Modifier.anchoredDraggable(panel.state, Orientation.Vertical, flingBehavior = fling)) {
             Handle(expanded = panel.state.targetValue == OverviewValue.Expanded, onToggle = onToggle)
-            WeekStrip(selected = state.date, today = state.today, onSelect = onSelectDate)
+            WeekStrip(selected = state.date, today = state.today, onSelect = onSelectDate, marks = marks, onAddEvent = onAddEvent)
         }
         DashedDivider(Modifier.padding(horizontal = Space.gutter, vertical = Space.xs))
         var showCompleted by rememberSaveable { mutableStateOf(false) }

@@ -141,6 +141,23 @@ class TodayViewModel(
         }
     }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState(selected.value, clock.today()))
 
+    /**
+     * Colours of what is on each day of the weeks around the selected one (event colours, then a
+     * neutral mark for open tasks), for the dots in the week strip. Read-only.
+     */
+    val marks: StateFlow<Map<LocalDate, List<Int>>> = combine(selected, time) { d, t -> d to t }.flatMapLatest { (date, t) ->
+        val start = date.minusDays(((date.dayOfWeek.value - t.firstDayOfWeek.value + 7) % 7).toLong()).minusWeeks(1)
+        val end = start.plusWeeks(3).minusDays(1)
+        combine(events.occurrences(start, end, t.zone), tasks.allTasks) { occ, all ->
+            val byEvents = app.daysemble.ui.calendar.CalendarViewModel.groupByDate(occ, start, end)
+            val byTasks = all.filter { !it.isCompleted && it.parentId == null && it.dueDate?.let { d -> d in start..end } == true }.groupBy { it.dueDate!! }
+            (byEvents.keys + byTasks.keys).associateWith { d ->
+                val colors = byEvents[d].orEmpty().map { it.colorArgb }.distinct().take(MAX_MARKS)
+                if (colors.size < MAX_MARKS && byTasks[d].orEmpty().isNotEmpty()) colors + app.daysemble.ui.components.TASK_MARK else colors
+            }
+        }
+    }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     fun select(date: LocalDate) {
         selected.value = date
         handle[KEY_DATE] = date.toEpochDay()
@@ -315,6 +332,7 @@ class TodayViewModel(
 
     private companion object {
         const val KEY_DATE = "today_selected"
+        const val MAX_MARKS = 3
     }
 }
 

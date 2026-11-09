@@ -1,6 +1,21 @@
 package app.daysemble.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.border
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -99,9 +114,31 @@ fun TodayDot(modifier: Modifier = Modifier, size: Dp = 4.dp, visible: Boolean = 
 private const val WEEKS = 2_000
 private const val CENTER = WEEKS / 2
 
+/** Stand-in colour in a day's marks for "has an open task" (drawn neutral, events use their own colour). */
+const val TASK_MARK = 0
+
+/** Up to three small dots in the colours of what is on a day, fading in [delayMs] after they first appear. */
+@Composable
+fun DayMarks(colors: List<Int>, delayMs: Int, modifier: Modifier = Modifier, dim: Boolean = false) {
+    val c = DsTheme.colors
+    Row(
+        modifier.height(MARK_SIZE).then(if (colors.isEmpty()) Modifier else Modifier.staggeredEntrance(0, baseDelay = delayMs, shift = 0.dp)),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        colors.take(3).forEach { argb ->
+            val color = if (argb == TASK_MARK) c.outlineStrong else eventColor(argb)
+            Box(Modifier.size(MARK_SIZE).clip(CircleShape).background(color.copy(alpha = if (dim) 0.4f else 1f)))
+        }
+    }
+}
+
+private val MARK_SIZE = 5.dp
+
 /**
- * A week of dates, swiped a week at a time. The selected date is a filled circle; today is
- * orange (number, weekday and the date dot), so the two never look alike.
+ * A week of dates, swiped a week at a time. The selected date is a filled circle that slides to
+ * the new date on a spring (and fades between weeks); today is orange (number, weekday and the
+ * date dot, pinned to today whatever is selected), so the two never look alike. Days with items
+ * get small dots in their colours ([marks]). A long press on a day peeks at it ([DayPeek]).
  *
  * Moving to another week by swiping selects a day in it: today if it is this week, otherwise the
  * same weekday. Selecting a date elsewhere (for example "Back to today") brings its week into view.
@@ -112,16 +149,19 @@ fun WeekStrip(
     today: LocalDate,
     onSelect: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
+    marks: Map<LocalDate, List<Int>> = emptyMap(),
+    onAddEvent: (LocalDate) -> Unit = {},
 ) {
     val p = LocalTimePrefs.current
     val m = DsTheme.motion
+    val haptics = rememberHaptics()
     val base = remember(today, p.firstDayOfWeek) { Fmt.weekStart(today, p) }
     fun pageOf(d: LocalDate) = CENTER + ChronoUnit.WEEKS.between(base, Fmt.weekStart(d, p)).toInt()
     val pager = key(base) { rememberPagerState(initialPage = pageOf(selected)) { WEEKS } }
     val target = pageOf(selected)
     LaunchedEffect(pager, target) {
         if (pager.currentPage != target) {
-            if (m.reduced) pager.scrollToPage(target) else pager.animateScrollToPage(target, animationSpec = m.enter(m.long))
+            if (!m.enabled) pager.scrollToPage(target) else pager.animateScrollToPage(target, animationSpec = m.spring())
         }
     }
     // Read through rememberUpdatedState, not captured: a midnight in the middle of the week changes
@@ -140,27 +180,83 @@ fun WeekStrip(
             }
         }
     }
+    var peek by remember { mutableStateOf<Pair<LocalDate, Rect?>?>(null) }
     HorizontalPager(pager, modifier = modifier.fillMaxWidth(), beyondViewportPageCount = 1) { page ->
         val start = base.plusWeeks((page - CENTER).toLong())
+        val index = ChronoUnit.DAYS.between(start, selected).toInt().takeIf { it in 0..6 }
+        val circle = rememberSlidingCircle(index)
+        val ink = DsTheme.colors.inverse
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = Space.s).selectableGroup(),
+            Modifier
+                .fillMaxWidth()
+                .drawBehind {
+                    // The selected circle, under the numbers: it slides between the seven cells.
+                    val a = circle.alpha()
+                    if (a > 0f) {
+                        val pad = Space.s.toPx()
+                        val cell = (size.width - 2 * pad) / 7f
+                        val r = DATE_DISC / 2 * density
+                        drawCircle(ink.copy(alpha = a), r, Offset(pad + cell * (circle.position() + 0.5f), Space.xs.toPx() + r))
+                    }
+                }
+                .padding(horizontal = Space.s)
+                .selectableGroup(),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             repeat(7) { i ->
                 val d = start.plusDays(i.toLong())
-                DateCell(d, d == selected, d == today, { select(d) }, Modifier.weight(1f))
+                DateCell(
+                    d, d == selected, d == today, marks[d].orEmpty(), i,
+                    onClick = { if (d != selected) haptics.tick(); select(d) },
+                    onLongClick = { r -> haptics.tick(); peek = d to r },
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }
+    peek?.let { (d, r) -> DayPeek(d, r, onDismiss = { peek = null }, onAddEvent = onAddEvent) }
 }
 
+/** Diameter (dp) of the selected-date circle; the same as the date disc, so the two line up. */
+private const val DATE_DISC = 38f
+
+/** The position (cell index) and opacity of a selected-date circle on one page: read in the draw phase. */
+@Stable
+private class SlidingCircle(val position: () -> Float, val alpha: () -> Float)
+
+/**
+ * The selected circle of one week page. Moving to another day of the same week slides it there on
+ * the snappy spring; entering or leaving the week fades it in (already in place) or out.
+ */
 @Composable
-private fun DateCell(date: LocalDate, selected: Boolean, isToday: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun rememberSlidingCircle(index: Int?): SlidingCircle {
+    val m = DsTheme.motion
+    val position = remember { Animatable((index ?: 0).toFloat()) }
+    val alpha = remember { Animatable(if (index != null) 1f else 0f) }
+    LaunchedEffect(index) {
+        if (index == null) {
+            alpha.animateTo(0f, if (m.enabled) tween(m.short) else snap())
+        } else if (alpha.value == 0f || !m.enabled) {
+            position.snapTo(index.toFloat())
+            alpha.animateTo(1f, if (m.enabled) tween(m.short) else snap())
+        } else {
+            alpha.animateTo(1f, m.snappy())
+            position.animateTo(index.toFloat(), m.snappy())
+        }
+    }
+    return remember { SlidingCircle({ position.value }, { alpha.value }) }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DateCell(
+    date: LocalDate, selected: Boolean, isToday: Boolean, marks: List<Int>, column: Int,
+    onClick: () -> Unit, onLongClick: (Rect?) -> Unit, modifier: Modifier,
+) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     val p = LocalTimePrefs.current
     val interaction = remember { MutableInteractionSource() }
-    val fill = app.daysemble.ui.components.animateStateColor(if (selected) c.inverse else Color.Transparent, m.indicator(), label = "dateFill")
     val number = app.daysemble.ui.components.animateStateColor(
         when {
             selected -> c.onInverse
@@ -170,14 +266,16 @@ private fun DateCell(date: LocalDate, selected: Boolean, isToday: Boolean, onCli
         m.indicator(), label = "dateNumber",
     )
     val desc = Fmt.fullDate(date, p) + if (isToday) ", " + stringResource(R.string.today_suffix) else ""
+    var bounds by remember { mutableStateOf<Rect?>(null) }
     Column(
         modifier
-            .selectable(selected = selected, interactionSource = interaction, indication = null, role = Role.Tab, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = desc }
+            .onGloballyPositioned { bounds = it.boundsInRoot() }
+            .combinedClickable(interactionSource = interaction, indication = null, role = Role.Tab, onClick = onClick, onLongClick = { onLongClick(bounds) })
+            .semantics(mergeDescendants = true) { this.selected = selected; contentDescription = desc }
             .padding(vertical = Space.xs),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        DateDisc(interaction, fill, size = 38.dp) {
+        DateDisc(interaction, Color.Transparent, size = DATE_DISC.dp) {
             Text(date.dayOfMonth.toString(), style = DsTheme.type.title, color = number, maxLines = 1)
         }
         Spacer(Modifier.height(Space.xs))
@@ -191,6 +289,9 @@ private fun DateCell(date: LocalDate, selected: Boolean, isToday: Boolean, onCli
             maxLines = 1,
         )
         Spacer(Modifier.height(3.dp))
+        // Pinned to today, whatever day is selected.
         TodayDot(visible = isToday)
+        Spacer(Modifier.height(3.dp))
+        DayMarks(marks, delayMs = column * m.markStagger)
     }
 }

@@ -92,6 +92,8 @@ data class DsMotion(val reduced: Boolean = false) {
     val stagger: Int get() = if (reduced) 0 else 40
     /** At most this many items take part in a staggered entrance; the rest appear with the last one. */
     val staggerMax: Int get() = 8
+    /** Stagger of the small day dots under dates. */
+    val markStagger: Int get() = if (reduced) 0 else 20
     fun staggerDelay(index: Int): Int = index.coerceIn(0, staggerMax) * stagger
 
     /** Distance of shared-axis screen transitions. */

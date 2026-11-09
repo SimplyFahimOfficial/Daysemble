@@ -370,6 +370,7 @@
     <string name="mode_day">Day</string>
     <string name="mode_agenda">Agenda</string>
     <string name="day_empty">Nothing on this day.</string>
+    <string name="peek_more">+%1$d more</string>
     <string name="agenda_empty_title">Nothing coming up</string>
     <string name="agenda_empty_body">The next 60 days are clear.</string>
 
