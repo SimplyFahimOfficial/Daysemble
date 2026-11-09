@@ -378,12 +378,14 @@
     <string name="mode_day">Day</string>
     <string name="mode_agenda">Agenda</string>
     <string name="day_empty">Nothing on this day.</string>
-    <string name="peek_more">+%1$d more</string>
+    <plurals name="peek_more">
+        <item quantity="one">+%1$d more</item>
+        <item quantity="other">+%1$d more</item>
+    </plurals>
     <string name="agenda_empty_title">Nothing coming up</string>
     <string name="agenda_empty_body">The next 60 days are clear.</string>
 
     <!-- Search -->
-    <string name="search">Search</string>
     <string name="search_hint">Events, tasks, places</string>
     <string name="search_prompt">Search everything</string>
     <string name="search_prompt_body">Titles, notes and locations of events and tasks.</string>

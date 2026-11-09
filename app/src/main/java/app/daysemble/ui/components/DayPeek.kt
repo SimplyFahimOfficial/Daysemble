@@ -27,6 +27,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -121,7 +122,7 @@ fun DayPeek(date: LocalDate, anchor: Rect?, onDismiss: () -> Unit, onAddEvent: (
                             if (r.time.isNotEmpty()) Text(r.time, style = DsTheme.type.label, color = c.textSecondary, maxLines = 1)
                         }
                     }
-                    if (rows.size > PEEK_ROWS) Text(stringResource(R.string.peek_more, rows.size - PEEK_ROWS), style = DsTheme.type.label, color = c.textSecondary)
+                    if (rows.size > PEEK_ROWS) Text(pluralStringResource(R.plurals.peek_more, rows.size - PEEK_ROWS, rows.size - PEEK_ROWS), style = DsTheme.type.label, color = c.textSecondary)
                 }
             }
             DsButton(
