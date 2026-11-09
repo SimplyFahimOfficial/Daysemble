@@ -15,7 +15,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.foundation.layout.size as boxSize
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -81,7 +80,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -119,14 +117,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavDestination
@@ -450,7 +449,8 @@ private fun AppContent(
         onEditEvent = { id, key -> nav.navigate(EventEditorRoute(eventId = id, occurrenceKey = key)) },
     ) {
     CompositionLocalProvider(LocalNewItem provides newItem) {
-    Box(Modifier.fillMaxSize().background(c.background)) {
+    // Test tags are exposed as resource ids so the macrobenchmarks (UiAutomator) can find tabs and lists.
+    Box(Modifier.fillMaxSize().background(c.background).semantics { testTagsAsResourceId = true }) {
         // Paused (lifecycle CREATED) while a page covers it completely: see VisibilityLifecycle.
         app.daysemble.ui.components.VisibilityLifecycle(visible = onMain || mainShown > 0) {
         MainScreen(
@@ -1226,6 +1226,7 @@ private fun TabItem(
         modifier
             .pressScale(press)
             .clip(Radii.pill)
+            .testTag("tab_" + tab.name.lowercase())
             .selectable(selected = selected, interactionSource = press, indication = LocalIndication.current, role = Role.Tab, onClick = onClick),
         iconScale, labelAlpha,
     )

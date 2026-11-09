@@ -76,7 +76,6 @@ class TasksViewModel(
     fun onTick(now: Instant) { tick.value = now }
 
     fun setCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -> Unit = {}) = viewModelScope.launch { repo.setCompleted(id, done)?.let(onResult) }
-    fun delete(id: String, scope: app.daysemble.domain.model.SeriesScope = app.daysemble.domain.model.SeriesScope.THIS) = viewModelScope.launch { repo.delete(id, scope) }
     fun restore(id: String) = viewModelScope.launch { repo.restore(id) }
     fun purgeTombstones() = viewModelScope.launch { repo.purgeExpiredTombstones() }
     fun reorder(ids: List<String>) = viewModelScope.launch { repo.reorder(ids) }

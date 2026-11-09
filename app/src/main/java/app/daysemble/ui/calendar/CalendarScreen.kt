@@ -29,7 +29,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.offset
 import app.daysemble.ui.components.ContentSwap
 import app.daysemble.ui.components.DayMarks
@@ -46,7 +45,6 @@ import app.daysemble.ui.components.staggeredEntrance
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -63,7 +61,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -73,7 +70,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
@@ -99,14 +95,12 @@ import app.daysemble.ui.components.AgendaEventCard
 import app.daysemble.ui.components.AgendaTaskCard
 import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.StateMessage
-import app.daysemble.ui.components.eventColor
 import app.daysemble.ui.daysembleViewModel
 import app.daysemble.ui.format.Fmt
 import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.dayLabel
 import app.daysemble.ui.format.rememberMinuteTicker
 import app.daysemble.ui.theme.DsTheme
-import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Space
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.time.Instant

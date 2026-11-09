@@ -15,7 +15,6 @@ import androidx.compose.material.icons.automirrored.rounded.ListAlt
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Notifications
@@ -38,7 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -52,7 +50,6 @@ import app.daysemble.data.prefs.AppSettings
 import app.daysemble.data.prefs.ClockFormat
 import app.daysemble.data.prefs.TaskSort
 import androidx.compose.ui.unit.dp
-import app.daysemble.ui.brand.BrandLogo
 import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
 import app.daysemble.ui.components.DsConfirmDialog

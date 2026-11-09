@@ -51,7 +51,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.daysemble.R
-import app.daysemble.core.time.DayAvailability
 import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
 import app.daysemble.ui.components.DsChip

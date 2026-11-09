@@ -1,0 +1,19 @@
+# Starter Baseline Profile: wildcard rules for the app's own UI code, hot paths in start-up and the
+# main screens. HSPL = hot, start-up, post-start-up, loaded. Regenerate it from a real run with
+# macrobenchmark's BaselineProfileGenerator and replace this file (docs/PERFORMANCE.md).
+HSPLapp/daysemble/MainActivity;->**(**)**
+HSPLapp/daysemble/DaysembleApp;->**(**)**
+HSPLapp/daysemble/AppContainer;->**(**)**
+HSPLapp/daysemble/ui/DaysembleRoot**;->**(**)**
+HSPLapp/daysemble/ui/theme/**;->**(**)**
+HSPLapp/daysemble/ui/components/**;->**(**)**
+HSPLapp/daysemble/ui/today/**;->**(**)**
+HSPLapp/daysemble/ui/calendar/**;->**(**)**
+HSPLapp/daysemble/ui/tasks/**;->**(**)**
+HSPLapp/daysemble/ui/add/**;->**(**)**
+HSPLapp/daysemble/ui/format/**;->**(**)**
+HSPLapp/daysemble/core/time/**;->**(**)**
+HSPLapp/daysemble/data/repo/**;->**(**)**
+HSPLapp/daysemble/data/db/**;->**(**)**
+Lapp/daysemble/ui/**;
+Lapp/daysemble/core/**;

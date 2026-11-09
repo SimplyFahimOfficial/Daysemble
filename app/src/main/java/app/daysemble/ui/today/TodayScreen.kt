@@ -1,7 +1,6 @@
 package app.daysemble.ui.today
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
@@ -46,13 +45,10 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.WbTwilight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -133,7 +129,6 @@ import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 import kotlinx.coroutines.launch
-import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit

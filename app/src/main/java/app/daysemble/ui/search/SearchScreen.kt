@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,9 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -37,14 +34,11 @@ import app.daysemble.domain.TaskRules
 import app.daysemble.domain.model.EventOccurrence
 import app.daysemble.domain.model.Task
 import app.daysemble.ui.components.DsChip
-import app.daysemble.ui.components.DsSearchField
-import app.daysemble.ui.components.DsTopBar
 import app.daysemble.ui.components.EventRow
 import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.StateMessage
 import app.daysemble.ui.components.TaskRow
 import app.daysemble.ui.daysembleViewModel
-import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.rememberMinuteTicker
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Space

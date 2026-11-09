@@ -29,48 +29,53 @@ import androidx.compose.ui.unit.dp
  * Daysemble's motion language. Every animation in the app picks one of these roles instead of its
  * own duration and curve.
  *
+ * Tokens: durations [short] 150 / [medium] 250 / [long] 350 ms, [stagger] 40 ms (dots: [markStagger]
+ * 20 ms), the [spring] (damping 0.8, medium-low stiffness) and the [snappy] spring (damping 0.8,
+ * medium stiffness) for pills, thumbs and markers. [enabled] is the one flag every animation checks.
+ *
  * | Role                      | Spec                                   | Where                                    |
  * |---------------------------|----------------------------------------|------------------------------------------|
- * | Feedback                  | [feedback] 100 ms, [indicator] spring  | press, selection pills, toggles, chips   |
+ * | Feedback                  | [feedback] 100 ms, [snappy]            | press, selection pills, toggles, chips   |
  * | Primary tabs              | [fadeThroughIn] / [fadeThroughOut]     | Today / Calendar / Tasks (TabHost)       |
  * | Open / close a page       | [sharedAxisEnter]/[sharedAxisExit]     | Settings and its pages, editors, details |
+ * | Quick Add                 | one container, [spring]                | + button grows into the sheet and back   |
  * | Theme change              | snapshot cross-fade, draw phase only   | DaysembleTheme                           |
- * | Content change in place   | [fadeThrough]                          | day summary, calendar view, quick add    |
- * | List for another day      | ContentSwap: at once, fade + [contentShift] | Today agenda, selected day in Month view |
- * | Rows changing in a list   | itemMotion (animateItem)               | completion, delete, add, reorder         |
- * | Expand / collapse         | [expandIn]/[collapseOut]               | subtasks, field errors, repeat options   |
+ * | Content change in place   | [fadeThrough], [titleSlide]            | day summary, calendar title and view     |
+ * | List for another day      | ContentSwap: at once, fade + [contentShift] | Today agenda, month day list, Tasks filters |
+ * | Items entering            | staggeredEntrance ([stagger])          | Tasks rows, day list, Quick Add form     |
+ * | Rows changing in a list   | itemMotion (animateItem)               | completion, add, reorder, sort           |
+ * | Selected date             | sliding disc on [snappy], pop [popScale] | week strip, month grid                 |
+ * | Month and Week            | one [spring] value, control and drag   | Calendar grid rows collapse to the week  |
+ * | Expand / collapse         | [expandIn]/[collapseOut]               | free-time card, subtasks, field errors   |
  * | Overview panel drag       | finger, then [settle] with its velocity| Today (moved in placement, not measured) |
- * | Reordered row drop        | [settle] from where it was let go      | Tasks › List order                       |
- * | Swipe actions             | finger; icon and fill arm at threshold | Tasks rows (complete / delete)           |
- * | Task completion           | `standard(short)` check, strike        | TaskRow, DsCheck                         |
+ * | Day swipe                 | finger, then [snappy] / [spring]       | Today agenda, header trails by 20 %      |
+ * | Reordered row drop        | [settle] from where it was let go      | Tasks › List order (lift [liftScale])    |
+ * | Swipe actions             | finger; colour and icon follow the drag| Tasks rows (complete / reschedule)       |
+ * | Breathing                 | [breatheScale] over [breathePeriod]    | empty-state icons                        |
  * | Bottom scroll edge        | static fade, no motion                 | content under the floating bottom bar    |
  *
- * Haptics (system haptic setting applies) are only for commits: completing or reopening a task,
- * a swipe crossing its threshold, a reordered row being picked up and changing place, long press.
- * | Calendar date             | [indicator] (colour only, no movement) | month cells, week header, date strip     |
- * | Dialogs and sheets        | Material's own motion                  | AlertDialog, ModalBottomSheet            |
- * | Onboarding entrance       | [entrance], played once                | OnboardingScreen                         |
+ * Haptics (the system haptic setting applies, see Haptics.kt): a tick for day, chip and segment
+ * selection and swipe thresholds, confirm for completing and saving, reject for deleting.
  *
- * Rules that keep transitions clean:
- * - A screen-sized change never leaves a blank frame: the new tab or page arrives over the old
- *   one, which stays still and fully drawn until it is covered (and, going back, the page
- *   underneath is complete from the first frame). Only the arriving or leaving side moves, by a
- *   few dp, never a full-width slide. Content swaps inside a screen use [fadeThrough].
- * - Nothing waits for an animation: state changes immediately and the animation follows it. All
- *   specs are interruptible (Animatable / Transition based) and resume from the current value.
+ * Rules that keep motion clean:
+ * - Nothing waits for an animation: state changes immediately and the animation follows it. Gesture
+ *   driven and repeatable motion uses springs, so it can be interrupted and reversed from the live
+ *   value and velocity. Tweens are for fades.
  * - Animated values are read in the draw or layout phase where possible, so a running animation
- *   doesn't recompose the screen on every frame. A moving or resizing container never re-measures
- *   its contents per frame: it is measured once and moved in placement or with a graphics layer.
+ *   doesn't recompose the screen on every frame. Inside lists only alpha and transforms
+ *   (graphicsLayer) animate. The two exceptions that change layout are the Calendar's month rows
+ *   collapsing, and the header search field growing.
  * - Only what is on screen does work. Screens kept composed for instant return (the hidden tabs,
- *   the main screen under a page) are paused through VisibilityLifecycle: no data collection, no
- *   tickers, so they cost nothing while another screen animates.
+ *   the main screen under a page) are paused through VisibilityLifecycle; infinite animations also
+ *   stop when their tab is hidden ([app.daysemble.ui.components.LocalTabVisible]).
  * - One container animates a given screen: the NavHost for pages, TabHost for tabs. Content inside
  *   them never adds its own screen-sized enter/exit on top.
- * - A list whose content is replaced (another day) is swapped in one piece; per-row motion is only
- *   for rows that change within the same list, so two versions never cross-fade row by row.
+ * - A list whose content is replaced (another day, another filter) is swapped in one piece; per-row
+ *   motion is only for rows that change within the same list.
  *
- * [reduced] (Android "Remove animations", or the in-app Motion setting) keeps only short fades: no
- * movement, scaling or springs.
+ * [enabled] is false when the Appearance "Motion" setting is Reduced, or Android's animator
+ * duration scale is 0 ("Remove animations"); then only short fades remain: no movement, scaling or
+ * springs.
  */
 @Immutable
 data class DsMotion(val reduced: Boolean = false) {

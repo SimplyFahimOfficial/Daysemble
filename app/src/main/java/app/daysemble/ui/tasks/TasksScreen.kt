@@ -2,7 +2,6 @@ package app.daysemble.ui.tasks
 
 import app.daysemble.ui.components.itemMotion
 import androidx.compose.foundation.background
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -16,6 +15,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -44,7 +44,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.input.pointer.pointerInput
@@ -53,11 +52,7 @@ import androidx.compose.ui.zIndex
 import app.daysemble.ui.theme.Elevation
 import app.daysemble.ui.theme.Sizes
 import androidx.compose.material.icons.rounded.TaskAlt
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -86,20 +81,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.R
-import app.daysemble.domain.model.SeriesScope
-import app.daysemble.ui.task.SeriesScopeDialog
 import app.daysemble.data.prefs.TaskSort
 import app.daysemble.domain.TaskBucket
 import app.daysemble.domain.TaskFilter
 import app.daysemble.domain.model.Task
-import app.daysemble.ui.LocalSnackbar
 import app.daysemble.ui.components.DsChip
 import app.daysemble.ui.components.DsIconButton
 import app.daysemble.ui.components.HairlineDivider
@@ -108,7 +99,6 @@ import app.daysemble.ui.components.SkeletonRows
 import app.daysemble.ui.components.StateMessage
 import app.daysemble.ui.components.TaskRow
 import app.daysemble.ui.daysembleViewModel
-import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.rememberMinuteTicker
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Space
@@ -281,7 +271,7 @@ fun TasksScreen(
         app.daysemble.ui.components.ContentSwap(state.filter, shift = m.listShift) {
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().testTag("tasks_list"),
         contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + Space.xxl),
     ) {
         if (state.isLoading) {

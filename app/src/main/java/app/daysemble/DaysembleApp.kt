@@ -18,6 +18,7 @@ class DaysembleApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        if (BuildConfig.BENCHMARK_DATA) container.appScope.launch(Dispatchers.IO) { app.daysemble.data.BenchmarkSeed.seed(container) }
         Notifications.createChannels(this)
         reconcileLauncherIcon()
         ReminderRefreshWorker.schedule(this)
