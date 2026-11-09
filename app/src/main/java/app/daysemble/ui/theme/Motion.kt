@@ -268,7 +268,7 @@ data class DsMotion(val reduced: Boolean = false) {
         if (reduced) return fadeOut(tween(short))
         val shift = with(density) { axisDistance.roundToPx() } * if (swipeEdge == 1) -1 else 1
         return scaleOut(spring(), targetScale = backScale) + slideOutHorizontally(spring()) { shift } +
-            fadeOut(keyframes { durationMillis = long; 1f at (long * 0.6f).toInt() using Standard; 0f at long })
+            fadeOut(keyframes { durationMillis = long; 1f at (long * PREDICTIVE_BACK_FADE_START).toInt() using Standard; 0f at long })
     }
 
     /** One-off onboarding entrance: total length; groups are staggered by [entranceStagger]. */
@@ -288,6 +288,7 @@ data class DsMotion(val reduced: Boolean = false) {
         const val SETTLE_STIFFNESS = 650f
         const val PRESS_SCALE = 0.96f
         const val PRESS_SCALE_LARGE = 0.985f
+        const val PREDICTIVE_BACK_FADE_START = 0.6f
         /** Damping ratio of the standard and snappy springs. */
         const val DAMPING = 0.8f
         val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)

@@ -146,8 +146,10 @@ class TodayViewModel(
      * neutral mark for open tasks), for the dots in the week strip. Read-only.
      */
     val marks: StateFlow<Map<LocalDate, List<Int>>> = combine(selected, time) { d, t -> d to t }.flatMapLatest { (date, t) ->
-        val start = date.minusDays(((date.dayOfWeek.value - t.firstDayOfWeek.value + 7) % 7).toLong()).minusWeeks(1)
-        val end = start.plusWeeks(3).minusDays(1)
+        val start = date.minusDays(
+            ((date.dayOfWeek.value - t.firstDayOfWeek.value + DAYS_IN_WEEK) % DAYS_IN_WEEK).toLong(),
+        ).minusWeeks(WEEKS_BEFORE_SELECTED)
+        val end = start.plusWeeks(WEEKS_IN_MARKS_RANGE).minusDays(LAST_DAY_OFFSET)
         combine(events.occurrences(start, end, t.zone), tasks.allTasks) { occ, all ->
             val byEvents = app.daysemble.ui.calendar.CalendarViewModel.groupByDate(occ, start, end)
             val byTasks = all.filter { !it.isCompleted && it.parentId == null && it.dueDate?.let { d -> d in start..end } == true }.groupBy { it.dueDate!! }
@@ -333,6 +335,10 @@ class TodayViewModel(
     private companion object {
         const val KEY_DATE = "today_selected"
         const val MAX_MARKS = 3
+        const val DAYS_IN_WEEK = 7
+        const val WEEKS_BEFORE_SELECTED = 1L
+        const val WEEKS_IN_MARKS_RANGE = 3L
+        const val LAST_DAY_OFFSET = 1L
     }
 }
 

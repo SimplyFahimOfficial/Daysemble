@@ -109,8 +109,17 @@ fun DayPeek(date: LocalDate, anchor: Rect?, onDismiss: () -> Unit, onAddEvent: (
         ) {
             Text(Fmt.smartDate(date, today, p), style = DsTheme.type.title, color = c.textPrimary)
             val it = items
-            val rows = it?.let { x -> x.events.map { e -> PeekRow(e.title, if (e.isAllDay) stringResource(R.string.all_day) else Fmt.time(e.start, p), eventColor(e.colorArgb)) } +
-                x.tasks.map { t -> PeekRow(t.title, t.dueTime?.let { tm -> Fmt.time(tm, p) }.orEmpty(), c.outlineStrong) } }
+            val rows = it?.let { x ->
+                x.events.map { e ->
+                    PeekRow(
+                        e.title,
+                        if (e.isAllDay) stringResource(R.string.all_day) else Fmt.time(e.start, p),
+                        eventColor(e.colorArgb),
+                    )
+                } + x.tasks.map { t ->
+                    PeekRow(t.title, t.dueTime?.let { tm -> Fmt.time(tm, p) }.orEmpty(), c.outlineStrong)
+                }
+            }
             when {
                 rows == null -> Spacer(Modifier.height(Space.l))
                 rows.isEmpty() -> Text(stringResource(R.string.day_empty), style = DsTheme.type.bodySmall, color = c.textSecondary)
@@ -118,11 +127,20 @@ fun DayPeek(date: LocalDate, anchor: Rect?, onDismiss: () -> Unit, onAddEvent: (
                     rows.take(PEEK_ROWS).forEach { r ->
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.s)) {
                             Box(Modifier.size(8.dp).clip(CircleShape).background(r.color))
-                            Text(r.title.ifBlank { stringResource(R.string.untitled_event) }, style = DsTheme.type.body, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(
+                                r.title.ifBlank { stringResource(R.string.untitled_event) },
+                                style = DsTheme.type.body, color = c.textPrimary, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                            )
                             if (r.time.isNotEmpty()) Text(r.time, style = DsTheme.type.label, color = c.textSecondary, maxLines = 1)
                         }
                     }
-                    if (rows.size > PEEK_ROWS) Text(pluralStringResource(R.plurals.peek_more, rows.size - PEEK_ROWS, rows.size - PEEK_ROWS), style = DsTheme.type.label, color = c.textSecondary)
+                    if (rows.size > PEEK_ROWS) {
+                        Text(
+                            pluralStringResource(R.plurals.peek_more, rows.size - PEEK_ROWS, rows.size - PEEK_ROWS),
+                            style = DsTheme.type.label, color = c.textSecondary,
+                        )
+                    }
                 }
             }
             DsButton(

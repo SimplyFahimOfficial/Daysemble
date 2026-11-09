@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
  */
 object BenchmarkSeed {
     private const val EXTRA_TASKS = 150
+    private const val DUE_DATE_CYCLE_DAYS = 14
 
     suspend fun seed(container: AppContainer) {
         container.settings.completeOnboarding("Sam")
@@ -19,7 +20,9 @@ object BenchmarkSeed {
         val list = container.defaults().taskListId
         val today = container.clock.today()
         repeat(EXTRA_TASKS) { i ->
-            container.tasks.create(TaskDraft(title = "Benchmark task ${i + 1}", dueDate = today.plusDays((i % 14).toLong())), list)
+            container.tasks.create(
+                TaskDraft(title = "Benchmark task ${i + 1}", dueDate = today.plusDays((i % DUE_DATE_CYCLE_DAYS).toLong())), list,
+            )
         }
     }
 }

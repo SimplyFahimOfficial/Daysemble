@@ -152,7 +152,10 @@ class MotionContinuityTest {
         val text = field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text
         assertThat(text).isEqualTo("water")
         // The results arrive from a background flow: wait for them rather than for a fixed time.
-        repeat(10) { if (count("Water the plants") > 0) return@repeat; settle(30) }
+        repeat(10) {
+            if (count("Water the plants") > 0) return@repeat
+            settle(30)
+        }
         compose.onNodeWithText("Water the plants", substring = true).assertExists()
         // Merged tree: what a screen reader can reach. The tabs under the results are hidden from it.
         assertThat(compose.onAllNodes(hasText("Buy groceries", substring = true)).fetchSemanticsNodes()).isEmpty()

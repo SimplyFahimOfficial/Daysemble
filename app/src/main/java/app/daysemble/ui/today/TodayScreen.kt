@@ -637,8 +637,14 @@ private fun AgendaPanel(
                         modifier = Modifier.padding(top = Space.l).then(itemMotion()),
                         action = {
                             Row(horizontalArrangement = Arrangement.spacedBy(Space.s)) {
-                                DsButton(stringResource(R.string.add_event), { onAddEvent(state.date) }, Modifier.emptyActionEntrance(0), style = DsButtonStyle.Tint)
-                                DsButton(stringResource(R.string.add_task), { onAddTask(state.date) }, Modifier.emptyActionEntrance(1), style = DsButtonStyle.Tint)
+                                DsButton(
+                                    stringResource(R.string.add_event), { onAddEvent(state.date) },
+                                    Modifier.emptyActionEntrance(0), style = DsButtonStyle.Tint,
+                                )
+                                DsButton(
+                                    stringResource(R.string.add_task), { onAddTask(state.date) },
+                                    Modifier.emptyActionEntrance(1), style = DsButtonStyle.Tint,
+                                )
                             }
                         },
                     )

@@ -92,20 +92,6 @@ class TransitionFramesTest {
         return n.toDouble() / total
     }
 
-    /** Runs [action], then checks every frame for [frames] frames against the content at rest before and after. */
-    private fun assertNoBlankFrame(what: String, frames: Int = 24, action: () -> Unit) {
-        val before = ink()
-        action()
-        val during = (0 until frames).map { frame(); ink() }
-        settle()
-        val after = ink()
-        val floor = minOf(before, after) * 0.6
-        assertWithMessage("$what: content at rest").that(minOf(before, after)).isGreaterThan(0.02)
-        during.forEachIndexed { i, v ->
-            assertWithMessage("$what: frame $i shows %.3f of content; at rest %.3f → %.3f".format(v, before, after)).that(v).isAtLeast(floor)
-        }
-    }
-
     /**
      * Fade-through: the content may dip while one side fades out and the other in, for at most
      * [maxDipFrames] frames, and must be back at rest at the end (nothing stuck transparent).

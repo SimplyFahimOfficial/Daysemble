@@ -144,7 +144,10 @@ fun SearchResults(query: String, onOpenEvent: (String, String) -> Unit, onOpenTa
             }
         }
         when {
-            query.isBlank() -> StateMessage(Icons.Rounded.Search, stringResource(R.string.search_prompt), Modifier.padding(top = Space.x3), body = stringResource(R.string.search_prompt_body))
+            query.isBlank() -> StateMessage(
+                Icons.Rounded.Search, stringResource(R.string.search_prompt), Modifier.padding(top = Space.x3),
+                body = stringResource(R.string.search_prompt_body),
+            )
             state.query.isNotBlank() && state.events.isEmpty() && state.tasks.isEmpty() ->
                 StateMessage(Icons.Rounded.SearchOff, stringResource(R.string.search_no_results, state.query), Modifier.padding(top = Space.x3))
             else -> LazyColumn(Modifier.navigationBarsPadding(), contentPadding = PaddingValues(bottom = Space.xxl)) {

@@ -111,6 +111,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 
 private const val PAGES = 20_000
 private const val CENTER = PAGES / 2
+private const val COLLAPSE_FADE_FACTOR = 1.5f
 
 @Composable
 fun CalendarRoute(
@@ -418,7 +419,10 @@ private fun MonthGrid(
                         d, inMonth = YearMonth.from(d) == ym, selected = d == state.selected, isToday = d == state.today,
                         events = state.byDate[d].orEmpty(), taskCount = state.tasksByDate[d]?.size ?: 0,
                         index = w * 7 + i, map = map, column = i,
-                        onClick = { if (d != state.selected) haptics.tick(); onSelect(d) },
+                        onClick = {
+                            if (d != state.selected) haptics.tick()
+                            onSelect(d)
+                        },
                         onLongClick = { r -> haptics.tick(); onPeek(d, r) },
                         modifier = Modifier.weight(1f),
                     )
@@ -437,7 +441,7 @@ private fun Modifier.collapsing(collapse: (() -> Float)?): Modifier =
             val h = (placeable.height * (1f - collapse().coerceIn(0f, 1f))).roundToInt()
             layout(placeable.width, h) { placeable.place(0, 0) }
         }
-        .graphicsLayer { alpha = (1f - collapse().coerceIn(0f, 1f) * 1.5f).coerceIn(0f, 1f); clip = true }
+        .graphicsLayer { alpha = (1f - collapse().coerceIn(0f, 1f) * COLLAPSE_FADE_FACTOR).coerceIn(0f, 1f); clip = true }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -492,7 +496,10 @@ private fun MonthCell(
         DateDisc(interaction, Color.Transparent, Modifier.discCell(map, index), ring = if (isToday && !selected) c.accentFill else Color.Transparent) {
             Text(d.dayOfMonth.toString(), style = DsTheme.type.bodyStrong, color = number)
         }
-        DayMarks(marks, delayMs = column * m.markStagger, modifier = Modifier.padding(top = 3.dp), dim = !inMonth, overflow = events.size + (if (taskCount > 0) 1 else 0) > 3)
+        DayMarks(
+            marks, delayMs = column * m.markStagger, modifier = Modifier.padding(top = 3.dp), dim = !inMonth,
+            overflow = events.size + (if (taskCount > 0) 1 else 0) > 3,
+        )
     }
 }
 

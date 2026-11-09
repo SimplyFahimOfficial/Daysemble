@@ -559,7 +559,14 @@ private fun SortSheet(sort: TaskSort, onSort: (TaskSort) -> Unit, onDismiss: () 
                     Modifier
                         .fillMaxWidth()
                         .heightIn(min = Sizes.touch + 4.dp)
-                        .selectable(selected = s == sort, role = Role.RadioButton, onClick = { if (s != sort) haptics.tick(); onSort(s) })
+                        .selectable(
+                            selected = s == sort,
+                            role = Role.RadioButton,
+                            onClick = {
+                                if (s != sort) haptics.tick()
+                                onSort(s)
+                            },
+                        )
                         .semantics { if (s == sort) stateDescription = selectedText }
                         .padding(horizontal = Space.gutter),
                     verticalAlignment = Alignment.CenterVertically,

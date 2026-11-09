@@ -819,7 +819,10 @@ private fun MainScreen(
     }
     Box(modifier.background(DsTheme.colors.background)) {
         Column(Modifier.fillMaxSize()) {
-            MainHeader(displayName, syncStatus, onSearch, onSettings, onOpenSync, searching = searching, query = searchQuery, onQuery = onSearchQuery, onCloseSearch = onCloseSearch)
+            MainHeader(
+                displayName, syncStatus, onSearch, onSettings, onOpenSync,
+                searching = searching, query = searchQuery, onQuery = onSearchQuery, onCloseSearch = onCloseSearch,
+            )
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 TabHost(
                     tab,

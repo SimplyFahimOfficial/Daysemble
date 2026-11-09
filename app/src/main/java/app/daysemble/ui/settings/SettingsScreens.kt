@@ -200,7 +200,10 @@ private fun NameHint(onAdd: () -> Unit, onDismiss: () -> Unit) {
             Text(stringResource(R.string.name_hint_title), style = DsTheme.type.bodyStrong, color = c.textPrimary)
             Text(stringResource(R.string.name_hint_body), style = DsTheme.type.bodySmall, color = c.textSecondary)
         }
-        DsButton(stringResource(R.string.name_hint_action), onAdd, style = DsButtonStyle.Primary, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.l, vertical = Space.s))
+        DsButton(
+            stringResource(R.string.name_hint_action), onAdd, style = DsButtonStyle.Primary,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.l, vertical = Space.s),
+        )
         app.daysemble.ui.components.DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_dismiss_hint), onDismiss, tint = c.textTertiary)
     }
 }
@@ -469,4 +472,3 @@ fun AboutRoute(onBack: () -> Unit) {
         }
     }
 }
-

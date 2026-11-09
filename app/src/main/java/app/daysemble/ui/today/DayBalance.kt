@@ -127,7 +127,10 @@ internal fun DayBalance(
                     if (!a.isFree) Metric(Icons.Rounded.EventBusy, c.violet, stringResource(R.string.metric_busy, durationText(a.busy.roundToMinutes())))
                 }
                 if (!s.scheduledSleep.isZero) {
-                    Metric(Icons.Rounded.Bedtime, c.textSecondary, stringResource(R.string.metric_sleep_planned, durationText(s.scheduledSleep.roundToMinutes())))
+                    Metric(
+                        Icons.Rounded.Bedtime, c.textSecondary,
+                        stringResource(R.string.metric_sleep_planned, durationText(s.scheduledSleep.roundToMinutes())),
+                    )
                 }
                 s.nextEvent?.let { e ->
                     Metric(
@@ -165,7 +168,12 @@ internal fun DayBalance(
         AnimatedVisibility(expanded, enter = m.expandIn(), exit = m.collapseOut()) {
             Column(Modifier.padding(end = Space.m, bottom = Space.s), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                 HairlineDivider(Modifier.padding(bottom = Space.xs))
-                s.window?.let { w -> DetailLine(stringResource(R.string.balance_waking_hours), stringResource(R.string.time_range, Fmt.time(w.start, p), Fmt.time(w.end, p))) }
+                s.window?.let { w ->
+                    DetailLine(
+                        stringResource(R.string.balance_waking_hours),
+                        stringResource(R.string.time_range, Fmt.time(w.start, p), Fmt.time(w.end, p)),
+                    )
+                }
                 a?.let { DetailLine(stringResource(R.string.balance_free_time), durationText(it.free.roundToMinutes())) }
                 if (!s.scheduledSleep.isZero) DetailLine(stringResource(R.string.balance_planned_sleep), durationText(s.scheduledSleep.roundToMinutes()))
                 DsButton(
@@ -206,12 +214,18 @@ private fun SleepLine(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.s),
         ) {
-            Text(stringResource(R.string.sleep_none_recorded), style = DsTheme.type.label, color = c.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(
+                stringResource(R.string.sleep_none_recorded), style = DsTheme.type.label, color = c.textSecondary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            )
             DsButton(
                 stringResource(R.string.sleep_log), onSleep, style = DsButtonStyle.Text, enabled = interactive,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.s, vertical = Space.xs),
             )
-            app.daysemble.ui.components.DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_dismiss_hint), onDismissHint, tint = c.textTertiary, enabled = interactive)
+            app.daysemble.ui.components.DsIconButton(
+                Icons.Rounded.Close, stringResource(R.string.cd_dismiss_hint), onDismissHint,
+                tint = c.textTertiary, enabled = interactive,
+            )
         }
         return
     }

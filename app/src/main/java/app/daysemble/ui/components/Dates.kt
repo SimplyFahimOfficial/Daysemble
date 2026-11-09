@@ -213,7 +213,10 @@ fun WeekStrip(
                 val d = start.plusDays(i.toLong())
                 DateCell(
                     d, d == selected, d == today, marks[d].orEmpty(), i, map,
-                    onClick = { if (d != selected) haptics.tick(); select(d) },
+                    onClick = {
+                        if (d != selected) haptics.tick()
+                        select(d)
+                    },
                     onLongClick = { r -> haptics.tick(); peek = d to r },
                     modifier = Modifier.weight(1f),
                 )

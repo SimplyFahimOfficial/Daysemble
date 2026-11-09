@@ -87,7 +87,10 @@ fun DsChip(
                     // A filter or choice being picked ticks; tapping the one already picked does not.
                     else -> Modifier.selectable(
                         selected = selected, interactionSource = interaction, indication = null, role = role,
-                        onClick = { if (!selected) haptics.tick(); onClick() },
+                        onClick = {
+                            if (!selected) haptics.tick()
+                            onClick()
+                        },
                     )
                 },
             ),
@@ -180,7 +183,14 @@ fun <T> DsSegmented(
                         .weight(1f)
                         .heightIn(min = 48.dp)
                         .clip(Radii.pill)
-                        .selectable(selected = isSel, role = Role.Tab, onClick = { if (!isSel) haptics.tick(); onSelect(opt) }),
+                        .selectable(
+                            selected = isSel,
+                            role = Role.Tab,
+                            onClick = {
+                                if (!isSel) haptics.tick()
+                                onSelect(opt)
+                            },
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
