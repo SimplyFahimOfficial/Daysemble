@@ -4,6 +4,8 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
@@ -73,18 +75,62 @@ import androidx.compose.ui.unit.dp
  */
 @Immutable
 data class DsMotion(val reduced: Boolean = false) {
-    /** Press and selection feedback. */
-    val short: Int get() = if (reduced) 90 else 120
-    /** Content changes, expand/collapse, completion. */
-    val medium: Int get() = if (reduced) 120 else 220
-    /** Screen transitions. */
-    val long: Int get() = if (reduced) 150 else 300
+    /**
+     * The one switch every animation checks: true only when the Appearance "Motion" setting allows
+     * it AND Android's animator duration scale is not 0 (see DaysembleTheme). When false, state
+     * changes are instant or a short fade; nothing moves, scales or springs.
+     */
+    val enabled: Boolean get() = !reduced
 
-    /** Distance of shared-axis screen transitions. Small on purpose: it hints at direction, it doesn't carry the page. */
+    /** Press and selection feedback, fades. */
+    val short: Int get() = if (reduced) 90 else 150
+    /** Content changes, expand/collapse, completion. */
+    val medium: Int get() = if (reduced) 120 else 250
+    /** Screen transitions. */
+    val long: Int get() = if (reduced) 150 else 350
+
+    /** Delay between neighbouring items of a staggered entrance. */
+    val stagger: Int get() = if (reduced) 0 else 40
+    /** At most this many items take part in a staggered entrance; the rest appear with the last one. */
+    val staggerMax: Int get() = 8
+    fun staggerDelay(index: Int): Int = index.coerceIn(0, staggerMax) * stagger
+
+    /** Distance of shared-axis screen transitions. */
     val axisDistance get() = 30.dp
 
+    /** Content that changes in place (another day, month, filter, date) slides up by this much while it fades in. */
+    val contentShift get() = 12.dp
+    /** The same for a list whose filter changed. */
+    val listShift get() = 8.dp
+
     /** Shift of a list swapped for another day (ContentSwap): a hint of direction, drawn only. */
-    val swapShift get() = 16.dp
+    val swapShift get() = contentShift
+
+    /** Resting size of a pop (selected day) at its peak, and the lift of a held row. */
+    val popScale: Float get() = 1.15f
+    val liftScale: Float get() = 1.03f
+    /** Icons and empty-state artwork breathe between 1.0 and this, once per [breathePeriod]. */
+    val breatheScale: Float get() = 1.04f
+    val breathePeriod: Int get() = 3_000
+
+    /**
+     * Standard spring: layout-ish movement (cards, sheets, chips sliding). Damping 0.8, medium-low
+     * stiffness (response about 0.3 s). Instant when motion is off. Springs, not tweens, so a
+     * gesture or a second tap can interrupt and reverse it from the live value and velocity.
+     */
+    fun <T> spring(): FiniteAnimationSpec<T> =
+        if (reduced) snap() else spring(dampingRatio = DAMPING, stiffness = Spring.StiffnessMediumLow)
+
+    /** Snappy spring for pills, thumbs and small markers: same damping, faster (response about 0.16 s). */
+    fun <T> snappy(): FiniteAnimationSpec<T> =
+        if (reduced) snap() else spring(dampingRatio = DAMPING, stiffness = Spring.StiffnessMedium)
+
+    /** Scales the button-ish things in and out; a pop is [peak] then back to 1 (see [pop]). */
+    suspend fun Animatable<Float, AnimationVector1D>.pop(peak: Float = popScale) {
+        if (reduced) return
+        animateTo(peak, snappy())
+        animateTo(1f, snappy())
+    }
 
     fun <T> enter(duration: Int = medium, delay: Int = 0): FiniteAnimationSpec<T> = tween(duration, delay, EmphasizedDecelerate)
     fun <T> exit(duration: Int = short, delay: Int = 0): FiniteAnimationSpec<T> = tween(duration, delay, EmphasizedAccelerate)
@@ -94,12 +140,11 @@ data class DsMotion(val reduced: Boolean = false) {
     fun <T> feedback(): FiniteAnimationSpec<T> = if (reduced) snap() else tween(100, easing = Standard)
 
     /**
-     * Selection indicators (bottom-bar pill, segmented control, step dots): critically damped, no
-     * bounce. Response ≈ 0.16 s, so the bottom-bar pill lands with the [tabEnter] fade of the tab it
-     * selects. (StiffnessMediumLow, response ≈ 0.31 s, was still gliding well after the tab had arrived.)
+     * Selection indicators (bottom-bar pill, segmented control, step dots): the [snappy] spring.
+     * Response ≈ 0.16 s, so the bottom-bar pill lands with the fade of the tab it selects.
      */
     fun <T> indicator(): FiniteAnimationSpec<T> =
-        if (reduced) tween(short, easing = Standard) else spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)
+        if (reduced) tween(short, easing = Standard) else snappy()
 
     /**
      * Something the finger let go of, settling into place (the Today panel, a reordered row): a
@@ -224,8 +269,10 @@ data class DsMotion(val reduced: Boolean = false) {
         const val PAGE_OUT = 200
         /** Stiffness of [settle]. With mass 1, response = 2π / √650 ≈ 0.25 s. */
         const val SETTLE_STIFFNESS = 650f
-        const val PRESS_SCALE = 0.97f
+        const val PRESS_SCALE = 0.96f
         const val PRESS_SCALE_LARGE = 0.985f
+        /** Damping ratio of the standard and snappy springs. */
+        const val DAMPING = 0.8f
         val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
         val EmphasizedAccelerate = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
         val Standard = CubicBezierEasing(0.2f, 0f, 0f, 1f)

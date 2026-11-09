@@ -39,8 +39,6 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -165,10 +163,10 @@ fun <T> DsSegmented(
  */
 @Composable
 private fun Modifier.hapticCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit): Modifier {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberHaptics()
     val change by rememberUpdatedState(onCheckedChange)
     return toggleable(value = checked, role = Role.Checkbox, onValueChange = {
-        haptics.performHapticFeedback(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+        if (it) haptics.confirm() else haptics.tick()
         change(it)
     })
 }

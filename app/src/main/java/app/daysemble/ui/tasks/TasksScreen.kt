@@ -45,9 +45,8 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
+import app.daysemble.ui.components.rememberHaptics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -139,7 +138,7 @@ fun TasksScreen(
     var settling by remember { mutableStateOf(false) }
     var settleJob by remember { mutableStateOf<Job?>(null) }
     val dragScope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberHaptics()
     val density = LocalDensity.current
     val liftPx = with(density) { Elevation.lifted.toPx() }
     val m = DsTheme.motion
@@ -157,7 +156,7 @@ fun TasksScreen(
             ?: return
         manual.swap(manual.indexOfFirst { it.id == id }, manual.indexOfFirst { it.id == target.key })
         dragOffset += (cur.offset - target.offset).toFloat()
-        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        haptics.tick()
     }
     // Held near the top or bottom of the list, the list scrolls under the row, faster the closer
     // it is to the edge, and keeps going while the finger is still. The row stays under the finger
@@ -318,7 +317,7 @@ fun TasksScreen(
                                             // Caught again mid-glide: keep its live offset, no jump.
                                             if (dragging != task.id) dragOffset = 0f
                                             dragging = task.id
-                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            haptics.tick()
                                         },
                                         onDrag = { change, amount ->
                                             change.consume()
@@ -328,7 +327,7 @@ fun TasksScreen(
                                         onDragEnd = {
                                             // The order is saved now; the glide only follows it.
                                             onReorder(manual.map { it.id })
-                                            haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)
+                                            haptics.confirm()
                                             settleDrop(task.id)
                                         },
                                         onDragCancel = {
@@ -385,10 +384,10 @@ private fun SwipeableTaskRow(
     // with the action's colour and the icon grows at that moment, with one tick, so the user knows
     // before lifting the finger. Only arming ticks; the reset after a completion doesn't.
     val armed by remember { derivedStateOf { state.targetValue != SwipeToDismissBoxValue.Settled } }
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberHaptics()
     LaunchedEffect(state) {
         snapshotFlow { armed }.distinctUntilChanged().filter { it }.collect {
-            haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+            haptics.tick()
         }
     }
     // Deleting an occurrence of a repeating task asks which ones, as in the editor; cancelling puts

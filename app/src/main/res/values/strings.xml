@@ -38,7 +38,7 @@
     <string name="motion_system">System</string>
     <string name="motion_reduced">Reduced</string>
     <string name="motion_full">Full</string>
-    <string name="motion_note">Reduced motion replaces slides and scaling with short fades. “System” follows Android’s Remove animations setting.</string>
+    <string name="motion_note">Reduced motion replaces slides and scaling with short fades. Android’s Remove animations setting always applies, even on Full.</string>
     <!-- Navigation -->
     <string name="tab_today">Today</string>
     <string name="tab_calendar">Calendar</string>
