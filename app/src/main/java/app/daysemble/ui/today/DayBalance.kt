@@ -1,6 +1,17 @@
 package app.daysemble.ui.today
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -70,9 +81,11 @@ object BalanceTags {
 internal fun Duration.roundToMinutes(): Long = (toMillis() + 30_000) / 60_000
 
 /**
- * The day's free time, booked time and planned sleep in one compact block, with an info button for
- * the breakdown, then the sleep line (today: with the button that fits the moment).
- * [interactive] is false while the overview is folded away (its buttons must not take taps).
+ * The day's free time, booked time and planned sleep in one card. Tapping the card opens it inline
+ * to show the waking hours, free time and planned sleep, with a link to Settings → Daily schedule
+ * and sleep; the info button opens the breakdown. Below it, the sleep line (today: with the button
+ * that fits the moment). [interactive] is false while the overview is folded away (its buttons must
+ * not take taps).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -84,60 +97,125 @@ internal fun DayBalance(
     onInfo: () -> Unit,
     onSleep: () -> Unit,
     sleepActions: SleepActions?,
+    onOpenSchedule: () -> Unit = {},
+    sleepHintDismissed: Boolean = false,
+    onDismissSleepHint: () -> Unit = {},
 ) {
     val c = DsTheme.colors
+    val m = DsTheme.motion
     val a = s.availability
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val chevron by animateFloatAsState(if (expanded) 180f else 0f, m.spring(), label = "balanceChevron")
+    val toggleLabel = stringResource(if (expanded) R.string.balance_collapse else R.string.balance_expand)
     Spacer(Modifier.height(Space.l))
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(Space.l),
-        verticalArrangement = Arrangement.spacedBy(Space.xs),
-        itemVerticalAlignment = Alignment.CenterVertically,
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(Radii.tile)
+            .background(c.surfaceVariant)
+            .clickable(enabled = interactive, role = Role.Button, onClickLabel = toggleLabel) { expanded = !expanded }
+            .padding(start = Space.l, top = Space.m, bottom = Space.xs, end = Space.xs),
     ) {
-        if (a != null) {
-            Metric(Icons.Rounded.Schedule, c.success, stringResource(R.string.metric_free, durationText(a.free.roundToMinutes())), Modifier.testTag(BalanceTags.FREE))
-            if (!a.isFree) Metric(Icons.Rounded.EventBusy, c.violet, stringResource(R.string.metric_busy, durationText(a.busy.roundToMinutes())))
-        }
-        if (!s.scheduledSleep.isZero) {
-            Metric(Icons.Rounded.Bedtime, c.textSecondary, stringResource(R.string.metric_sleep_planned, durationText(s.scheduledSleep.roundToMinutes())))
-        }
-        s.nextEvent?.let { e ->
-            Metric(
-                Icons.AutoMirrored.Rounded.ArrowForward, c.accent,
-                stringResource(R.string.metric_next, e.title.ifBlank { stringResource(R.string.untitled_event) }, Fmt.time(e.start, p)),
-            )
-        }
-    }
-    val w = s.window
-    if (w != null) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            val note = when {
-                a == null -> stringResource(R.string.metric_window_over, Fmt.time(w.start, p), Fmt.time(w.end, p))
-                a.countsFromNow -> stringResource(R.string.metric_window_from_now, Fmt.time(w.start, p), Fmt.time(w.end, p))
-                else -> stringResource(R.string.metric_window, Fmt.time(w.start, p), Fmt.time(w.end, p))
+            FlowRow(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(Space.l),
+                verticalArrangement = Arrangement.spacedBy(Space.xs),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (a != null) {
+                    Metric(Icons.Rounded.Schedule, c.success, stringResource(R.string.metric_free, durationText(a.free.roundToMinutes())), Modifier.testTag(BalanceTags.FREE))
+                    if (!a.isFree) Metric(Icons.Rounded.EventBusy, c.violet, stringResource(R.string.metric_busy, durationText(a.busy.roundToMinutes())))
+                }
+                if (!s.scheduledSleep.isZero) {
+                    Metric(Icons.Rounded.Bedtime, c.textSecondary, stringResource(R.string.metric_sleep_planned, durationText(s.scheduledSleep.roundToMinutes())))
+                }
+                s.nextEvent?.let { e ->
+                    Metric(
+                        Icons.AutoMirrored.Rounded.ArrowForward, c.accent,
+                        stringResource(R.string.metric_next, e.title.ifBlank { stringResource(R.string.untitled_event) }, Fmt.time(e.start, p)),
+                    )
+                }
             }
-            Text(note, style = DsTheme.type.label, color = c.textTertiary, modifier = Modifier.weight(1f, fill = false))
-            app.daysemble.ui.components.DsIconButton(
-                Icons.Outlined.Info, stringResource(R.string.cd_free_time_breakdown), onInfo, tint = c.textTertiary,
-                enabled = interactive, modifier = Modifier.testTag(BalanceTags.INFO),
+            Icon(
+                Icons.Rounded.ExpandMore, null, tint = c.textTertiary,
+                modifier = Modifier.padding(horizontal = Space.s).graphicsLayer { rotationZ = chevron },
             )
         }
+        val w = s.window
+        if (w != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val note = when {
+                    a == null -> stringResource(R.string.metric_window_over, Fmt.time(w.start, p), Fmt.time(w.end, p))
+                    a.countsFromNow -> stringResource(R.string.metric_window_from_now, Fmt.time(w.start, p), Fmt.time(w.end, p))
+                    else -> stringResource(R.string.metric_window, Fmt.time(w.start, p), Fmt.time(w.end, p))
+                }
+                Text(note, style = DsTheme.type.label, color = c.textTertiary, modifier = Modifier.weight(1f, fill = false))
+                app.daysemble.ui.components.DsIconButton(
+                    Icons.Outlined.Info, stringResource(R.string.cd_free_time_breakdown), onInfo, tint = c.textTertiary,
+                    enabled = interactive, modifier = Modifier.testTag(BalanceTags.INFO),
+                )
+            }
+        }
+        if (a != null && !a.estimatedWork.isZero) {
+            Text(
+                stringResource(R.string.metric_after_estimates, durationText(a.freeAfterEstimates.roundToMinutes()), durationText(a.estimatedWork.roundToMinutes())),
+                style = DsTheme.type.label, color = c.textSecondary, modifier = Modifier.padding(bottom = Space.s),
+            )
+        }
+        AnimatedVisibility(expanded, enter = m.expandIn(), exit = m.collapseOut()) {
+            Column(Modifier.padding(end = Space.m, bottom = Space.s), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                HairlineDivider(Modifier.padding(bottom = Space.xs))
+                s.window?.let { w -> DetailLine(stringResource(R.string.balance_waking_hours), stringResource(R.string.time_range, Fmt.time(w.start, p), Fmt.time(w.end, p))) }
+                a?.let { DetailLine(stringResource(R.string.balance_free_time), durationText(it.free.roundToMinutes())) }
+                if (!s.scheduledSleep.isZero) DetailLine(stringResource(R.string.balance_planned_sleep), durationText(s.scheduledSleep.roundToMinutes()))
+                DsButton(
+                    stringResource(R.string.balance_open_schedule), onOpenSchedule, style = DsButtonStyle.Text,
+                    icon = Icons.AutoMirrored.Rounded.ArrowForward, enabled = interactive,
+                )
+            }
+        }
     }
-    if (a != null && !a.estimatedWork.isZero) {
-        Text(
-            stringResource(R.string.metric_after_estimates, durationText(a.freeAfterEstimates.roundToMinutes()), durationText(a.estimatedWork.roundToMinutes())),
-            style = DsTheme.type.label, color = c.textSecondary,
-        )
+    SleepLine(s, now, p, interactive, onSleep, sleepActions, sleepHintDismissed, onDismissSleepHint)
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    val c = DsTheme.colors
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = DsTheme.type.label, color = c.textSecondary, modifier = Modifier.weight(1f))
+        Text(value, style = DsTheme.type.numeric, color = c.textPrimary)
     }
-    SleepLine(s, now, p, interactive, onSleep, sleepActions)
 }
 
 /** "Slept 7 h 42 min · 11:08 PM – 6:50 AM" (or what is known), with the button that fits the moment. */
 @Composable
-private fun SleepLine(s: TodayUiState, now: Instant, p: TimePrefs, interactive: Boolean, onSleep: () -> Unit, actions: SleepActions?) {
+private fun SleepLine(
+    s: TodayUiState, now: Instant, p: TimePrefs, interactive: Boolean, onSleep: () -> Unit, actions: SleepActions?,
+    hintDismissed: Boolean, onDismissHint: () -> Unit,
+) {
     val c = DsTheme.colors
     val sl = s.sleep
     val isToday = s.date == s.today
     if (!isToday && sl.lastNight == null && sl.wakeOnly == null) return
+    // Nothing recorded for last night: a single quiet line with "Log sleep", which can be dismissed for the day.
+    val nothing = sl.lastNight == null && sl.open == null && sl.wakeOnly == null
+    if (nothing && !hintDismissed) {
+        val m = DsTheme.motion
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = Sizes.touch).testTag(BalanceTags.SLEEP),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.s),
+        ) {
+            Text(stringResource(R.string.sleep_none_recorded), style = DsTheme.type.label, color = c.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            DsButton(
+                stringResource(R.string.sleep_log), onSleep, style = DsButtonStyle.Text, enabled = interactive,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.s, vertical = Space.xs),
+            )
+            app.daysemble.ui.components.DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_dismiss_hint), onDismissHint, tint = c.textTertiary, enabled = interactive)
+        }
+        return
+    }
     val text = sleepSummaryText(sl.lastNight, sl.open, sl.wakeOnly, p)
     val detail = (sl.lastNight ?: sl.wakeOnly)?.takeIf { sl.open == null }?.let { recordLine(it, p) }
     val diff = sl.lastNight?.duration?.let { it - s.scheduledSleep }?.takeIf { !s.scheduledSleep.isZero && sl.open == null }
@@ -153,7 +231,7 @@ private fun SleepLine(s: TodayUiState, now: Instant, p: TimePrefs, interactive: 
     ) {
         Icon(Icons.Rounded.Bedtime, null, tint = c.textSecondary, modifier = Modifier.size(Sizes.iconSmall - 2.dp))
         Column(Modifier.weight(1f)) {
-            Text(text, style = DsTheme.type.label, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!nothing) Text(text, style = DsTheme.type.label, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val sub = listOfNotNull(
                 detail,
                 diff?.let { d ->

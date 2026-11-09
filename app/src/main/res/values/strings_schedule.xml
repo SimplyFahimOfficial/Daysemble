@@ -91,6 +91,14 @@
     <string name="sleep_less_than_planned">%1$s less than planned</string>
     <string name="sleep_as_planned">as planned</string>
     <string name="sleep_open">Open sleep</string>
+    <string name="sleep_log">Log sleep</string>
+    <string name="balance_waking_hours">Waking hours</string>
+    <string name="balance_free_time">Free time</string>
+    <string name="balance_planned_sleep">Planned sleep</string>
+    <string name="balance_open_schedule">Daily schedule &amp; sleep</string>
+    <string name="balance_expand">Show details</string>
+    <string name="balance_collapse">Hide details</string>
+    <string name="cd_dismiss_hint">Dismiss</string>
     <string name="sleep_schedule_settings">Waking hours and all records</string>
 
     <!-- Item menu (long-press) -->

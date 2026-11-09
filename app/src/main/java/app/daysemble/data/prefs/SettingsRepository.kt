@@ -75,6 +75,10 @@ data class AppSettings(
     val displayName: String? = null,
     /** Intended waking hours (wake-up and bedtime), used for free time and the scheduled sleep. */
     val schedule: DaySchedulePrefs = DaySchedulePrefs(),
+    /** Epoch day on which the "No sleep recorded" hint on Today was dismissed; it stays hidden for that day. */
+    val sleepHintDismissedDay: Long? = null,
+    /** The one-time "Your name" prompt on Today was dismissed (or the name was set). */
+    val nameHintDismissed: Boolean = false,
 )
 
 /** Longest display name kept; longer input is cut (the header also truncates visually). */
@@ -106,6 +110,8 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
         val bed = intPreferencesKey("schedule_bed_minute")
         val perWeekday = booleanPreferencesKey("schedule_per_weekday")
         val weekdayOverrides = stringPreferencesKey("schedule_weekday_overrides")
+        val sleepHintDay = androidx.datastore.preferences.core.longPreferencesKey("sleep_hint_dismissed_day")
+        val nameHint = booleanPreferencesKey("name_hint_dismissed")
     }
 
     val settings: Flow<AppSettings> = store.data
@@ -139,6 +145,8 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
             onboardingDone = this[Keys.onboarding] ?: false,
             displayName = normalizeDisplayName(this[Keys.displayName]),
             schedule = schedule(),
+            sleepHintDismissedDay = this[Keys.sleepHintDay],
+            nameHintDismissed = this[Keys.nameHint] ?: false,
         )
     }
 
@@ -180,6 +188,8 @@ class SettingsRepository(private val store: DataStore<Preferences>) {
     suspend fun setDefaultTaskList(id: String?) = store.edit {
         if (id == null) it.remove(Keys.defaultList) else it[Keys.defaultList] = id
     }
+    suspend fun dismissSleepHint(epochDay: Long) = store.edit { it[Keys.sleepHintDay] = epochDay }
+    suspend fun dismissNameHint() = store.edit { it[Keys.nameHint] = true }
     suspend fun setOnboardingDone() = store.edit { it[Keys.onboarding] = true }
 
     /**

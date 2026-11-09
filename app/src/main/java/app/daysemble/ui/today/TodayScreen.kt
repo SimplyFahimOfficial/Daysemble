@@ -157,6 +157,7 @@ fun TodayRoute(
     val container = (androidx.compose.ui.platform.LocalContext.current.applicationContext as app.daysemble.DaysembleApp).container
     val records by container.sleep.recent.collectAsStateWithLifecycle(initialValue = emptyList())
     val sleepActions = app.daysemble.ui.sleep.rememberSleepActions()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(now) { vm.onTick(now) }
     LaunchedEffect(state.date) { onFocusedDate(state.date) }
     TodayScreen(
@@ -165,7 +166,11 @@ fun TodayRoute(
         onSelectDate = vm::select, onToday = vm::goToToday,
         onToggleTask = { id, done -> vm.setCompleted(id, done) { r -> if (done) onCompleted(id, r) } }, onOpenEvent = onOpenEvent, onOpenTask = onOpenTask,
         onAddEvent = onAddEvent, onAddTask = onAddTask,
-        sleep = TodaySleep(sleepActions, records, onOpenSchedule),
+        sleep = TodaySleep(
+            sleepActions, records, onOpenSchedule,
+            hintDismissedDay = app.daysemble.ui.LocalAppSettings.current?.sleepHintDismissedDay,
+            onDismissHint = { day -> scope.launch { container.settings.dismissSleepHint(day) } },
+        ),
         marks = marks,
     )
     app.daysemble.ui.sleep.SleepPrompts(sleepActions)
@@ -177,6 +182,9 @@ class TodaySleep(
     val actions: app.daysemble.ui.sleep.SleepActions? = null,
     val records: List<app.daysemble.core.time.SleepRecord> = emptyList(),
     val onOpenSchedule: () -> Unit = {},
+    /** Epoch day the "No sleep recorded" hint was dismissed on, and the call that dismisses it for a day. */
+    val hintDismissedDay: Long? = null,
+    val onDismissHint: (Long) -> Unit = {},
 )
 
 /** Test tags for the Today layout (gesture tests and visual QA). */
@@ -264,13 +272,22 @@ fun TodayScreen(
                         .nestedScroll(overviewScroll)
                         .verticalScroll(overviewScrollState, overscrollEffect = null)
                         .graphicsLayer {
-                            alpha = ((panel.progress() - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                            // Scrubbed with the panel's drag, like a collapsing toolbar: the big weekday
+                            // grows into place from the top-left and settles as the panel opens.
+                            val pr = panel.progress()
+                            alpha = ((pr - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                            val k = 0.92f + 0.08f * pr
+                            scaleX = k; scaleY = k
                             translationX = swipe.offset * DaySwipeState.PARALLAX
                         },
                 ) {
                     ExpandedOverview(
                         state, now, displayName, interactive = expandedTarget,
                         onInfo = { showBreakdown = true }, onSleep = { showSleep = true }, sleepActions = sleepActions,
+                        onOpenSchedule = onOpenSchedule,
+                        sleepHintDismissed = sleep.hintDismissedDay == state.today.toEpochDay(),
+                        onDismissSleepHint = { sleep.onDismissHint(state.today.toEpochDay()) },
                     )
                 }
             }
@@ -351,6 +368,9 @@ private fun ExpandedOverview(
     onInfo: () -> Unit = {},
     onSleep: () -> Unit = {},
     sleepActions: app.daysemble.ui.sleep.SleepActions? = null,
+    onOpenSchedule: () -> Unit = {},
+    sleepHintDismissed: Boolean = false,
+    onDismissSleepHint: () -> Unit = {},
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
@@ -379,7 +399,7 @@ private fun ExpandedOverview(
             Spacer(Modifier.height(Space.xl))
             val (text, icons) = briefing(s, now, name, p)
             Text(text, style = DsTheme.type.summary, inlineContent = icons)
-            DayBalance(s, now, p, interactive, onInfo, onSleep, sleepActions)
+            DayBalance(s, now, p, interactive, onInfo, onSleep, sleepActions, onOpenSchedule, sleepHintDismissed, onDismissSleepHint)
         }
     }
 }
