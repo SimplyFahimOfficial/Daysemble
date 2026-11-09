@@ -36,6 +36,8 @@ data class TasksUiState(
     val lists: List<TaskList> = emptyList(),
     val sections: List<TaskSection> = emptyList(),
     val totalOpen: Int = 0,
+    /** How many tasks each filter shows (the list chosen is respected); drives the counts on the chips. */
+    val counts: Map<TaskFilter, Int> = emptyMap(),
     val isLoading: Boolean = true,
 ) {
     /** Drag-to-reorder is offered in "List order" when only open tasks are shown. */
@@ -101,6 +103,9 @@ class TasksViewModel(
             filter = q.filter, sort = sort, listId = listId, lists = lists,
             sections = sections,
             totalOpen = all.count { !it.isCompleted && it.parentId == null },
+            counts = listOf(TaskFilter.TODAY, TaskFilter.UPCOMING, TaskFilter.OVERDUE).associateWith { f ->
+                all.count { t -> t.parentId == null && (listId == null || t.listId == listId) && TaskRules.matches(t, f, now, z) }
+            },
             isLoading = false,
         )
     }

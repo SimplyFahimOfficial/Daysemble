@@ -233,6 +233,12 @@ val LocalTaskRescheduled = staticCompositionLocalOf<(String, java.time.LocalDate
  */
 val LocalTaskCompleted = staticCompositionLocalOf<(String, app.daysemble.data.repo.TaskRepository.Completion) -> Unit> { { _, _ -> } }
 
+/**
+ * Call after a one-off task was completed from a list that it then leaves (the Tasks tab). Shows
+ * "Task completed · Undo" from the root scope, like [LocalTaskDeleted].
+ */
+val LocalTaskDone = staticCompositionLocalOf<(String) -> Unit> { {} }
+
 internal enum class Tab(val icon: ImageVector, val label: Int) {
     TODAY(Icons.Rounded.WbSunny, R.string.tab_today),
     CALENDAR(Icons.Rounded.CalendarMonth, R.string.tab_calendar),
@@ -325,6 +331,15 @@ fun DaysembleRoot(
             }
         }
     }
+    val completedMsg = stringResource(R.string.task_completed)
+    val onTaskDone: (String) -> Unit = remember(container, completedMsg, undoLabel) {
+        { id ->
+            rootScope.launch {
+                val res = snackbar.showSnackbar(completedMsg, undoLabel, duration = SnackbarDuration.Short)
+                if (res == SnackbarResult.ActionPerformed) container.tasks.setCompleted(id, false)
+            }
+        }
+    }
     CompositionLocalProvider(
         LocalTimePrefs provides prefs,
         LocalAppClock provides container.clock,
@@ -333,6 +348,7 @@ fun DaysembleRoot(
         LocalEventDeleted provides onEventDeleted,
         LocalTaskRescheduled provides onTaskRescheduled,
         LocalTaskCompleted provides onTaskCompleted,
+        LocalTaskDone provides onTaskDone,
         LocalAppSettings provides settings,
         LocalSyncStatus provides syncStatus,
     ) {
@@ -495,7 +511,10 @@ private fun AppContent(
                     onCreateAt = { d, min -> nav.openFromMain(EventEditorRoute(dateEpochDay = d.toEpochDay(), startMinute = min)) },
                     onFocusedDate = { calendarFocus = it.toEpochDay() },
                 )
-                Tab.TASKS -> TasksScreenRoute(bottomPadding, onOpenTask = openTask)
+                Tab.TASKS -> TasksScreenRoute(
+                    bottomPadding, onOpenTask = openTask,
+                    onAdd = { addDate = null; addKind = app.daysemble.ui.add.AddKind.TASK; showAdd = true },
+                )
             }
         }
         }
@@ -1031,7 +1050,9 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                             .focusGroup(),
                     ) {
                         app.daysemble.ui.components.VisibilityLifecycle(visible = t == current || t in stack || t.name !in seen) {
-                            holder.SaveableStateProvider(t.name) { content(t) }
+                            holder.SaveableStateProvider(t.name) {
+                                CompositionLocalProvider(app.daysemble.ui.components.LocalTabVisible provides (t == current)) { content(t) }
+                            }
                         }
                     }
                 }

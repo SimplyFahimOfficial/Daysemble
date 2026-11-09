@@ -2,6 +2,32 @@ package app.daysemble.ui.tasks
 
 import app.daysemble.ui.components.itemMotion
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.rounded.EditCalendar
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.Role
+import app.daysemble.ui.components.DsButton
+import app.daysemble.ui.components.DsButtonStyle
+import app.daysemble.ui.components.emptyActionEntrance
+import app.daysemble.ui.components.staggeredEntrance
+import app.daysemble.ui.theme.Radii
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -90,19 +116,21 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 
 @Composable
-fun TasksRoute(contentPadding: PaddingValues, onOpenTask: (String) -> Unit) {
+fun TasksRoute(contentPadding: PaddingValues, onOpenTask: (String) -> Unit, onAdd: () -> Unit = {}) {
     val vm = daysembleViewModel { c, h -> TasksViewModel(c.tasks, c.settings, c.clock, c.timeContext, h) }
     val state by vm.state.collectAsStateWithLifecycle()
     val now = rememberMinuteTicker()
     LaunchedEffect(now) { vm.onTick(now) }
-    val onDeleted = app.daysemble.ui.LocalTaskDeleted.current
     val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
+    val onDone = app.daysemble.ui.LocalTaskDone.current
     TasksScreen(
         state = state, now = now, contentPadding = contentPadding,
         onFilter = vm::setFilter, onList = vm::setList, onSort = vm::setSort,
-        onToggle = { id, done -> vm.setCompleted(id, done) { r -> if (done) onCompleted(id, r) } }, onOpen = onOpenTask,
-        onDelete = { id, scope -> vm.delete(id, scope); onDeleted(id) },
+        // A repeating task says where its series went; a one-off one leaves the list with an Undo.
+        onToggle = { id, done -> vm.setCompleted(id, done) { r -> if (done) { if (r.repeating) onCompleted(id, r) else onDone(id) } } },
+        onOpen = onOpenTask,
         onReorder = vm::reorder,
+        onAdd = onAdd,
     )
 }
 
@@ -116,9 +144,8 @@ fun TasksScreen(
     onSort: (TaskSort) -> Unit,
     onToggle: (String, Boolean) -> Unit,
     onOpen: (String) -> Unit,
-    /** A repeating task's occurrence asks first which occurrences (see SeriesScopeDialog). */
-    onDelete: (String, SeriesScope) -> Unit,
     onReorder: (List<String>) -> Unit = {},
+    onAdd: () -> Unit = {},
 ) {
     val c = DsTheme.colors
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -194,59 +221,86 @@ fun TasksScreen(
             }
         }
     }
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .background(c.background),
-        contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + Space.xxl),
-    ) {
-        item(key = "header") {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = Space.gutter, end = Space.xs, top = Space.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(stringResource(R.string.tab_tasks), style = DsTheme.type.headline, color = c.textPrimary, modifier = Modifier.weight(1f).semantics { heading() })
-                SortMenu(state.sort, onSort)
+    // Completing: the row shows the strike sweeping across first, then the task is really completed
+    // and the row leaves the list (with an Undo from the app root). Ids in [completing] show as done.
+    val completing = remember { androidx.compose.runtime.mutableStateMapOf<String, Job>() }
+    val complete: (String, Boolean) -> Unit = { id, done ->
+        val pending = completing[id]
+        when {
+            // Tapped again before the sweep finished: nothing was completed yet, so just cancel.
+            pending != null -> { pending.cancel(); completing.remove(id) }
+            done && state.filter != TaskFilter.COMPLETED && m.enabled -> {
+                completing[id] = dragScope.launch {
+                    delay((m.medium + m.short).toLong())
+                    onToggle(id, true)
+                    completing.remove(id)
+                }
             }
+            else -> onToggle(id, done)
         }
-        item(key = "filters") {
+    }
+    // The first rows enter one after another, once, when the tab is first on screen with its data.
+    val visible = app.daysemble.ui.components.LocalTabVisible.current
+    var entrance by remember { mutableStateOf(true) }
+    LaunchedEffect(visible, state.isLoading) {
+        if (visible && !state.isLoading && entrance) {
+            delay((m.stagger * m.staggerMax + m.medium).toLong())
+            entrance = false
+        }
+    }
+    val settleScroll = rememberUpdatedState(listState)
+    LaunchedEffect(state.filter) { settleScroll.value.scrollToItem(0) }
+    var showSort by rememberSaveable { mutableStateOf(false) }
+    if (showSort) SortSheet(state.sort, onSort = { onSort(it); showSort = false }, onDismiss = { showSort = false })
+    val dimmed = state.filter == TaskFilter.COMPLETED
+
+    Column(Modifier.fillMaxSize().background(c.background)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = Space.gutter, end = Space.xs, top = Space.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(stringResource(R.string.tab_tasks), style = DsTheme.type.headline, color = c.textPrimary, modifier = Modifier.weight(1f).semantics { heading() })
+            DsIconButton(Icons.AutoMirrored.Rounded.Sort, stringResource(R.string.cd_sort), { showSort = true })
+        }
+        FilterChips(state, onFilter)
+        if (state.lists.size > 1) {
             Row(
                 Modifier
                     .horizontalScroll(rememberScrollState())
                     .padding(horizontal = Space.gutter - Space.xs),
                 horizontalArrangement = Arrangement.spacedBy(Space.xs),
             ) {
-                TaskFilter.entries.forEach { f ->
-                    DsChip(stringResource(filterLabel(f)), state.filter == f, { onFilter(f) })
-                }
+                DsChip(stringResource(R.string.all_lists), state.listId == null, { onList(null) })
+                state.lists.forEach { l -> DsChip(l.title, state.listId == l.id, { onList(l.id) }) }
             }
         }
-        if (state.lists.size > 1) {
-            item(key = "lists") {
-                Row(
-                    Modifier
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = Space.gutter - Space.xs),
-                    horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                ) {
-                    DsChip(stringResource(R.string.all_lists), state.listId == null, { onList(null) })
-                    state.lists.forEach { l -> DsChip(l.title, state.listId == l.id, { onList(l.id) }) }
-                }
-            }
-        }
-
+        // Another filter replaces the list as a whole: it fades in while rising a little.
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+        app.daysemble.ui.components.ContentSwap(state.filter, shift = m.listShift) {
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + Space.xxl),
+    ) {
         if (state.isLoading) {
             item(key = "loading") { SkeletonRows(Modifier.padding(top = Space.xl)) }
         } else if (state.sections.isEmpty()) {
             item(key = "empty") {
+                // The copy says what this filter is for, not just that it is empty.
+                val (title, body) = when (state.filter) {
+                    TaskFilter.ALL -> R.string.tasks_empty_title to R.string.tasks_empty_body
+                    TaskFilter.TODAY -> R.string.tasks_empty_today to R.string.tasks_empty_today_body
+                    TaskFilter.UPCOMING -> R.string.tasks_empty_upcoming to R.string.tasks_empty_upcoming_body
+                    TaskFilter.OVERDUE -> R.string.tasks_empty_overdue to R.string.tasks_empty_overdue_body
+                    TaskFilter.COMPLETED -> R.string.tasks_empty_completed to R.string.tasks_empty_completed_body
+                }
                 StateMessage(
-                    Icons.Rounded.TaskAlt,
-                    stringResource(if (state.filter == TaskFilter.ALL) R.string.tasks_empty_title else R.string.tasks_empty_filter_title),
-                    Modifier.padding(top = Space.x3),
-                    body = stringResource(R.string.tasks_empty_body),
+                    Icons.Rounded.TaskAlt, stringResource(title), Modifier.padding(top = Space.x3), body = stringResource(body),
+                    action = if (state.filter == TaskFilter.OVERDUE || state.filter == TaskFilter.COMPLETED) null else ({
+                        DsButton(stringResource(R.string.add_task), onAdd, style = DsButtonStyle.Tint, modifier = Modifier.emptyActionEntrance(0))
+                    }),
                 )
             }
         }
@@ -262,7 +316,7 @@ fun TasksScreen(
                 val index = manual.indexOf(task)
                 val isDragged = dragging == task.id
                 // Lifted while held; set down (shadow and scale back) as it settles.
-                val lift by animateFloatAsState(if (isDragged && !settling) 1f else 0f, m.indicator(), label = "lift")
+                val lift by animateFloatAsState(if (isDragged && !settling) 1f else 0f, m.snappy(), label = "lift")
                 val moveUp = stringResource(R.string.action_move_up)
                 val moveDown = stringResource(R.string.action_move_down)
                 Box(
@@ -272,7 +326,7 @@ fun TasksScreen(
                         .graphicsLayer {
                             translationY = if (isDragged) dragOffset else 0f
                             shadowElevation = lift * liftPx
-                            val scale = 1f + (1f - m.pressScale(large = true)) * lift // 1.5 % up, none when reduced
+                            val scale = 1f + (m.liftScale - 1f) * lift // 3 % up while held, none with motion off
                             scaleX = scale; scaleY = scale
                         }
                         .background(if (isDragged) c.surfaceRaised else c.background),
@@ -328,21 +382,30 @@ fun TasksScreen(
             }
         }
 
-        if (!state.canReorder) state.sections.forEach { section ->
-            if (section.bucket != null) {
-                item(key = "h:" + section.bucket.name) {
-                    SectionHeader(stringResource(bucketLabel(section.bucket)), Modifier.padding(top = Space.l).then(itemMotion()))
+        if (!state.canReorder) {
+            val firstIndex = state.sections.runningFold(0) { acc, sec -> acc + sec.tasks.size }
+            state.sections.forEachIndexed { si, section ->
+                if (section.bucket != null) {
+                    item(key = "h:" + section.bucket.name) {
+                        SectionHeader(stringResource(bucketLabel(section.bucket)), Modifier.padding(top = Space.l).then(itemMotion()))
+                    }
+                } else {
+                    item(key = "h:flat") { Spacer(Modifier.size(Space.s)) }
                 }
-            } else {
-                item(key = "h:flat") { Spacer(Modifier.size(Space.s)) }
+                itemsIndexed(section.tasks, key = { _, t -> t.id }) { i, task ->
+                    SwipeableTaskRow(
+                        task, now,
+                        completing = completing.containsKey(task.id), dimmed = dimmed,
+                        onToggle = { complete(task.id, it) }, onOpen = { onOpen(task.id) },
+                        modifier = Modifier
+                            .staggeredEntrance(firstIndex[si] + i, play = entrance, gate = visible)
+                            .then(itemMotion()),
+                    )
+                }
             }
-            items(section.tasks, key = { it.id }) { task ->
-                SwipeableTaskRow(
-                    task, now,
-                    onToggle = { onToggle(task.id, it) }, onOpen = { onOpen(task.id) }, onDelete = { scope -> onDelete(task.id, scope) },
-                    modifier = Modifier.then(itemMotion()),
-                )
-            }
+        }
+    }
+        }
         }
     }
 }
@@ -355,57 +418,48 @@ private val AutoScrollMaxSpeed = 900.dp // per second
 private fun SwipeableTaskRow(
     task: Task,
     now: Instant,
+    completing: Boolean,
+    dimmed: Boolean,
     onToggle: (Boolean) -> Unit,
     onOpen: () -> Unit,
-    onDelete: (SeriesScope) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = DsTheme.colors
-    val m = DsTheme.motion
     val state = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
-    // "Armed": past the threshold, so letting go now completes or deletes. The background fills
-    // with the action's colour and the icon grows at that moment, with one tick, so the user knows
-    // before lifting the finger. Only arming ticks; the reset after a completion doesn't.
+    val itemActions = app.daysemble.ui.actions.LocalItemActions.current
+    // "Armed": past the threshold, so letting go now acts. The colour and icon have been growing with
+    // the drag; at that moment there is one tick, so the user knows before lifting the finger.
     val armed by remember { derivedStateOf { state.targetValue != SwipeToDismissBoxValue.Settled } }
     val haptics = rememberHaptics()
     LaunchedEffect(state) {
-        snapshotFlow { armed }.distinctUntilChanged().filter { it }.collect {
-            haptics.tick()
-        }
-    }
-    // Deleting an occurrence of a repeating task asks which ones, as in the editor; cancelling puts
-    // the row back.
-    var askScope by rememberSaveable { mutableStateOf(false) }
-    val delete: () -> Unit = { if (task.isRecurring) askScope = true else onDelete(SeriesScope.THIS) }
-    if (askScope) {
-        SeriesScopeDialog(
-            forDelete = true, allowThis = true, pastOccurrence = task.isCompleted,
-            onPick = onDelete,
-            onDismiss = { askScope = false; scope.launch { state.reset() } },
-        )
+        snapshotFlow { armed }.distinctUntilChanged().filter { it }.collect { haptics.tick() }
     }
     val completeLabel = stringResource(if (task.isCompleted) R.string.action_mark_incomplete else R.string.action_complete)
-    val deleteLabel = stringResource(R.string.action_delete)
+    val rescheduleLabel = stringResource(R.string.menu_reschedule)
     SwipeToDismissBox(
         state = state,
         modifier = modifier,
+        // Right completes; left opens the quick reschedule options (Tomorrow, Next week, Pick date).
+        // Either way the row comes back: completing moves it out of the list, rescheduling re-sorts it.
         onDismiss = { value ->
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> { onToggle(!task.isCompleted); scope.launch { state.reset() } }
-                SwipeToDismissBoxValue.EndToStart -> delete()
+                SwipeToDismissBoxValue.EndToStart -> { itemActions?.onTaskReschedule(task); scope.launch { state.reset() } }
                 SwipeToDismissBoxValue.Settled -> Unit
             }
         },
-        backgroundContent = { SwipeBackground(state.dismissDirection, armed) },
+        backgroundContent = { SwipeBackground(state.dismissDirection, { state.progress }, armed) },
     ) {
         Box(Modifier.background(c.background)) {
             TaskRow(
                 task, now, onToggle = onToggle, onClick = onOpen,
-                onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(task) } },
+                forceCompleted = completing,
+                modifier = if (dimmed) Modifier.graphicsLayer { alpha = COMPLETED_ALPHA } else Modifier,
+                onLongClick = itemActions?.let { a -> { a.onTaskLongPress(task) } },
                 actions = listOf(
                     CustomAccessibilityAction(completeLabel) { onToggle(!task.isCompleted); true },
-                    CustomAccessibilityAction(deleteLabel) { delete(); true },
+                    CustomAccessibilityAction(rescheduleLabel) { itemActions?.onTaskReschedule(task); itemActions != null },
                 ),
             )
             HairlineDivider(Modifier.align(Alignment.BottomCenter), inset = true)
@@ -413,63 +467,116 @@ private fun SwipeableTaskRow(
     }
 }
 
+/** Completed tasks rest at about half opacity. */
+private const val COMPLETED_ALPHA = 0.5f
+
 /**
- * Behind a swiped row: neutral until the swipe passes the threshold ([armed]), then the action's
- * colour (complete: green, delete: red) with its icon at full size.
+ * Behind a swiped row. The colour and the icon follow the drag ([progress], 0 to 1 at the
+ * threshold): the fill fades from neutral to the action's colour and the icon grows and darkens.
+ * Right is complete (green, a check), left is reschedule (accent, a calendar).
  */
 @Composable
-private fun SwipeBackground(dir: SwipeToDismissBoxValue, armed: Boolean) {
+private fun SwipeBackground(dir: SwipeToDismissBoxValue, progress: () -> Float, armed: Boolean) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     val complete = dir == SwipeToDismissBoxValue.StartToEnd
-    val action = if (complete) SwipeAction(c.success.copy(alpha = 0.16f), c.success, Icons.Rounded.Check)
-    else SwipeAction(c.errorContainer, c.error, Icons.Rounded.DeleteOutline)
     val idle = dir == SwipeToDismissBoxValue.Settled
-    val bg = app.daysemble.ui.components.animateStateColor(
-        action.fill(idle, armed, c.surfaceVariant),
-        m.standard(m.short),
-        label = "swipeBg",
-    )
-    val iconScale by animateFloatAsState(if (armed || m.reduced) 1f else 0.8f, m.indicator(), label = "swipeIcon")
+    val fill = if (complete) c.success.copy(alpha = 0.16f) else c.accent.copy(alpha = 0.14f)
+    val tint = if (complete) c.success else c.accent
+    // A little extra when armed, so the last stretch of the drag is felt as well as seen.
+    val pop by animateFloatAsState(if (armed) 1.15f else 1f, m.snappy(), label = "swipePop")
     Box(
         Modifier
             .fillMaxSize()
-            .background(bg)
+            .drawBehind {
+                val p = progress().coerceIn(0f, 1f)
+                if (!idle) {
+                    drawRect(c.surfaceVariant.copy(alpha = 1f - p))
+                    drawRect(fill.copy(alpha = fill.alpha * p))
+                }
+            }
             .padding(horizontal = Space.gutter),
         contentAlignment = if (complete) Alignment.CenterStart else Alignment.CenterEnd,
     ) {
         if (!idle) {
             Icon(
-                action.icon, null, tint = action.tint(armed, c.textSecondary),
-                modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale },
+                if (complete) Icons.Rounded.Check else Icons.Rounded.EditCalendar, null, tint = tint,
+                modifier = Modifier.graphicsLayer {
+                    val p = progress().coerceIn(0f, 1f)
+                    val k = (if (m.enabled) 0.6f + 0.4f * p else 1f) * pop
+                    scaleX = k; scaleY = k
+                    alpha = if (m.enabled) 0.4f + 0.6f * p else 1f
+                },
             )
         }
     }
 }
 
-private data class SwipeAction(val armedFill: Color, val armedTint: Color, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    fun fill(idle: Boolean, armed: Boolean, neutral: Color) = when {
-        idle -> Color.Transparent
-        armed -> armedFill
-        else -> neutral
+/** The filter chips: they animate their fill and text, scroll the picked one into view, and fade out at the right edge. */
+@Composable
+private fun FilterChips(state: TasksUiState, onFilter: (TaskFilter) -> Unit) {
+    val c = DsTheme.colors
+    val scroll = rememberScrollState()
+    val requesters = remember { TaskFilter.entries.associateWith { BringIntoViewRequester() } }
+    LaunchedEffect(state.filter) { requesters.getValue(state.filter).bringIntoView() }
+    val fadeWidth = 24.dp
+    Row(
+        Modifier
+            .fillMaxWidth()
+            // Fade the content out at the right edge while there is more to scroll to.
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                if (scroll.canScrollForward) {
+                    val w = fadeWidth.toPx()
+                    drawRect(
+                        Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = size.width - w, endX = size.width),
+                        topLeft = Offset(size.width - w, 0f), size = Size(w, size.height), blendMode = BlendMode.DstIn,
+                    )
+                }
+            }
+            .horizontalScroll(scroll)
+            .padding(horizontal = Space.l - Space.xs),
+        horizontalArrangement = Arrangement.spacedBy(Space.xs),
+    ) {
+        TaskFilter.entries.forEach { f ->
+            val count = state.counts[f] ?: 0
+            DsChip(
+                stringResource(filterLabel(f)), state.filter == f, { onFilter(f) },
+                Modifier.bringIntoViewRequester(requesters.getValue(f)),
+                count = count, alert = f == TaskFilter.OVERDUE,
+            )
+        }
     }
-    fun tint(armed: Boolean, neutral: Color) = if (armed) armedTint else neutral
 }
 
+/** The sort options in a bottom sheet; the list reorders itself (rows glide to their new places) once one is picked. */
 @Composable
-private fun SortMenu(sort: TaskSort, onSort: (TaskSort) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        DsIconButton(Icons.AutoMirrored.Rounded.Sort, stringResource(R.string.cd_sort), { open = true })
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = DsTheme.colors.surfaceRaised) {
+private fun SortSheet(sort: TaskSort, onSort: (TaskSort) -> Unit, onDismiss: () -> Unit) {
+    val c = DsTheme.colors
+    val haptics = rememberHaptics()
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = c.surfaceRaised, shape = Radii.sheet) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = Space.l)) {
+            Text(
+                stringResource(R.string.cd_sort), style = DsTheme.type.title, color = c.textPrimary,
+                modifier = Modifier.padding(horizontal = Space.gutter).semantics { heading() },
+            )
+            Spacer(Modifier.height(Space.s))
             TaskSort.entries.forEach { s ->
                 val selectedText = stringResource(R.string.state_selected)
-                DropdownMenuItem(
-                    modifier = Modifier.semantics { if (s == sort) stateDescription = selectedText },
-                    text = { Text(stringResource(sortLabel(s)), style = DsTheme.type.body) },
-                    trailingIcon = { if (s == sort) Icon(Icons.Rounded.Check, null, modifier = Modifier.size(18.dp)) },
-                    onClick = { onSort(s); open = false },
-                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = Sizes.touch + 4.dp)
+                        .selectable(selected = s == sort, role = Role.RadioButton, onClick = { if (s != sort) haptics.tick(); onSort(s) })
+                        .semantics { if (s == sort) stateDescription = selectedText }
+                        .padding(horizontal = Space.gutter),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(sortLabel(s)), style = DsTheme.type.body, color = c.textPrimary, modifier = Modifier.weight(1f))
+                    if (s == sort) Icon(Icons.Rounded.Check, null, tint = c.textPrimary, modifier = Modifier.size(Sizes.icon))
+                }
             }
         }
     }

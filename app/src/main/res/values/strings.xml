@@ -169,8 +169,16 @@
     <string name="sort_created">Newest first</string>
     <string name="sort_manual">List order</string>
     <string name="tasks_empty_title">No open tasks</string>
-    <string name="tasks_empty_filter_title">Nothing here</string>
     <string name="tasks_empty_body">Tasks you add appear here.</string>
+    <string name="tasks_empty_today">Nothing today</string>
+    <string name="tasks_empty_today_body">Tasks due today, and anything overdue, show up here.</string>
+    <string name="tasks_empty_upcoming">Nothing upcoming</string>
+    <string name="tasks_empty_upcoming_body">Tasks with a later due date show up here.</string>
+    <string name="tasks_empty_overdue">Nothing overdue</string>
+    <string name="tasks_empty_overdue_body">You’re all caught up.</string>
+    <string name="tasks_empty_completed">No completed tasks yet</string>
+    <string name="tasks_empty_completed_body">Tasks you finish show up here.</string>
+    <string name="task_completed">Task completed</string>
     <string name="edit_this_event">Edit this event</string>
     <string name="edit_recurring_title">Edit a repeating event</string>
     <string name="edit_recurring_body">Change only this event, or every event in the series?</string>

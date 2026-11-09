@@ -80,6 +80,8 @@ import java.time.temporal.TemporalAdjusters
  */
 interface ItemActions {
     fun onTaskLongPress(task: Task)
+    /** Opens the quick reschedule options (Today, Tomorrow, Next week, Pick date) for [task]. */
+    fun onTaskReschedule(task: Task)
     fun onEventLongPress(event: EventOccurrence)
 }
 
@@ -130,6 +132,9 @@ fun ItemActionsHost(
             override fun onTaskLongPress(task: Task) {
                 target = MenuTarget(true, task.id, task.title, recurring = task.isRecurring, completed = task.isCompleted)
             }
+            override fun onTaskReschedule(task: Task) {
+                reschedule = MenuTarget(true, task.id, task.title, recurring = task.isRecurring, completed = task.isCompleted)
+            }
             override fun onEventLongPress(event: EventOccurrence) {
                 target = MenuTarget(false, event.eventId, event.title, event.occurrenceKey, event.isRecurring, readOnly = event.isReadOnly)
             }
@@ -138,6 +143,7 @@ fun ItemActionsHost(
     CompositionLocalProvider(LocalItemActions provides actions) { content() }
 
     val scope = rememberCoroutineScope()
+    val haptics = app.daysemble.ui.components.rememberHaptics()
     val onDeleted = LocalTaskDeleted.current
     val onCompleted = LocalTaskCompleted.current
     val onEventDeleted = LocalEventDeleted.current
@@ -178,12 +184,12 @@ fun ItemActionsHost(
         when {
             t.isTask && t.recurring -> SeriesScopeDialog(
                 forDelete = true, allowThis = true, pastOccurrence = t.completed,
-                onPick = { scope2 -> scope.launch { container.tasks.delete(t.id, scope2); onDeleted(t.id) } },
+                onPick = { scope2 -> haptics.reject(); scope.launch { container.tasks.delete(t.id, scope2); onDeleted(t.id) } },
                 onDismiss = { confirmDelete = null },
             )
             t.isTask -> DsConfirmDialog(
                 stringResource(R.string.delete_task_title), stringResource(R.string.delete_task_body), stringResource(R.string.action_delete),
-                onConfirm = { scope.launch { container.tasks.delete(t.id); onDeleted(t.id) } },
+                onConfirm = { haptics.reject(); scope.launch { container.tasks.delete(t.id); onDeleted(t.id) } },
                 onDismiss = { confirmDelete = null }, destructive = true,
             )
             t.recurring -> AlertDialog(

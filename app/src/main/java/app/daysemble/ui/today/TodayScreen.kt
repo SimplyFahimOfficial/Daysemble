@@ -119,6 +119,7 @@ import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.StateMessage
 import app.daysemble.ui.components.TaskRow
 import app.daysemble.ui.components.WeekStrip
+import app.daysemble.ui.components.emptyActionEntrance
 import app.daysemble.ui.components.itemMotion
 import app.daysemble.ui.daysembleViewModel
 import app.daysemble.ui.format.Fmt
@@ -641,8 +642,8 @@ private fun AgendaPanel(
                         modifier = Modifier.padding(top = Space.l).then(itemMotion()),
                         action = {
                             Row(horizontalArrangement = Arrangement.spacedBy(Space.s)) {
-                                DsButton(stringResource(R.string.add_event), { onAddEvent(state.date) }, style = DsButtonStyle.Secondary)
-                                DsButton(stringResource(R.string.add_task), { onAddTask(state.date) }, style = DsButtonStyle.Secondary)
+                                DsButton(stringResource(R.string.add_event), { onAddEvent(state.date) }, Modifier.emptyActionEntrance(0), style = DsButtonStyle.Tint)
+                                DsButton(stringResource(R.string.add_task), { onAddTask(state.date) }, Modifier.emptyActionEntrance(1), style = DsButtonStyle.Tint)
                             }
                         },
                     )

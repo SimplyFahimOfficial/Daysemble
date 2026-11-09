@@ -67,9 +67,9 @@ fun LazyItemScope.itemMotion(fadeOut: Boolean = true): Modifier {
  * inside [content], which is re-created per [key].
  */
 @Composable
-fun <K> ContentSwap(key: K, fade: Boolean = true, content: @Composable () -> Unit) {
+fun <K> ContentSwap(key: K, fade: Boolean = true, shift: Dp = DsTheme.motion.contentShift, content: @Composable () -> Unit) {
     val m = DsTheme.motion
-    val shiftPx = with(LocalDensity.current) { m.contentShift.toPx() }
+    val shiftPx = with(LocalDensity.current) { shift.toPx() }
     androidx.compose.runtime.key(key) {
         // Rows appear at once for the first frames of this version, then item motion is normal again.
         var fresh by remember { mutableStateOf(true) }
@@ -135,11 +135,13 @@ fun Modifier.staggeredEntrance(
     play: Boolean = true,
     baseDelay: Int = 0,
     shift: Dp = DsTheme.motion.contentShift,
+    /** The entrance waits until this is true (e.g. a tab composed in the background is shown). */
+    gate: Boolean = true,
 ): Modifier {
     val m = DsTheme.motion
     val progress = remember { Animatable(if (play && m.enabled) 0f else 1f) }
-    LaunchedEffect(Unit) {
-        if (progress.value < 1f) {
+    LaunchedEffect(gate) {
+        if (gate && progress.value < 1f) {
             delay((baseDelay + m.staggerDelay(index)).toLong())
             progress.animateTo(1f, m.spring())
         }
@@ -177,3 +179,6 @@ fun Modifier.newItemHighlight(id: String): Modifier {
 }
 
 private const val HIGHLIGHT_ALPHA = 0.16f
+
+/** True while the tab (or page) this content belongs to is the one on screen; tabs composed in the background see false. */
+val LocalTabVisible = compositionLocalOf { true }
