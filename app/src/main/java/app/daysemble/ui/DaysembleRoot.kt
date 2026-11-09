@@ -1,6 +1,8 @@
 package app.daysemble.ui
 
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -13,6 +15,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.layout.size as boxSize
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import app.daysemble.ui.components.LocalNewItem
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.Animatable
@@ -170,6 +177,7 @@ import java.time.ZoneId
 import androidx.compose.runtime.setValue
 
 val LocalSnackbar = staticCompositionLocalOf { SnackbarHostState() }
+
 
 /**
  * The settings the app is currently running with (already loaded before the first frame). Settings
@@ -379,6 +387,13 @@ private fun AppContent(
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var addDate by rememberSaveable { mutableStateOf<Long?>(null) }
     var addKind by rememberSaveable { mutableStateOf(app.daysemble.ui.add.AddKind.TASK) }
+    // What Quick Add last created: the + on Today opens on it (Tasks opens on Task, Calendar on Event).
+    var lastKind by rememberSaveable { mutableStateOf(app.daysemble.ui.add.AddKind.TASK) }
+    // The task or event just created, tinted briefly where it appears (see newItemHighlight).
+    var newItem by remember { mutableStateOf<String?>(null) }
+    val addSheet = remember { app.daysemble.ui.add.AddSheetState() }
+    LaunchedEffect(showAdd) { if (showAdd) addSheet.open(motion) else if (addSheet.present) addSheet.close(motion) }
+    LaunchedEffect(newItem) { if (newItem != null) { delay((motion.long * 4).toLong()); newItem = null } }
     // The day each date-based tab is showing, used to prefill quick add for that tab.
     var todayFocus by rememberSaveable { mutableStateOf<Long?>(null) }
     var calendarFocus by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -405,6 +420,7 @@ private fun AppContent(
         onOpenEvent = { id, key -> EventDetailRoute(id, key).let { if (!nav.isShowing(it)) nav.navigate(it) } },
         onEditEvent = { id, key -> nav.navigate(EventEditorRoute(eventId = id, occurrenceKey = key)) },
     ) {
+    CompositionLocalProvider(LocalNewItem provides newItem) {
     Box(Modifier.fillMaxSize().background(c.background)) {
         // Paused (lifecycle CREATED) while a page covers it completely: see VisibilityLifecycle.
         app.daysemble.ui.components.VisibilityLifecycle(visible = onMain || mainShown > 0) {
@@ -419,9 +435,15 @@ private fun AppContent(
             onOpenSync = { nav.openFromMain(SettingsPageRoute(SettingsPage.ACCOUNTS.name)) },
             onAdd = {
                 addDate = when (tab) { Tab.TODAY -> todayFocus; Tab.CALENDAR -> calendarFocus; Tab.TASKS -> null }
-                addKind = app.daysemble.ui.add.AddKind.TASK
+                addKind = when (tab) {
+                    Tab.TASKS -> app.daysemble.ui.add.AddKind.TASK
+                    Tab.CALENDAR -> app.daysemble.ui.add.AddKind.EVENT
+                    Tab.TODAY -> lastKind
+                }
                 showAdd = true
             },
+            addOpen = addSheet.present,
+            addSheet = addSheet,
             modifier = Modifier
                 .fillMaxSize()
                 // Recorded, not drawn here: the NavHost placeholder draws it (see AppContent's doc).
@@ -494,6 +516,24 @@ private fun AppContent(
                 nav.navigate(SettingsPageRoute(SettingsPage.ACCOUNTS.name))
             }
         }
+        // Quick Add: the FAB's container grows into the sheet, and shrinks back into it on close.
+        if (addSheet.present) {
+            QuickAddSheet(
+                sheetState = addSheet,
+                open = showAdd,
+                container = container,
+                initialDate = addDate?.let(LocalDate::ofEpochDay),
+                initialKind = addKind,
+                onDismiss = { showAdd = false },
+                onSaved = { id, kind -> newItem = id; lastKind = kind },
+                onMoreEventOptions = { pre ->
+                    nav.openFromMain(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
+                },
+                onMoreTaskOptions = { title, d, minute ->
+                    nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay(), dueMinute = minute, title = title.takeIf { it.isNotBlank() }))
+                },
+            )
+        }
         // Moves with the bottom bar instead of jumping when the bar shows or hides. Read in placement
         // only: as a padding it was read in composition, so the content around it recomposed on
         // every frame of each page open and close.
@@ -516,20 +556,6 @@ private fun AppContent(
         }
     }
     }
-
-    if (showAdd) {
-        QuickAddSheet(
-            container = container,
-            initialDate = addDate?.let(LocalDate::ofEpochDay),
-            initialKind = addKind,
-            onDismiss = { showAdd = false },
-            onMoreEventOptions = { pre ->
-                nav.openFromMain(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
-            },
-            onMoreTaskOptions = { title, d, minute ->
-                nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay(), dueMinute = minute, title = title.takeIf { it.isNotBlank() }))
-            },
-        )
     }
 }
 
@@ -726,19 +752,38 @@ private fun MainScreen(
     onSettings: () -> Unit,
     onOpenSync: () -> Unit,
     onAdd: () -> Unit,
+    addOpen: Boolean,
+    addSheet: app.daysemble.ui.add.AddSheetState,
     modifier: Modifier = Modifier,
     content: @Composable (Tab) -> Unit,
 ) {
     BackHandler(enabled = backEnabled && tab != Tab.TODAY) { onTab(Tab.TODAY) }
+    // The FAB scales away while the content scrolls down and returns when it scrolls up, on another
+    // tab, or when Quick Add opens. The connection only watches; it never consumes a scroll.
+    var fabShown by remember { mutableStateOf(true) }
+    LaunchedEffect(tab, addOpen) { fabShown = true }
+    val fabWatcher = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    if (available.y < -FAB_SCROLL_SLOP) fabShown = false else if (available.y > FAB_SCROLL_SLOP) fabShown = true
+                }
+                return Offset.Zero
+            }
+        }
+    }
     Box(modifier.background(DsTheme.colors.background)) {
         Column(Modifier.fillMaxSize()) {
             MainHeader(displayName, syncStatus, onSearch, onSettings, onOpenSync)
-            TabHost(tab, Modifier.weight(1f).fillMaxWidth(), content)
+            TabHost(tab, Modifier.weight(1f).fillMaxWidth().nestedScroll(fabWatcher), content)
         }
         BottomBar(
             current = tab,
             onSelect = { t -> if (t != tab) onTab(t) },
             onAdd = onAdd,
+            addOpen = addOpen,
+            addSheet = addSheet,
+            fabShown = fabShown,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
@@ -914,7 +959,10 @@ private suspend fun awaitMainThreadIdle(timeoutMs: Long) {
 private val ScrollEdgeFade = 28.dp
 
 @Composable
-private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier) {
+private fun BottomBar(
+    current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, addOpen: Boolean, addSheet: app.daysemble.ui.add.AddSheetState,
+    fabShown: Boolean, modifier: Modifier = Modifier,
+) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     // Soft: with the scroll-edge fade the bar no longer needs a heavy shadow to stand off the list.
@@ -1007,11 +1055,31 @@ private fun BottomBar(current: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit, 
                 }
             }
         }
-        DsFab(
-            Icons.Rounded.Add, stringResource(R.string.cd_add), onAdd,
-            Modifier.requiredSize(Sizes.fab).shadow(Elevation.floating, Radii.pill, ambientColor = shadow, spotColor = shadow),
-        )
+        AddFab(addOpen, addSheet, fabShown, onAdd, shadow)
     }
+}
+
+/**
+ * The + button. While Quick Add is present the sheet's container is drawn over it (it grows from
+ * these bounds and shrinks back to them), so the button itself is invisible and does not respond.
+ */
+@Composable
+private fun AddFab(open: Boolean, sheet: app.daysemble.ui.add.AddSheetState, fabShown: Boolean, onAdd: () -> Unit, shadow: Color) {
+    val m = DsTheme.motion
+    val scale by animateFloatAsState(if (fabShown) 1f else 0f, m.snappy(), label = "fabScale")
+    DsFab(
+        Icons.Rounded.Add, stringResource(R.string.cd_add), onAdd,
+        Modifier
+            .requiredSize(Sizes.fab)
+            .onGloballyPositioned { sheet.fab = it.boundsInRoot() }
+            .graphicsLayer {
+                val k = if (open) 1f else scale
+                scaleX = k; scaleY = k
+                alpha = if (open) 0f else 1f
+            }
+            .then(if (fabShown && !open) Modifier else Modifier.clearAndSetSemantics { })
+            .shadow(Elevation.floating, Radii.pill, ambientColor = shadow, spotColor = shadow),
+    )
 }
 
 @Composable
@@ -1028,6 +1096,9 @@ private fun TabItem(
         iconScale, labelAlpha,
     )
 }
+
+/** The scroll distance (px) that hides or shows the FAB. */
+private const val FAB_SCROLL_SLOP = 2f
 
 /** Peak scale of a tab icon's bounce, and the opacity of a tab label that is not selected. */
 private const val TAB_BOUNCE = 1.18f

@@ -1,6 +1,10 @@
 package app.daysemble.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.unit.Dp
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -107,3 +111,59 @@ fun animateStateColor(
     }
     return if (valueTheme.value != dark) targetValue else anim.value
 }
+
+/**
+ * Fades an item in while it rises by [shift] (default [app.daysemble.ui.theme.DsMotion.contentShift]),
+ * [baseDelay] ms plus [index] x the stagger after it first composes. Only the first
+ * [app.daysemble.ui.theme.DsMotion.staggerMax] indexes are delayed, the rest arrive with the last.
+ * [play] = false (or motion off) shows the item at once. Alpha and translation are drawn only, so
+ * nothing re-measures per frame.
+ */
+@Composable
+fun Modifier.staggeredEntrance(
+    index: Int,
+    play: Boolean = true,
+    baseDelay: Int = 0,
+    shift: Dp = DsTheme.motion.contentShift,
+): Modifier {
+    val m = DsTheme.motion
+    val progress = remember { Animatable(if (play && m.enabled) 0f else 1f) }
+    LaunchedEffect(Unit) {
+        if (progress.value < 1f) {
+            delay((baseDelay + m.staggerDelay(index)).toLong())
+            progress.animateTo(1f, m.spring())
+        }
+    }
+    val px = with(LocalDensity.current) { shift.toPx() }
+    return graphicsLayer {
+        val p = progress.value
+        alpha = p.coerceIn(0f, 1f)
+        translationY = (1f - p) * px
+    }
+}
+
+/**
+ * The id of the task or event that was just added from Quick Add, set by the app root for a few
+ * seconds. Rows with that id tint briefly ([newItemHighlight]) so the eye finds the new item.
+ */
+val LocalNewItem = compositionLocalOf<String?> { null }
+
+/** A brief accent tint behind the row when [id] is the item that was just added (see [LocalNewItem]). */
+@Composable
+fun Modifier.newItemHighlight(id: String): Modifier {
+    val newId = LocalNewItem.current
+    val m = DsTheme.motion
+    val tint = remember(id) { Animatable(0f) }
+    LaunchedEffect(newId) {
+        if (newId != null && newId == id) {
+            if (m.enabled) {
+                tint.snapTo(1f)
+                tint.animateTo(0f, tween(m.long * 3))
+            }
+        }
+    }
+    val color = DsTheme.colors.accent
+    return drawBehind { if (tint.value > 0f) drawRect(color.copy(alpha = HIGHLIGHT_ALPHA * tint.value)) }
+}
+
+private const val HIGHLIGHT_ALPHA = 0.16f
