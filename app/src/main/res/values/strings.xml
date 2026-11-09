@@ -694,6 +694,9 @@
     <string name="onboarding_preview_task_3">Pick up the dry cleaning</string>
     <!-- Display name -->
     <string name="settings_your_name">Your name</string>
+    <string name="name_hint_title">Add your name</string>
+    <string name="name_hint_body">Daysemble greets you with it on Today.</string>
+    <string name="name_hint_action">Add</string>
     <string name="settings_your_name_unset">Not set. Shown next to the logo on Today.</string>
     <!-- Support my work -->
     <string name="support_my_work">Support my work</string>

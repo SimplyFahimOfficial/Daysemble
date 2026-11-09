@@ -38,6 +38,8 @@ import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
 import app.daysemble.ui.components.DsConfirmDialog
 import app.daysemble.ui.components.DsRow
+import app.daysemble.ui.components.CardDivider
+import app.daysemble.ui.components.SettingsCard
 import app.daysemble.ui.components.DsSwitchRow
 import app.daysemble.ui.components.DsTimePickerDialog
 import app.daysemble.ui.components.DsTopBar
@@ -93,14 +95,17 @@ fun ScheduleSettingsRoute(onBack: () -> Unit) {
             val schedule = s!!.schedule
             val d = schedule.default
             SectionHeader(stringResource(R.string.schedule_waking_hours))
-            DsRow(
-                stringResource(R.string.schedule_wake), subtitle = Fmt.time(d.wake, p), icon = Icons.Rounded.WbSunny,
-                onClick = { pick = "wake" }, modifier = Modifier.testTag(ScheduleTags.WAKE),
-            )
-            DsRow(
-                stringResource(R.string.schedule_bed), subtitle = Fmt.time(d.bed, p), icon = Icons.Rounded.Bedtime,
-                onClick = { pick = "bed" }, modifier = Modifier.testTag(ScheduleTags.BED),
-            )
+            SettingsCard {
+                DsRow(
+                    stringResource(R.string.schedule_wake), subtitle = Fmt.time(d.wake, p), icon = Icons.Rounded.WbSunny,
+                    onClick = { pick = "wake" }, modifier = Modifier.testTag(ScheduleTags.WAKE),
+                )
+                CardDivider()
+                DsRow(
+                    stringResource(R.string.schedule_bed), subtitle = Fmt.time(d.bed, p), icon = Icons.Rounded.Bedtime,
+                    onClick = { pick = "bed" }, modifier = Modifier.testTag(ScheduleTags.BED),
+                )
+            }
             Text(
                 scheduleSummary(d, p), style = DsTheme.type.bodySmall, color = DsTheme.colors.textSecondary,
                 modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.s).testTag(ScheduleTags.SUMMARY),
@@ -111,6 +116,7 @@ fun ScheduleSettingsRoute(onBack: () -> Unit) {
                     modifier = Modifier.padding(horizontal = Space.gutter),
                 )
             }
+            SettingsCard {
             DsSwitchRow(
                 stringResource(R.string.schedule_per_weekday), schedule.perWeekday,
                 { on -> scope.launch { container.settings.setPerWeekdaySchedule(on) } },
@@ -120,6 +126,7 @@ fun ScheduleSettingsRoute(onBack: () -> Unit) {
                 for (day in weekOrder(p.firstDayOfWeek)) {
                     val own = schedule.overrides[day]
                     val eff = own ?: d
+                    CardDivider()
                     DsRow(
                         Fmt.weekdayFull(day, p),
                         subtitle = stringResource(R.string.time_range, Fmt.time(eff.wake, p), Fmt.time(eff.bed, p)) +
@@ -127,6 +134,7 @@ fun ScheduleSettingsRoute(onBack: () -> Unit) {
                         onClick = { weekday = day.value },
                     )
                 }
+            }
             }
             Spacer(Modifier.height(Space.s))
             DsButton(
