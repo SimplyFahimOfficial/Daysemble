@@ -198,6 +198,20 @@ data class DsMotion(val reduced: Boolean = false) {
         return ContentTransform(enter, exit, sizeTransform = size)
     }
 
+    /**
+     * A title that follows a swipe: the new one slides in a little ([TITLE_SHIFT]) from the side the
+     * content comes from and fades in, the old one leaves the other way, so the title trails the
+     * grid beneath it, which slides a full page. [direction] +1 forward, -1 back, 0 none.
+     */
+    fun titleSlide(direction: Int, rtl: Boolean): ContentTransform {
+        val e = if (rtl) -direction else direction
+        if (reduced || e == 0) return ContentTransform(fadeIn(tween(short)), fadeOut(tween(short)))
+        return ContentTransform(
+            fadeIn(tween(medium, delayMillis = OUT, easing = EmphasizedDecelerate)) + slideInHorizontally(spring()) { e * TITLE_SHIFT },
+            fadeOut(tween(OUT, easing = Standard)) + slideOutHorizontally(spring()) { -e * TITLE_SHIFT },
+        )
+    }
+
     /** Size change that accompanies [fadeThrough] when the new content is taller or shorter. */
     fun contentSize(): SizeTransform = SizeTransform(clip = false) { _, _ -> if (reduced) snap() else tween(medium, easing = Standard) }
 
@@ -261,6 +275,8 @@ data class DsMotion(val reduced: Boolean = false) {
          * Outgoing content fades in [OUT] ms on a curve that drops early; incoming content starts at
          * [IN_DELAY] ms, when the old one is nearly gone: no double image and no blank gap between.
          */
+        /** How far (px, density independent enough for a title) a title slides on a month change. */
+        const val TITLE_SHIFT = 48
         const val OUT = 90
         const val IN_DELAY = 60
         /** Stiffness of [settle]. With mass 1, response = 2π / √650 ≈ 0.25 s. */

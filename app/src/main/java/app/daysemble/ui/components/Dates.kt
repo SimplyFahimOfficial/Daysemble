@@ -1,6 +1,7 @@
 package app.daysemble.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -11,6 +12,11 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -119,15 +125,21 @@ const val TASK_MARK = 0
 
 /** Up to three small dots in the colours of what is on a day, fading in [delayMs] after they first appear. */
 @Composable
-fun DayMarks(colors: List<Int>, delayMs: Int, modifier: Modifier = Modifier, dim: Boolean = false) {
+fun DayMarks(colors: List<Int>, delayMs: Int, modifier: Modifier = Modifier, dim: Boolean = false, overflow: Boolean = false) {
     val c = DsTheme.colors
     Row(
         modifier.height(MARK_SIZE).then(if (colors.isEmpty()) Modifier else Modifier.staggeredEntrance(0, baseDelay = delayMs, shift = 0.dp)),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         colors.take(3).forEach { argb ->
             val color = if (argb == TASK_MARK) c.outlineStrong else eventColor(argb)
             Box(Modifier.size(MARK_SIZE).clip(CircleShape).background(color.copy(alpha = if (dim) 0.4f else 1f)))
+        }
+        // More than three: a small plus after the dots.
+        if (overflow) Box(Modifier.size(MARK_SIZE)) {
+            Box(Modifier.align(Alignment.Center).size(width = MARK_SIZE, height = 1.dp).background(c.textTertiary))
+            Box(Modifier.align(Alignment.Center).size(width = 1.dp, height = MARK_SIZE).background(c.textTertiary))
         }
     }
 }
@@ -184,21 +196,15 @@ fun WeekStrip(
     HorizontalPager(pager, modifier = modifier.fillMaxWidth(), beyondViewportPageCount = 1) { page ->
         val start = base.plusWeeks((page - CENTER).toLong())
         val index = ChronoUnit.DAYS.between(start, selected).toInt().takeIf { it in 0..6 }
-        val circle = rememberSlidingCircle(index)
+        val disc = rememberSlidingDisc(index?.let { it to 0 })
+        val map = remember { DiscMap(7, 1) }
         val ink = DsTheme.colors.inverse
         Row(
             Modifier
                 .fillMaxWidth()
-                .drawBehind {
-                    // The selected circle, under the numbers: it slides between the seven cells.
-                    val a = circle.alpha()
-                    if (a > 0f) {
-                        val pad = Space.s.toPx()
-                        val cell = (size.width - 2 * pad) / 7f
-                        val r = DATE_DISC / 2 * density
-                        drawCircle(ink.copy(alpha = a), r, Offset(pad + cell * (circle.position() + 0.5f), Space.xs.toPx() + r))
-                    }
-                }
+                .discContainer(map)
+                // The selected circle, under the numbers: it slides between the seven cells.
+                .drawBehind { disc.draw(this, map, ink) }
                 .padding(horizontal = Space.s)
                 .selectableGroup(),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -206,7 +212,7 @@ fun WeekStrip(
             repeat(7) { i ->
                 val d = start.plusDays(i.toLong())
                 DateCell(
-                    d, d == selected, d == today, marks[d].orEmpty(), i,
+                    d, d == selected, d == today, marks[d].orEmpty(), i, map,
                     onClick = { if (d != selected) haptics.tick(); select(d) },
                     onLongClick = { r -> haptics.tick(); peek = d to r },
                     modifier = Modifier.weight(1f),
@@ -217,40 +223,97 @@ fun WeekStrip(
     peek?.let { (d, r) -> DayPeek(d, r, onDismiss = { peek = null }, onAddEvent = onAddEvent) }
 }
 
-/** Diameter (dp) of the selected-date circle; the same as the date disc, so the two line up. */
+/** Diameter (dp) of a date disc at normal font size. */
 private const val DATE_DISC = 38f
 
-/** The position (cell index) and opacity of a selected-date circle on one page: read in the draw phase. */
+/**
+ * Where the date discs of a page are, measured: the container and every disc ([columns] x [rows]).
+ * A circle can then be placed at any fractional (column, row) by interpolating between the real
+ * centres, so it stays on its cell while rows collapse, move or grow at large font sizes.
+ * Coordinates are read when drawing.
+ */
 @Stable
-private class SlidingCircle(val position: () -> Float, val alpha: () -> Float)
+class DiscMap(private val columns: Int = 7, private val rows: Int = 1) {
+    var container: LayoutCoordinates? = null
+    private val cells = arrayOfNulls<LayoutCoordinates>(columns * rows)
+
+    fun report(index: Int, coords: LayoutCoordinates) { if (index in cells.indices) cells[index] = coords }
+
+    private fun center(index: Int): Offset? {
+        val root = container?.takeIf { it.isAttached } ?: return null
+        val c = cells.getOrNull(index)?.takeIf { it.isAttached } ?: return null
+        return root.localBoundingBoxOf(c).center
+    }
+
+    /** The centre at ([col], [row]) in the container, and the disc's radius; null until measured. */
+    fun place(col: Float, row: Float): Pair<Offset, Float>? {
+        val c0 = col.toInt().coerceIn(0, columns - 1); val c1 = (c0 + 1).coerceAtMost(columns - 1)
+        val r0 = row.toInt().coerceIn(0, rows - 1); val r1 = (r0 + 1).coerceAtMost(rows - 1)
+        val a = center(r0 * columns + c0) ?: return null
+        val b = center(r0 * columns + c1) ?: a
+        val c = center(r1 * columns + c0) ?: a
+        val d = center(r1 * columns + c1) ?: b
+        val fc = col - c0; val fr = row - r0
+        val top = androidx.compose.ui.geometry.lerp(a, b, fc); val bottom = androidx.compose.ui.geometry.lerp(c, d, fc)
+        val radius = cells[r0 * columns + c0]?.size?.width?.div(2f) ?: return null
+        return androidx.compose.ui.geometry.lerp(top, bottom, fr) to radius
+    }
+}
+
+/** The container modifier that lets a [DiscMap] measure; use it on the page that holds the cells. */
+fun Modifier.discContainer(map: DiscMap): Modifier = onPlaced { map.container = it }
+
+/** The disc's own modifier: reports its position to [map] as cell [index]. */
+fun Modifier.discCell(map: DiscMap, index: Int): Modifier = onPlaced { map.report(index, it) }
 
 /**
- * The selected circle of one week page. Moving to another day of the same week slides it there on
- * the snappy spring; entering or leaving the week fades it in (already in place) or out.
+ * The selected-date circle of one page. Moving to another cell of the same page slides it there on
+ * the snappy spring with a small pop (1 to [pop] and back); entering the page fades it in already in
+ * place, leaving fades it out. Everything is read in the draw phase ([draw]), so a moving circle
+ * recomposes nothing.
  */
+@Stable
+class SlidingDisc internal constructor(
+    private val cell: Animatable<Offset, androidx.compose.animation.core.AnimationVector2D>,
+    private val alpha: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>,
+    private val scale: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>,
+) {
+    fun draw(scope: DrawScope, map: DiscMap, color: Color) = with(scope) {
+        val a = alpha.value
+        if (a <= 0f) return@with
+        val (center, radius) = map.place(cell.value.x, cell.value.y) ?: return@with
+        drawCircle(color.copy(alpha = a), radius * scale.value, center)
+    }
+}
+
 @Composable
-private fun rememberSlidingCircle(index: Int?): SlidingCircle {
+fun rememberSlidingDisc(cell: Pair<Int, Int>?, pop: Boolean = false): SlidingDisc {
     val m = DsTheme.motion
-    val position = remember { Animatable((index ?: 0).toFloat()) }
-    val alpha = remember { Animatable(if (index != null) 1f else 0f) }
-    LaunchedEffect(index) {
-        if (index == null) {
+    fun Pair<Int, Int>.offset() = Offset(first.toFloat(), second.toFloat())
+    val position = remember { Animatable((cell ?: (0 to 0)).offset(), Offset.VectorConverter) }
+    val alpha = remember { Animatable(if (cell != null) 1f else 0f) }
+    val scale = remember { Animatable(1f) }
+    LaunchedEffect(cell) {
+        if (cell == null) {
             alpha.animateTo(0f, if (m.enabled) tween(m.short) else snap())
         } else if (alpha.value == 0f || !m.enabled) {
-            position.snapTo(index.toFloat())
+            position.snapTo(cell.offset())
             alpha.animateTo(1f, if (m.enabled) tween(m.short) else snap())
         } else {
             alpha.animateTo(1f, m.snappy())
-            position.animateTo(index.toFloat(), m.snappy())
+            coroutineScope {
+                if (pop) launch { with(m) { scale.pop() } }
+                position.animateTo(cell.offset(), m.snappy())
+            }
         }
     }
-    return remember { SlidingCircle({ position.value }, { alpha.value }) }
+    return remember { SlidingDisc(position, alpha, scale) }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DateCell(
-    date: LocalDate, selected: Boolean, isToday: Boolean, marks: List<Int>, column: Int,
+    date: LocalDate, selected: Boolean, isToday: Boolean, marks: List<Int>, column: Int, map: DiscMap,
     onClick: () -> Unit, onLongClick: (Rect?) -> Unit, modifier: Modifier,
 ) {
     val c = DsTheme.colors
@@ -275,7 +338,7 @@ private fun DateCell(
             .padding(vertical = Space.xs),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        DateDisc(interaction, Color.Transparent, size = DATE_DISC.dp) {
+        DateDisc(interaction, Color.Transparent, Modifier.discCell(map, column), size = DATE_DISC.dp) {
             Text(date.dayOfMonth.toString(), style = DsTheme.type.title, color = number, maxLines = 1)
         }
         Spacer(Modifier.height(Space.xs))

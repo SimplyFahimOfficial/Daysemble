@@ -228,7 +228,7 @@ fun QuickAddSheet(
             DsSegmented(
                 options = AddKind.entries, selected = kind,
                 label = { stringResource(if (it == AddKind.TASK) R.string.kind_task else R.string.kind_event) },
-                onSelect = { kind = it; haptics.tick() },
+                onSelect = { kind = it },
                 modifier = Modifier.staggeredEntrance(0, baseDelay = ENTRANCE_DELAY),
             )
             Spacer(Modifier.height(Space.l))
@@ -251,9 +251,8 @@ fun QuickAddSheet(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     if (k == AddKind.TASK) {
                         val d = date?.let(LocalDate::ofEpochDay)
-                        DsChip(stringResource(R.string.day_today), d == today, { haptics.tick(); date = if (d == today) null else today.toEpochDay() })
+                        DsChip(stringResource(R.string.day_today), d == today, { date = if (d == today) null else today.toEpochDay() })
                         DsChip(stringResource(R.string.day_tomorrow), d == today.plusDays(1), {
-                            haptics.tick()
                             date = if (d == today.plusDays(1)) null else today.plusDays(1).toEpochDay()
                         })
                         DsChip(
@@ -268,7 +267,7 @@ fun QuickAddSheet(
                             m != null, { pickTaskTime = true }, icon = Icons.Rounded.Schedule,
                         )
                         DsChip(
-                            stringResource(R.string.priority_high), high, { haptics.tick(); high = !high },
+                            stringResource(R.string.priority_high), high, { high = !high },
                             icon = if (high) Icons.Rounded.Flag else Icons.Rounded.OutlinedFlag,
                         )
                     } else {

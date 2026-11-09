@@ -66,6 +66,7 @@ fun DsChip(
     // The 48dp row takes the touch; the press is shown on the pill the user sees (ripple clipped to
     // it, and a small press scale), not as a rectangle around it.
     val interaction = remember { MutableInteractionSource() }
+    val haptics = rememberHaptics()
     Row(
         modifier
             .heightIn(min = Sizes.touch)
@@ -75,7 +76,11 @@ fun DsChip(
                         value = selected, interactionSource = interaction, indication = null, role = role, onValueChange = { onClick() },
                     )
                     Role.Button -> Modifier.clickable(interactionSource = interaction, indication = null, role = role, onClick = onClick)
-                    else -> Modifier.selectable(selected = selected, interactionSource = interaction, indication = null, role = role, onClick = onClick)
+                    // A filter or choice being picked ticks; tapping the one already picked does not.
+                    else -> Modifier.selectable(
+                        selected = selected, interactionSource = interaction, indication = null, role = role,
+                        onClick = { if (!selected) haptics.tick(); onClick() },
+                    )
                 },
             ),
         verticalAlignment = Alignment.CenterVertically,
@@ -112,6 +117,7 @@ fun <T> DsSegmented(
     val m = DsTheme.motion
     val index = options.indexOf(selected).coerceAtLeast(0)
     val animIndex by animateFloatAsState(index.toFloat(), m.indicator(), label = "seg")
+    val haptics = rememberHaptics()
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
@@ -140,7 +146,7 @@ fun <T> DsSegmented(
                         .weight(1f)
                         .heightIn(min = 48.dp)
                         .clip(Radii.pill)
-                        .selectable(selected = isSel, role = Role.Tab, onClick = { onSelect(opt) }),
+                        .selectable(selected = isSel, role = Role.Tab, onClick = { if (!isSel) haptics.tick(); onSelect(opt) }),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
