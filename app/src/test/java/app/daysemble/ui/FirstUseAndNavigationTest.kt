@@ -260,60 +260,42 @@ class FirstUseAndNavigationTest {
         settle()
         tab("Calendar").assertIsSelected()
         compose.onNodeWithText("Month").assertIsDisplayed()
-        gone("Search tasks") // Tasks stays composed in the background but isn't exposed
         back()
         tab("Today").assertIsSelected()
         gone("Month")
     }
 
-    private fun taskSearch() = compose.onNode(hasSetTextAction() and hasContentDescription("Search tasks"))
+    private fun headerSearch() = compose.onNode(hasSetTextAction() and hasContentDescription("Events, tasks, places"))
 
     private fun softInputVisible(): Boolean {
         val imm = compose.activity.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
         return org.robolectric.Shadows.shadowOf(imm).isSoftInputVisible
     }
 
-    /**
-     * Tabs stay composed when hidden, so a focused field in one of them must not keep focus (and the
-     * keyboard) after switching away, or typing would go on changing the hidden tab.
-     */
-    @Test fun switchingTabs_clearsFocusFromTheHiddenTab() {
-        runBlocking { c.settings.completeOnboarding(null) }
-        showApp(); settle()
-        tab("Tasks").performClick(); settle()
-        taskSearch().performClick(); settle()
-        taskSearch().performTextInput("invoice"); settle()
-        taskSearch().assertIsFocused()
-
-        tab("Calendar").performClick(); settle()
-        assertThat(softInputVisible()).isFalse()
-        tab("Tasks").performClick(); settle()
-        taskSearch().assertIsNotFocused()
-        taskSearch().assert(hasText("invoice")) // the query itself is kept
-    }
-
     /** The same for a page opened over the main screen (it stays composed underneath). */
     @Test fun openingAPage_clearsFocusFromTheMainScreen() {
         runBlocking { c.settings.completeOnboarding(null) }
         showApp(); settle()
-        tab("Tasks").performClick(); settle()
-        taskSearch().performClick(); settle()
-        taskSearch().assertIsFocused()
+        compose.onNodeWithContentDescription("Search").performClick(); settle()
+        headerSearch().assertIsFocused()
 
         compose.onNodeWithContentDescription("Settings").performClick(); settle()
         assertThat(softInputVisible()).isFalse()
         back()
-        taskSearch().assertIsNotFocused()
+        headerSearch().assertIsNotFocused()
     }
 
-    /** Clearing the main screen's focus must not take focus away from the page that just opened. */
-    @Test fun openingSearch_fromAFocusedTaskSearch_focusesTheSearchPage() {
+    /** The search icon expands into a field in the header; typing filters live; closing puts the icon back. */
+    @Test fun search_expandsInTheHeader_findsTasks_andCloses() {
         runBlocking { c.settings.completeOnboarding(null) }
         showApp(); settle()
-        tab("Tasks").performClick(); settle()
-        taskSearch().performClick(); settle()
         compose.onNodeWithContentDescription("Search").performClick(); settle()
-        compose.onNode(hasSetTextAction() and hasContentDescription("Events, tasks, places")).assertIsFocused()
+        headerSearch().assertIsFocused()
+        headerSearch().performTextInput("water"); settle(60)
+        compose.onNodeWithText("Water the plants", substring = true).assertExists()
+        back(); settle()
+        gone("Water the plants")
+        compose.onNodeWithContentDescription("Search").assertIsDisplayed()
     }
 
     /** Selecting days, including rapid taps, and moving between months keeps one selected day. */

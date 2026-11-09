@@ -45,7 +45,7 @@ import java.util.Locale
  *   previous day's rows. (Rows that are only fading out are not in the semantics tree, so this
  *   can't see the old fade-over itself; it guards the swap against regressions.)
  * - the month grid keeps its height from month to month, so what is under it doesn't jump;
- * - the Tasks search field shows every typed character at once.
+ * - the header search field shows every typed character at once.
  * Robolectric renders frames by hand: these prove behaviour and layout, not how motion feels.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -141,18 +141,19 @@ class MotionContinuityTest {
         assertWithMessage("position of the day section under the grid, month by month").that(ys.distinct()).hasSize(1)
     }
 
-    @Test fun tasksSearch_showsEveryTypedCharacterAtOnce() {
-        tab("Tasks").performClick(); settle()
-        val field = compose.onNode(hasSetTextAction() and hasText("", substring = true) and SemanticsMatcher.keyIsDefined(SemanticsProperties.EditableText))
+    @Test fun headerSearch_showsEveryTypedCharacterAtOnce() {
+        compose.onNodeWithContentDescription("Search").performClick(); settle()
+        val field = compose.onNode(hasSetTextAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.EditableText))
         // Typed without waiting for the list to be filtered in between.
         field.performTextInput("wa")
-        frame()
+        frame(); frame()
         field.performTextInput("ter")
-        frame()
+        frame(); frame()
         val text = field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text
         assertThat(text).isEqualTo("water")
-        settle()
+        settle(60)
         compose.onNodeWithText("Water the plants", substring = true).assertExists()
-        assertThat(count("Buy groceries")).isEqualTo(0)
+        // Merged tree: what a screen reader can reach. The tabs under the results are hidden from it.
+        assertThat(compose.onAllNodes(hasText("Buy groceries", substring = true)).fetchSemanticsNodes()).isEmpty()
     }
 }

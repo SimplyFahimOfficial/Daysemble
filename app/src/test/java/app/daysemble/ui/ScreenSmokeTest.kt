@@ -28,7 +28,7 @@ import app.daysemble.ui.event.EventEditorRoute
 import app.daysemble.ui.format.LocalAppClock
 import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.rememberTimePrefs
-import app.daysemble.ui.search.SearchRoute
+import app.daysemble.ui.search.SearchResults
 import app.daysemble.ui.settings.AccountSettingsRoute
 import app.daysemble.ui.settings.AppearanceRoute
 import app.daysemble.ui.settings.NotificationSettingsRoute
@@ -166,8 +166,7 @@ class ScreenSmokeTest {
     }
 
     @Test fun search_findsEventsAndTasks() {
-        show { SearchRoute({}, { _, _ -> }, {}) }
-        compose.onNode(hasSetTextAction() and hasContentDescription("Events, tasks, places")).performTextInput("café")
+        show { SearchResults("café", { _, _ -> }, {}) }
         repeat(10) { settle() }
         waitText("Lunch with Sam")
     }

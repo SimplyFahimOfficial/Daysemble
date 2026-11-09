@@ -27,7 +27,6 @@ import androidx.compose.ui.zIndex
 import app.daysemble.ui.theme.Elevation
 import app.daysemble.ui.theme.Sizes
 import androidx.compose.material.icons.rounded.TaskAlt
-import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -77,7 +76,6 @@ import app.daysemble.domain.model.Task
 import app.daysemble.ui.LocalSnackbar
 import app.daysemble.ui.components.DsChip
 import app.daysemble.ui.components.DsIconButton
-import app.daysemble.ui.components.DsSearchField
 import app.daysemble.ui.components.HairlineDivider
 import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.SkeletonRows
@@ -101,7 +99,7 @@ fun TasksRoute(contentPadding: PaddingValues, onOpenTask: (String) -> Unit) {
     val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     TasksScreen(
         state = state, now = now, contentPadding = contentPadding,
-        query = vm.searchText, onQuery = vm::setQuery, onFilter = vm::setFilter, onList = vm::setList, onSort = vm::setSort,
+        onFilter = vm::setFilter, onList = vm::setList, onSort = vm::setSort,
         onToggle = { id, done -> vm.setCompleted(id, done) { r -> if (done) onCompleted(id, r) } }, onOpen = onOpenTask,
         onDelete = { id, scope -> vm.delete(id, scope); onDeleted(id) },
         onReorder = vm::reorder,
@@ -111,11 +109,8 @@ fun TasksRoute(contentPadding: PaddingValues, onOpenTask: (String) -> Unit) {
 @Composable
 fun TasksScreen(
     state: TasksUiState,
-    /** The search field's own text (synchronous; see TasksViewModel.searchText). */
-    query: String = state.query,
     now: Instant,
     contentPadding: PaddingValues,
-    onQuery: (String) -> Unit,
     onFilter: (TaskFilter) -> Unit,
     onList: (String?) -> Unit,
     onSort: (TaskSort) -> Unit,
@@ -217,13 +212,6 @@ fun TasksScreen(
                 SortMenu(state.sort, onSort)
             }
         }
-        item(key = "search") {
-            DsSearchField(
-                value = query, onValueChange = onQuery,
-                placeholder = stringResource(R.string.search_tasks_hint),
-                modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.s),
-            )
-        }
         item(key = "filters") {
             Row(
                 Modifier
@@ -254,16 +242,12 @@ fun TasksScreen(
             item(key = "loading") { SkeletonRows(Modifier.padding(top = Space.xl)) }
         } else if (state.sections.isEmpty()) {
             item(key = "empty") {
-                if (state.query.isNotBlank()) {
-                    StateMessage(Icons.Rounded.SearchOff, stringResource(R.string.search_no_results, state.query), Modifier.padding(top = Space.x3))
-                } else {
-                    StateMessage(
-                        Icons.Rounded.TaskAlt,
-                        stringResource(if (state.filter == TaskFilter.ALL) R.string.tasks_empty_title else R.string.tasks_empty_filter_title),
-                        Modifier.padding(top = Space.x3),
-                        body = stringResource(R.string.tasks_empty_body),
-                    )
-                }
+                StateMessage(
+                    Icons.Rounded.TaskAlt,
+                    stringResource(if (state.filter == TaskFilter.ALL) R.string.tasks_empty_title else R.string.tasks_empty_filter_title),
+                    Modifier.padding(top = Space.x3),
+                    body = stringResource(R.string.tasks_empty_body),
+                )
             }
         }
 

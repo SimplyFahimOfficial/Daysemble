@@ -33,6 +33,17 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -146,12 +157,11 @@ import app.daysemble.ui.navigation.EventDetailRoute
 import app.daysemble.ui.navigation.EventEditorRoute
 import app.daysemble.ui.navigation.MainRoute
 import app.daysemble.ui.navigation.NavMotion
-import app.daysemble.ui.navigation.SearchRoute
 import app.daysemble.ui.navigation.SettingsPageRoute
 import app.daysemble.ui.navigation.SettingsRoute
 import app.daysemble.ui.navigation.TaskDetailRoute
 import app.daysemble.ui.navigation.TaskEditorRoute
-import app.daysemble.ui.search.SearchRoute as SearchScreenRoute
+import app.daysemble.ui.search.SearchResults
 import app.daysemble.ui.settings.AboutRoute
 import app.daysemble.ui.settings.AppearanceRoute
 import app.daysemble.ui.settings.DataSettingsRoute
@@ -385,6 +395,9 @@ private fun AppContent(
     // The selected tab lives here (saved across rotation and process death), not in the back stack.
     var tab by rememberSaveable { mutableStateOf(Tab.TODAY) }
     var showAdd by rememberSaveable { mutableStateOf(false) }
+    // The header search: the icon expands into a field and the results cover the tabs.
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     var addDate by rememberSaveable { mutableStateOf<Long?>(null) }
     var addKind by rememberSaveable { mutableStateOf(app.daysemble.ui.add.AddKind.TASK) }
     // What Quick Add last created: the + on Today opens on it (Tasks opens on Task, Calendar on Event).
@@ -430,7 +443,18 @@ private fun AppContent(
             backEnabled = onMain,
             displayName = settings.displayName,
             syncStatus = syncStatus?.takeIf { it.account.isConnected },
-            onSearch = { nav.openFromMain(SearchRoute) },
+            onSearch = { searching = true },
+            searching = searching,
+            searchQuery = searchQuery,
+            onSearchQuery = { searchQuery = it },
+            onCloseSearch = { searching = false; searchQuery = "" },
+            searchResults = {
+                SearchResults(
+                    searchQuery,
+                    onOpenEvent = { id, key -> nav.openFromMain(EventDetailRoute(id, key)) },
+                    onOpenTask = { id -> nav.openFromMain(TaskDetailRoute(id)) },
+                )
+            },
             onSettings = { nav.openFromMain(SettingsRoute) },
             onOpenSync = { nav.openFromMain(SettingsPageRoute(SettingsPage.ACCOUNTS.name)) },
             onAdd = {
@@ -495,7 +519,11 @@ private fun AppContent(
         LaunchedEffect(shortcut) {
             val s = shortcut ?: return@LaunchedEffect
             when (s) {
-                app.daysemble.AppShortcut.SEARCH -> if (nav.currentBackStackEntry?.destination?.hasRoute<SearchRoute>() != true) nav.navigate(SearchRoute)
+                app.daysemble.AppShortcut.SEARCH -> {
+                    // Back to the main screen first if a page is open on top of it.
+                    if (!nav.currentBackStackEntry?.destination.isMain()) nav.popBackStack(MainRoute, inclusive = false)
+                    searching = true
+                }
                 app.daysemble.AppShortcut.NEW_TASK, app.daysemble.AppShortcut.NEW_EVENT -> {
                     val task = s == app.daysemble.AppShortcut.NEW_TASK
                     if (nav.currentBackStackEntry?.destination.isMain()) {
@@ -702,15 +730,6 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
                 )
             }
         }
-        composable<SearchRoute> { e ->
-            Page {
-                SearchScreenRoute(
-                    onBack = { nav.backFrom(e) },
-                    onOpenEvent = { id, key -> nav.openFrom(e, EventDetailRoute(id, key)) },
-                    onOpenTask = { id -> nav.openFrom(e, TaskDetailRoute(id)) },
-                )
-            }
-        }
         composable<SettingsRoute> { e ->
             Page { SettingsHomeRoute(onBack = { nav.backFrom(e) }, onOpen = { nav.openFrom(e, SettingsPageRoute(it.name)) }) }
         }
@@ -749,6 +768,11 @@ private fun MainScreen(
     displayName: String?,
     syncStatus: SyncStatus?,
     onSearch: () -> Unit,
+    searching: Boolean,
+    searchQuery: String,
+    onSearchQuery: (String) -> Unit,
+    onCloseSearch: () -> Unit,
+    searchResults: @Composable () -> Unit,
     onSettings: () -> Unit,
     onOpenSync: () -> Unit,
     onAdd: () -> Unit,
@@ -758,6 +782,8 @@ private fun MainScreen(
     content: @Composable (Tab) -> Unit,
 ) {
     BackHandler(enabled = backEnabled && tab != Tab.TODAY) { onTab(Tab.TODAY) }
+    // Registered after the one above, so it wins: Back closes the search first.
+    BackHandler(enabled = backEnabled && searching, onBack = onCloseSearch)
     // The FAB scales away while the content scrolls down and returns when it scrolls up, on another
     // tab, or when Quick Add opens. The connection only watches; it never consumes a scroll.
     var fabShown by remember { mutableStateOf(true) }
@@ -774,8 +800,26 @@ private fun MainScreen(
     }
     Box(modifier.background(DsTheme.colors.background)) {
         Column(Modifier.fillMaxSize()) {
-            MainHeader(displayName, syncStatus, onSearch, onSettings, onOpenSync)
-            TabHost(tab, Modifier.weight(1f).fillMaxWidth().nestedScroll(fabWatcher), content)
+            MainHeader(displayName, syncStatus, onSearch, onSettings, onOpenSync, searching = searching, query = searchQuery, onQuery = onSearchQuery, onCloseSearch = onCloseSearch)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                TabHost(
+                    tab,
+                    Modifier.fillMaxSize().nestedScroll(fabWatcher).then(if (searching) Modifier.clearAndSetSemantics { } else Modifier),
+                    content,
+                )
+                // The results cover the tabs, which stay composed (and keep their state) underneath.
+                val m = DsTheme.motion
+                val reveal by animateFloatAsState(if (searching) 1f else 0f, m.spring(), label = "searchReveal")
+                if (reveal > 0.001f || searching) {
+                    val shift = with(LocalDensity.current) { m.contentShift.toPx() }
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = reveal.coerceIn(0f, 1f); translationY = (1f - reveal) * shift }
+                            .then(if (searching) Modifier else Modifier.clearAndSetSemantics { }),
+                    ) { searchResults() }
+                }
+            }
         }
         BottomBar(
             current = tab,
@@ -802,29 +846,98 @@ internal fun MainHeader(
     onSettings: () -> Unit,
     onOpenSync: () -> Unit,
     modifier: Modifier = Modifier,
+    searching: Boolean = false,
+    query: String = "",
+    onQuery: (String) -> Unit = {},
+    onCloseSearch: () -> Unit = {},
 ) {
     val p = LocalTimePrefs.current
-    Row(
+    val m = DsTheme.motion
+    // 0 = the search icon, 1 = the open field: the field grows out of the icon toward the start.
+    val open by animateFloatAsState(if (searching) 1f else 0f, m.spring(), label = "searchOpen")
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(searching) { if (searching) runCatching { focus.requestFocus() } }
+    BoxWithConstraints(
         modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .heightIn(min = 60.dp)
-            .padding(start = Space.gutter, end = Space.xs),
-        verticalAlignment = Alignment.CenterVertically,
+            .heightIn(min = 60.dp),
+        contentAlignment = Alignment.CenterStart,
     ) {
-        BrandNameplate(displayName, Modifier.weight(1f).padding(end = Space.s))
-        if (syncStatus != null) {
-            SyncBadge(
-                syncIndicator(syncStatus), syncLabel(syncStatus, p),
+        val settingsSlot = Sizes.touch + Space.xs
+        // The field spans from the gutter to the settings button.
+        val fullWidth = maxWidth - Space.gutter - settingsSlot
+        Row(
+            Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                Modifier.weight(1f).graphicsLayer { alpha = (1f - open * 2f).coerceIn(0f, 1f) }
+                    .then(if (searching) Modifier.clearAndSetSemantics { } else Modifier),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BrandNameplate(displayName, Modifier.weight(1f).padding(end = Space.s))
+                if (syncStatus != null) {
+                    SyncBadge(
+                        syncIndicator(syncStatus), syncLabel(syncStatus, p),
+                        Modifier
+                            .weight(1f, fill = false)
+                            .minimumInteractiveComponentSize()
+                            .clip(Radii.pill)
+                            .clickable(enabled = !searching, role = Role.Button, onClick = onOpenSync),
+                    )
+                }
+            }
+            // The icon holds the field's place; once open it is replaced by the field's own icon.
+            DsIconButton(
+                Icons.Rounded.Search, stringResource(R.string.cd_search), onSearch,
+                Modifier.graphicsLayer { alpha = 1f - open }, enabled = !searching,
+            )
+            DsIconButton(Icons.Rounded.Settings, stringResource(R.string.cd_settings), onSettings)
+        }
+        if (open > 0.001f || searching) {
+            HeaderSearchField(
+                query, onQuery, onCloseSearch, focus,
                 Modifier
-                    .weight(1f, fill = false)
-                    .minimumInteractiveComponentSize()
-                    .clip(Radii.pill)
-                    .clickable(role = Role.Button, onClick = onOpenSync),
+                    .align(Alignment.CenterEnd)
+                    .padding(end = settingsSlot)
+                    .requiredWidth(androidx.compose.ui.unit.lerp(Sizes.touch, fullWidth, open.coerceIn(0f, 1f)))
+                    .graphicsLayer { alpha = (open * 3f).coerceIn(0f, 1f) },
             )
         }
-        DsIconButton(Icons.Rounded.Search, stringResource(R.string.cd_search), onSearch)
-        DsIconButton(Icons.Rounded.Settings, stringResource(R.string.cd_settings), onSettings)
+    }
+}
+
+/** The search field that grows out of the header's search icon: icon, text, and a button that closes the search. */
+@Composable
+private fun HeaderSearchField(query: String, onQuery: (String) -> Unit, onClose: () -> Unit, focus: FocusRequester, modifier: Modifier = Modifier) {
+    val c = DsTheme.colors
+    val hint = stringResource(R.string.search_hint)
+    // The field's own text, updated synchronously on every keystroke: the app-level query comes back
+    // a recomposition later, and typing quickly would otherwise lose characters. The field leaves the
+    // composition when the search closes, so it always starts from the current query.
+    var text by remember { mutableStateOf(query) }
+    Row(
+        modifier
+            .heightIn(min = Sizes.touch)
+            .clip(Radii.pill)
+            .background(c.surfaceVariant)
+            .padding(start = Space.m),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.s),
+    ) {
+        Icon(Icons.Rounded.Search, null, tint = c.textSecondary, modifier = Modifier.size(Sizes.iconSmall))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (text.isEmpty()) Text(hint, style = DsTheme.type.body, color = c.textTertiary, maxLines = 1)
+            BasicTextField(
+                value = text, onValueChange = { text = it; onQuery(it) }, singleLine = true,
+                textStyle = DsTheme.type.body.copy(color = c.textPrimary),
+                cursorBrush = SolidColor(c.accent),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = hint },
+            )
+        }
+        DsIconButton(Icons.Rounded.Close, stringResource(R.string.cd_close_search), onClose, tint = c.textSecondary)
     }
 }
 

@@ -117,21 +117,20 @@ class SearchViewModel(
     fun setCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -> Unit = {}) = viewModelScope.launch { tasks.setCompleted(id, done)?.let(onResult) }
 }
 
+/**
+ * The results of the header search: events and tasks matching [query], with scope chips. The query
+ * is typed in the header (see MainHeader); results update as it changes and rows animate in and out.
+ */
 @Composable
-fun SearchRoute(onBack: () -> Unit, onOpenEvent: (String, String) -> Unit, onOpenTask: (String) -> Unit) {
-    val prefs = LocalTimePrefs.current
+fun SearchResults(query: String, onOpenEvent: (String, String) -> Unit, onOpenTask: (String) -> Unit, modifier: Modifier = Modifier) {
     val vm = daysembleViewModel { c, h -> SearchViewModel(c.events, c.tasks, c.clock, c.timeContext, h) }
     val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     val state by vm.state.collectAsStateWithLifecycle()
-    val raw by vm.rawQuery.collectAsStateWithLifecycle()
     val now: Instant = rememberMinuteTicker()
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(query) { vm.setQuery(query) }
     val c = DsTheme.colors
 
-    Column(Modifier.fillMaxSize().background(c.background).imePadding()) {
-        DsTopBar(stringResource(R.string.search), onBack)
-        DsSearchField(raw, vm::setQuery, stringResource(R.string.search_hint), Modifier.padding(horizontal = Space.gutter), focus)
+    Column(modifier.fillMaxSize().background(c.background)) {
         Row(
             Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = Space.gutter - Space.xs, vertical = Space.xs),
             horizontalArrangement = Arrangement.spacedBy(Space.xs),
@@ -151,18 +150,18 @@ fun SearchRoute(onBack: () -> Unit, onOpenEvent: (String, String) -> Unit, onOpe
             }
         }
         when {
-            raw.isBlank() -> StateMessage(Icons.Rounded.Search, stringResource(R.string.search_prompt), Modifier.padding(top = Space.x3), body = stringResource(R.string.search_prompt_body))
+            query.isBlank() -> StateMessage(Icons.Rounded.Search, stringResource(R.string.search_prompt), Modifier.padding(top = Space.x3), body = stringResource(R.string.search_prompt_body))
             state.query.isNotBlank() && state.events.isEmpty() && state.tasks.isEmpty() ->
                 StateMessage(Icons.Rounded.SearchOff, stringResource(R.string.search_no_results, state.query), Modifier.padding(top = Space.x3))
             else -> LazyColumn(Modifier.navigationBarsPadding(), contentPadding = PaddingValues(bottom = Space.xxl)) {
                 if (state.events.isNotEmpty()) {
-                    item(key = "eh") { SectionHeader(stringResource(R.string.search_events), Modifier.padding(top = Space.s)) }
+                    item(key = "eh") { SectionHeader(stringResource(R.string.search_events), Modifier.padding(top = Space.s).then(itemMotion())) }
                     items(state.events, key = { "e" + it.stableKey }) { e ->
                         EventRow(e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) }, showDate = true, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onEventLongPress(e) } })
                     }
                 }
                 if (state.tasks.isNotEmpty()) {
-                    item(key = "th") { SectionHeader(stringResource(R.string.search_tasks), Modifier.padding(top = Space.m)) }
+                    item(key = "th") { SectionHeader(stringResource(R.string.search_tasks), Modifier.padding(top = Space.m).then(itemMotion())) }
                     items(state.tasks, key = { "t" + it.id }) { t ->
                         TaskRow(t, now, onToggle = { done -> vm.setCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) }, modifier = Modifier.then(itemMotion()), onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(t) } })
                     }
