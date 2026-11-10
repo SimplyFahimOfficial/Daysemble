@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -67,11 +68,16 @@ class CalendarViewModel(
     // switch never waits for them; the result is collected on the main thread as before.
     val state: StateFlow<CalendarUiState> = window.flatMapLatest { (range, z, _) ->
         val (from, to) = range
-        combine(events.occurrences(from, to, z), tasks.openTasksInRange(from, to), mode, selected, tick) { occ, all, m, s, now ->
+        val eventsByDate = events.occurrences(from, to, z).map { groupByDate(it, from, to) }
+        val tasksByDate = tasks.openTasksInRange(from, to).map { all -> all.groupBy { it.dueDate!! } }
+        // Selection and clock updates reuse the grouped data. Only the local date matters here;
+        // countdowns have their own ticker, so minute ticks need not rebuild calendar state.
+        val today = tick.map { it.atZone(z).toLocalDate() }.distinctUntilChanged()
+        combine(eventsByDate, tasksByDate, mode, selected, today) { byEvents, byTasks, m, s, currentDate ->
             CalendarUiState(
-                mode = m, selected = s, today = now.atZone(z).toLocalDate(),
-                byDate = groupByDate(occ, from, to),
-                tasksByDate = all.groupBy { it.dueDate!! },
+                mode = m, selected = s, today = currentDate,
+                byDate = byEvents,
+                tasksByDate = byTasks,
                 loadedFrom = from, loadedTo = to, isLoading = false,
             )
         }
