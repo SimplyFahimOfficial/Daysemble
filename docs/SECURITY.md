@@ -30,6 +30,7 @@ The APK's permission set (after merging every library manifest) must match this 
 | `INTERNET` | Google Calendar and Tasks sync |
 | `ACCESS_NETWORK_STATE` | Sync waits for a connection (WorkManager constraint) |
 | `POST_NOTIFICATIONS` | Reminders (asked at runtime on Android 13+) |
+| `READ_CALENDAR` | Optional read-only preview of device calendar events, requested on tap in Lists & calendars; no events are stored or uploaded |
 | `RECEIVE_BOOT_COMPLETED` | Re-plan reminders after a reboot |
 | `SCHEDULE_EXACT_ALARM` | Reminders on time; falls back to inexact alarms when not granted |
 | `WAKE_LOCK` | Added by WorkManager while a worker runs |
