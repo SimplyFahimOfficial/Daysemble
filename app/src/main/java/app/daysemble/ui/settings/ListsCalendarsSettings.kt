@@ -5,21 +5,22 @@ import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
+import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.LifecycleEventEffect
 import app.daysemble.data.device.DeviceCalendarEvent
 import app.daysemble.data.device.DeviceCalendarReader
 import app.daysemble.ui.components.CardDivider
 import app.daysemble.ui.format.Fmt
 import app.daysemble.ui.format.LocalTimePrefs
-import java.time.ZoneId
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -183,68 +184,78 @@ fun ListsCalendarsRoute(onBack: () -> Unit) {
 }
 
 
-/** Explicit, read-only preview: no events are copied into Room or sent through Google sync. */
+/** Read-only preview held in memory only: nothing is copied into Room, backed up or sent through Google sync. */
 @Composable
 private fun DeviceCalendarSection() {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var allowed by remember {
-        mutableStateOf(context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED)
+    val activity = LocalActivity.current
+    val prefs = LocalTimePrefs.current
+    val c = DsTheme.colors
+    var resume by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resume++ }
+    // Rechecked on every resume: revoking in Android settings is picked up when the user comes back.
+    val allowed = remember(resume) {
+        context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
     }
-    var refresh by remember { mutableIntStateOf(0) }
-    var preview by remember { mutableStateOf<List<DeviceCalendarEvent>?>(null) }
-    val permissionRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        allowed = it
-        refresh++
-    }
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                allowed = context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-                refresh++
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-    LaunchedEffect(allowed, refresh) {
-        preview = null
-        if (allowed) preview = DeviceCalendarReader.upcoming(context)
+    var denied by rememberSaveable { mutableStateOf(false) }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { denied = !it; resume++ }
+    var preview by remember { mutableStateOf<Result<List<DeviceCalendarEvent>>?>(null) }
+    LaunchedEffect(allowed, resume, prefs.zone) {
+        preview = if (allowed) DeviceCalendarReader.upcoming(context, prefs.zone) else null
     }
 
     SectionHeader(stringResource(R.string.device_calendar_title), Modifier.padding(top = Space.xl))
     SettingsCard {
         DsRow(
-            stringResource(if (allowed) R.string.device_calendar_allowed else R.string.device_calendar_permission),
-            subtitle = stringResource(R.string.device_calendar_explanation),
-            onClick = if (allowed) null else ({ permissionRequest.launch(Manifest.permission.READ_CALENDAR) }),
-        )
-    }
-    if (allowed) {
-        Hint(stringResource(R.string.device_calendar_note))
-        SectionHeader(stringResource(R.string.device_calendar_preview), Modifier.padding(top = Space.l))
-        when (val items = preview) {
-            null -> Hint(stringResource(R.string.loading))
-            else -> if (items.isEmpty()) {
-                Hint(stringResource(R.string.device_calendar_none))
-            } else {
-                val zone = ZoneId.systemDefault()
-                val prefs = LocalTimePrefs.current
-                SettingsCard {
-                    items.forEachIndexed { index, event ->
-                        if (index > 0) CardDivider()
-                        val date = Fmt.mediumDate(event.localDate(zone), prefs)
-                        val time = if (event.allDay) stringResource(R.string.device_calendar_all_day)
-                            else Fmt.time(event.startsAt.atZone(zone).toLocalTime(), prefs)
-                        DsRow(event.title, subtitle = "$date · $time", onClick = {
-                            val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.eventId)
-                            val intent = Intent(Intent.ACTION_VIEW, uri)
-                            if (runCatching { context.startActivity(intent) }.isFailure) {
-                                Toast.makeText(context, R.string.device_calendar_no_viewer, Toast.LENGTH_SHORT).show()
-                            }
-                        })
+            stringResource(R.string.device_calendar_permission),
+            subtitle = stringResource(
+                when {
+                    allowed -> R.string.perm_allowed
+                    denied -> R.string.device_calendar_denied
+                    else -> R.string.device_calendar_explanation
+                },
+            ),
+            icon = Icons.Rounded.CalendarMonth, iconTint = if (allowed) c.success else c.textSecondary,
+        ) {
+            if (!allowed) DsButton(stringResource(R.string.action_allow), {
+                // After a permanent denial Android answers without a dialog, so the only way back is app settings.
+                if (denied && activity?.shouldShowRequestPermissionRationale(Manifest.permission.READ_CALENDAR) == false) {
+                    runCatching {
+                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, ("package:" + context.packageName).toUri()))
                     }
-                }
+                } else permission.launch(Manifest.permission.READ_CALENDAR)
+            }, style = DsButtonStyle.Secondary)
+        }
+    }
+    if (!allowed) return
+    Hint(stringResource(R.string.device_calendar_note))
+    SectionHeader(stringResource(R.string.device_calendar_preview), Modifier.padding(top = Space.l))
+    val result = preview
+    val events = result?.getOrNull()
+    when {
+        result == null -> Hint(stringResource(R.string.loading))
+        events == null -> {
+            Hint(stringResource(R.string.device_calendar_failed))
+            DsButton(
+                stringResource(R.string.action_retry), { preview = null; resume++ },
+                style = DsButtonStyle.Ghost, modifier = Modifier.padding(horizontal = Space.gutter),
+            )
+        }
+        events.isEmpty() -> Hint(stringResource(R.string.device_calendar_none))
+        else -> SettingsCard {
+            events.forEachIndexed { index, event ->
+                if (index > 0) CardDivider()
+                val date = Fmt.mediumDate(event.localDate(prefs.zone), prefs)
+                val time = if (event.allDay) stringResource(R.string.device_calendar_all_day) else Fmt.time(event.startsAt, prefs)
+                DsRow(event.title, subtitle = "$date · $time", onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.eventId))
+                        // Without the instance times, calendar apps open the first occurrence of a repeating event.
+                        .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.startsAt.toEpochMilli())
+                        .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.endsAt.toEpochMilli())
+                    if (runCatching { context.startActivity(intent) }.isFailure) {
+                        Toast.makeText(context, R.string.device_calendar_no_viewer, Toast.LENGTH_SHORT).show()
+                    }
+                })
             }
         }
     }
