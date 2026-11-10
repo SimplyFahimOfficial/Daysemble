@@ -70,7 +70,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val COPIED_FEEDBACK_MS = 2_000L
-private val QrSize = 232.dp
+private val QrSize = 120.dp
 
 /** What the Support page can do. Plain lambdas keep [SupportContent] stateless and testable. */
 @Immutable
@@ -121,11 +121,11 @@ internal fun SupportContent(actions: SupportActions) {
     val c = DsTheme.colors
     Text(
         stringResource(R.string.support_intro),
-        style = DsTheme.type.body,
+        style = DsTheme.type.bodySmall,
         color = c.textPrimary,
-        modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
+        modifier = Modifier.padding(start = Space.gutter, end = Space.gutter, top = Space.s, bottom = Space.xs),
     )
-    DsCard(Modifier.padding(horizontal = Space.gutter, vertical = Space.s).fillMaxWidth()) {
+    DsCard(Modifier.padding(horizontal = Space.gutter, vertical = Space.xs).fillMaxWidth()) {
         UpiSection(actions)
     }
     DsRow(
@@ -146,48 +146,51 @@ internal fun SupportContent(actions: SupportActions) {
 @Composable
 private fun UpiSection(actions: SupportActions) {
     val c = DsTheme.colors
-    Column(Modifier.padding(Space.l)) {
+    Column(Modifier.padding(Space.m)) {
         Text(
             stringResource(R.string.support_upi),
             style = DsTheme.type.title,
             color = c.textPrimary,
             modifier = Modifier.semantics { heading() },
         )
-        Spacer(Modifier.height(Space.xs))
         Text(stringResource(R.string.support_upi_scan_hint), style = DsTheme.type.bodySmall, color = c.textSecondary)
-        Spacer(Modifier.height(Space.l))
-        UpiQr(Modifier.align(Alignment.CenterHorizontally))
-        Spacer(Modifier.height(Space.l))
-        Text(stringResource(R.string.support_upi_id_label).uppercase(), style = DsTheme.type.caps, color = c.textSecondary)
-        SelectionContainer {
-            Text(SupportConfig.UPI_ID, style = DsTheme.type.titleLarge, color = c.textPrimary)
+        Spacer(Modifier.height(Space.s))
+        // QR beside the payee details, so the whole page fits on one phone screen.
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.m), verticalAlignment = Alignment.CenterVertically) {
+            UpiQr()
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.support_upi_id_label).uppercase(), style = DsTheme.type.caps, color = c.textSecondary)
+                SelectionContainer {
+                    Text(SupportConfig.UPI_ID, style = DsTheme.type.bodyStrong, color = c.textPrimary)
+                }
+                Text(
+                    stringResource(R.string.support_upi_payee, SupportConfig.UPI_PAYEE_NAME),
+                    style = DsTheme.type.bodySmall,
+                    color = c.textSecondary,
+                )
+                Spacer(Modifier.height(Space.s))
+                CopyUpiIdButton(actions.onCopyUpiId, Modifier.fillMaxWidth())
+            }
         }
-        Text(
-            stringResource(R.string.support_upi_payee, SupportConfig.UPI_PAYEE_NAME),
-            style = DsTheme.type.bodySmall,
-            color = c.textSecondary,
+        Spacer(Modifier.height(Space.s))
+        DsButton(
+            stringResource(R.string.support_pay_with_upi), actions.onOpenUpiApp, Modifier.fillMaxWidth(),
+            style = DsButtonStyle.Accent, icon = Icons.Rounded.Favorite,
         )
-        Spacer(Modifier.height(Space.l))
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.s)) {
-            CopyUpiIdButton(actions.onCopyUpiId, Modifier.weight(1f))
-            DsButton(
-                stringResource(R.string.support_pay_with_upi), actions.onOpenUpiApp, Modifier.weight(1f),
-                style = DsButtonStyle.Accent, icon = Icons.Rounded.Favorite,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.m, vertical = Space.m),
-            )
-        }
         Spacer(Modifier.height(Space.s))
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s)) {
             DsButton(
                 stringResource(R.string.support_share_qr), actions.onShareQr, Modifier.weight(1f),
                 style = DsButtonStyle.Secondary, icon = Icons.Rounded.Share,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.m, vertical = Space.m),
             )
             DsButton(
                 stringResource(R.string.support_save_qr), actions.onSaveQr, Modifier.weight(1f),
                 style = DsButtonStyle.Secondary, icon = Icons.Rounded.Download,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.m, vertical = Space.m),
             )
         }
-        Spacer(Modifier.height(Space.m))
+        Spacer(Modifier.height(Space.s))
         Text(
             stringResource(R.string.support_upi_verify_hint, SupportConfig.UPI_PAYEE_NAME),
             style = DsTheme.type.bodySmall,
@@ -203,9 +206,9 @@ private fun UpiQr(modifier: Modifier = Modifier) {
     val description = stringResource(R.string.support_upi_qr_description, SupportConfig.UPI_ID, SupportConfig.UPI_PAYEE_NAME)
     Box(
         modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(Color.White)
-            .padding(Space.s)
+            .padding(6.dp)
             .semantics(mergeDescendants = true) { contentDescription = description },
     ) {
         Image(

@@ -91,6 +91,21 @@ class SupportScreenTest {
         assertThat(calls).containsExactly("copy", "upi", "share", "save").inOrder()
     }
 
+    /**
+     * A 360 x 800 dp phone, less the status bar (24 dp) and a three-button navigation bar (48 dp):
+     * with the top bar, everything down to the last note is on screen without scrolling. (Only the
+     * Settings pages' shared bottom padding may sit below the fold.)
+     */
+    @Config(qualifiers = "w360dp-h728dp-xxhdpi")
+    @Test fun wholePageFitsOnOnePhoneScreenWithoutScrolling() {
+        compose.setContent {
+            DaysembleTheme(themeMode = ThemeMode.LIGHT) { SettingsScaffold("Support My Work", onBack = {}) { SupportContent(actions) } }
+        }
+        val screen = compose.onRoot().fetchSemanticsNode().size.height
+        val last = compose.onNodeWithText("Contributions are optional", substring = true).fetchSemanticsNode()
+        assertThat(last.positionInRoot.y + last.size.height).isAtMost(screen.toFloat())
+    }
+
     @Test fun showsThePayeeAndTheOptionalNoteButNoKofi() {
         show(ThemeMode.LIGHT)
         compose.onNodeWithText(SupportConfig.UPI_ID).assertExists()
