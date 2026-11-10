@@ -19,7 +19,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -67,8 +69,9 @@ class TasksViewModel(
     // Grouping, sorting and recurrence expansion run off the main thread, so a month change or a tab
     // switch never waits for them; the result is collected on the main thread as before.
     val state: StateFlow<TasksUiState> = combine(
-        combine(repo.allTasks, repo.taskLists) { a, b -> a to b }, settings.settings, query, tick, time,
-    ) { (tasks, lists), s, q, now, _ -> build(tasks, lists, s.taskSort, q, now) }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TasksUiState())
+        combine(repo.allTasks, repo.taskLists) { a, b -> a to b },
+        settings.settings.map { it.taskSort }.distinctUntilChanged(), query, tick, time,
+    ) { (tasks, lists), sort, q, now, _ -> build(tasks, lists, sort, q, now) }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TasksUiState())
 
     fun setFilter(f: TaskFilter) = update { it.copy(filter = f) }.also { handle["f"] = f.name }
     fun setList(id: String?) = update { it.copy(listId = id) }.also { handle["l"] = id }

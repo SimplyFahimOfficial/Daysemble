@@ -144,6 +144,20 @@ interface TaskDao {
     @Query("SELECT * FROM task WHERE isDeleted = 0")
     fun observeAll(): Flow<List<TaskEntity>>
 
+    /** Open parents in the inclusive date range, plus every non-deleted child for progress counts. */
+    @Query(
+        """
+        SELECT * FROM task WHERE isDeleted = 0 AND (
+            (parentId IS NULL AND isCompleted = 0 AND dueDate BETWEEN :from AND :to)
+            OR parentId IN (
+                SELECT id FROM task WHERE isDeleted = 0 AND parentId IS NULL
+                    AND isCompleted = 0 AND dueDate BETWEEN :from AND :to
+            )
+        )
+        """,
+    )
+    fun observeOpenInRange(from: Long, to: Long): Flow<List<TaskEntity>>
+
     @Query("SELECT * FROM task WHERE id = :id")
     suspend fun get(id: String): TaskEntity?
 

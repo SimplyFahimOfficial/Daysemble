@@ -41,16 +41,24 @@ class TaskRepository(
     val taskLists: Flow<List<TaskList>> = lists.observeAll().map { all -> all.filter { it.isSyncEnabled || it.kind == SourceKind.LOCAL }.map { it.toDomain() } }
 
     /** All non-deleted tasks (top-level and subtasks) with subtask progress filled in. */
-    val allTasks: Flow<List<Task>> = combine(tasks.observeAll(), lists.observeAll(), series.observeAll()) { rows, listRows, seriesRows ->
-        val listById = listRows.associateBy { it.id }
-        val rules = seriesRows.associate { it.id to it.activeRule() }
-        val visible = rows.filter { row -> listById[row.listId]?.let { it.kind == SourceKind.LOCAL || it.isSyncEnabled } == true }
-        val children = visible.filter { it.parentId != null }.groupBy { it.parentId }
-        visible.map { row ->
-            val kids = children[row.id].orEmpty()
-            row.toDomain(listById[row.listId]?.kind == SourceKind.GOOGLE, kids.size, kids.count { it.isCompleted }, rules[row.seriesId])
+    val allTasks: Flow<List<Task>> = mapTasks(tasks.observeAll())
+
+    /** Open top-level tasks due in [from, to], retaining their complete subtask progress. */
+    fun openTasksInRange(from: LocalDate, to: LocalDate): Flow<List<Task>> =
+        mapTasks(tasks.observeOpenInRange(from.toEpochDay(), to.toEpochDay()))
+            .map { rows -> rows.filter { it.parentId == null } }
+
+    private fun mapTasks(source: Flow<List<TaskEntity>>): Flow<List<Task>> =
+        combine(source, lists.observeAll(), series.observeAll()) { rows, listRows, seriesRows ->
+            val listById = listRows.associateBy { it.id }
+            val rules = seriesRows.associate { it.id to it.activeRule() }
+            val visible = rows.filter { row -> listById[row.listId]?.let { it.kind == SourceKind.LOCAL || it.isSyncEnabled } == true }
+            val children = visible.filter { it.parentId != null }.groupBy { it.parentId }
+            visible.map { row ->
+                val kids = children[row.id].orEmpty()
+                row.toDomain(listById[row.listId]?.kind == SourceKind.GOOGLE, kids.size, kids.count { it.isCompleted }, rules[row.seriesId])
+            }
         }
-    }
 
     fun observeTask(id: String): Flow<Task?> = combine(tasks.observe(id), lists.observeAll(), series.observeAll()) { row, listRows, seriesRows ->
         row?.takeIf { !it.isDeleted }?.let { r ->

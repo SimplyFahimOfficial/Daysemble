@@ -26,9 +26,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -133,11 +135,11 @@ class TodayViewModel(
         combine(
             events.occurrences(date, date.plusDays(1), z),
             combine(tasks.allTasks, seriesReader?.timedSeries ?: flowOf(emptyList())) { a, b -> a to b },
-            settings.settings,
+            settings.settings.map { it.showCompletedOnToday to it.schedule }.distinctUntilChanged(),
             tick,
             sleepRepo?.recent ?: flowOf(emptyList()),
-        ) { occ, (allTasks, series), s, now, sleep ->
-            build(DayInputs(date, z, now, occ, allTasks, series, s.showCompletedOnToday, s.schedule, sleep))
+        ) { occ, (allTasks, series), prefs, now, sleep ->
+            build(DayInputs(date, z, now, occ, allTasks, series, prefs.first, prefs.second, sleep))
         }
     }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState(selected.value, clock.today()))
 
@@ -150,9 +152,9 @@ class TodayViewModel(
             ((date.dayOfWeek.value - t.firstDayOfWeek.value + DAYS_IN_WEEK) % DAYS_IN_WEEK).toLong(),
         ).minusWeeks(WEEKS_BEFORE_SELECTED)
         val end = start.plusWeeks(WEEKS_IN_MARKS_RANGE).minusDays(LAST_DAY_OFFSET)
-        combine(events.occurrences(start, end, t.zone), tasks.allTasks) { occ, all ->
+        combine(events.occurrences(start, end, t.zone), tasks.openTasksInRange(start, end)) { occ, all ->
             val byEvents = app.daysemble.ui.calendar.CalendarViewModel.groupByDate(occ, start, end)
-            val byTasks = all.filter { !it.isCompleted && it.parentId == null && it.dueDate?.let { d -> d in start..end } == true }.groupBy { it.dueDate!! }
+            val byTasks = all.groupBy { it.dueDate!! }
             (byEvents.keys + byTasks.keys).associateWith { d ->
                 val colors = byEvents[d].orEmpty().map { it.colorArgb }.distinct().take(MAX_MARKS)
                 if (colors.size < MAX_MARKS && byTasks[d].orEmpty().isNotEmpty()) colors + app.daysemble.ui.components.TASK_MARK else colors
