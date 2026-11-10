@@ -20,6 +20,7 @@ An offline-first Android planner with optional two-way sync for Google Calendar 
 
 - ☀️ **Today.** One timeline of events and tasks with a live countdown to what's next, overdue tasks and a free-time summary for your waking hours.
 - 🗓️ **Calendar.** Month, Week, Day and Agenda views. Tap an empty slot to create an event there.
+- 📱 **Optional device calendar preview.** Grant read-only calendar permission in Lists & calendars to see upcoming device events and open them in the phone’s calendar app. Previewed events are not imported or shown on Daysemble’s main timeline.
 - 🌍 **Events that respect time zones.** Per-event time zones, all-day events, repeat rules (RRULE with exceptions) and edits to one occurrence or the whole series.
 - ✅ **Tasks.** Due dates and times, durations, priorities, subtasks, lists, filters, repeats with skip and history, and optional live countdowns.
 - 🔔 **Reliable reminders.** Exact alarms where Android allows them, re-planned after reboots and time-zone changes, with *Complete* and *Snooze* actions.

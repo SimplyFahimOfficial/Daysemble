@@ -1,5 +1,25 @@
 package app.daysemble.ui.settings
 
+import android.Manifest
+import android.content.ContentUris
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.provider.CalendarContract
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import app.daysemble.data.device.DeviceCalendarEvent
+import app.daysemble.data.device.DeviceCalendarReader
+import app.daysemble.ui.components.CardDivider
+import app.daysemble.ui.format.Fmt
+import app.daysemble.ui.format.LocalTimePrefs
+import java.time.ZoneId
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -99,6 +119,8 @@ fun ListsCalendarsRoute(onBack: () -> Unit) {
             Hint(stringResource(R.string.calendar_hidden_note))
             DsButton(stringResource(R.string.new_calendar), { editing = Editing.NewCalendar() }, style = DsButtonStyle.Secondary, icon = Icons.Rounded.Add, modifier = Modifier.padding(horizontal = Space.gutter))
 
+            DeviceCalendarSection()
+
             SectionHeader(stringResource(R.string.task_lists_title), Modifier.padding(top = Space.xl))
             SettingsCard {
                 lists.forEach { l ->
@@ -156,6 +178,74 @@ fun ListsCalendarsRoute(onBack: () -> Unit) {
                 onDismiss = { if (!refused) confirmDelete = null },
                 destructive = true,
             )
+        }
+    }
+}
+
+
+/** Explicit, read-only preview: no events are copied into Room or sent through Google sync. */
+@Composable
+private fun DeviceCalendarSection() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var allowed by remember {
+        mutableStateOf(context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED)
+    }
+    var refresh by remember { mutableIntStateOf(0) }
+    var preview by remember { mutableStateOf<List<DeviceCalendarEvent>?>(null) }
+    val permissionRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        allowed = it
+        refresh++
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                allowed = context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+                refresh++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(allowed, refresh) {
+        preview = null
+        if (allowed) preview = DeviceCalendarReader.upcoming(context)
+    }
+
+    SectionHeader(stringResource(R.string.device_calendar_title), Modifier.padding(top = Space.xl))
+    SettingsCard {
+        DsRow(
+            stringResource(if (allowed) R.string.device_calendar_allowed else R.string.device_calendar_permission),
+            subtitle = stringResource(R.string.device_calendar_explanation),
+            onClick = if (allowed) null else ({ permissionRequest.launch(Manifest.permission.READ_CALENDAR) }),
+        )
+    }
+    if (allowed) {
+        Hint(stringResource(R.string.device_calendar_note))
+        SectionHeader(stringResource(R.string.device_calendar_preview), Modifier.padding(top = Space.l))
+        when (val items = preview) {
+            null -> Hint(stringResource(R.string.loading))
+            else -> if (items.isEmpty()) {
+                Hint(stringResource(R.string.device_calendar_none))
+            } else {
+                val zone = ZoneId.systemDefault()
+                val prefs = LocalTimePrefs.current
+                SettingsCard {
+                    items.forEachIndexed { index, event ->
+                        if (index > 0) CardDivider()
+                        val date = Fmt.mediumDate(event.localDate(zone), prefs)
+                        val time = if (event.allDay) stringResource(R.string.device_calendar_all_day)
+                            else Fmt.time(event.startsAt.atZone(zone).toLocalTime(), prefs)
+                        DsRow(event.title, subtitle = "$date · $time", onClick = {
+                            val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.eventId)
+                            val intent = Intent(Intent.ACTION_VIEW, uri)
+                            if (runCatching { context.startActivity(intent) }.isFailure) {
+                                Toast.makeText(context, R.string.device_calendar_no_viewer, Toast.LENGTH_SHORT).show()
+                            }
+                        })
+                    }
+                }
+            }
         }
     }
 }

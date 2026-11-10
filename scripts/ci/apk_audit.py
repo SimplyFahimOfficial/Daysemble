@@ -26,6 +26,7 @@ ALLOWED_PERMISSIONS = {
     "android.permission.INTERNET",  # Google Calendar / Tasks sync
     "android.permission.ACCESS_NETWORK_STATE",  # sync only when online (WorkManager constraint)
     "android.permission.POST_NOTIFICATIONS",  # reminders
+    "android.permission.READ_CALENDAR",  # optional read-only device calendar preview
     "android.permission.RECEIVE_BOOT_COMPLETED",  # re-plan reminders after a reboot
     "android.permission.SCHEDULE_EXACT_ALARM",  # exact reminders; falls back to inexact
     "android.permission.WAKE_LOCK",  # WorkManager

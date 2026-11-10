@@ -328,6 +328,15 @@
     <string name="task_lists_title">Task lists</string>
     <string name="calendar_google_sub">Google Calendar</string>
     <string name="list_google_sub">Google Tasks</string>
+    <string name="device_calendar_title">Device calendar</string>
+    <string name="device_calendar_permission">Allow calendar access</string>
+    <string name="device_calendar_explanation">See events from calendar apps on this phone. Permission is optional and read-only.</string>
+    <string name="device_calendar_allowed">Calendar access allowed</string>
+    <string name="device_calendar_preview">Upcoming device events</string>
+    <string name="device_calendar_note">Read-only preview of up to 10 events over the next 14 days. Nothing is imported, uploaded or added to the Daysemble timeline.</string>
+    <string name="device_calendar_none">No upcoming events are available from device calendars.</string>
+    <string name="device_calendar_all_day">All day</string>
+    <string name="device_calendar_no_viewer">No calendar app could open this event.</string>
     <string name="calendar_hidden_note">Hidden calendars don’t appear in Today or Calendar and don’t send reminders. Nothing is deleted. Colours are a display choice on this device and aren’t changed in Google.</string>
     <string name="list_google_note">Rename or delete Google task lists in Google Tasks; changes appear here after the next sync.</string>
     <string name="new_calendar">New calendar</string>
