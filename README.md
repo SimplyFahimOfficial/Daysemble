@@ -116,7 +116,7 @@ Daysemble is licensed under the [Apache License 2.0](LICENSE).
 
 Daysemble is free and built independently. If it helps you plan your days, a small donation keeps development going.
 
-<a href="https://simplyfahim.pages.dev/pay/"><img src="docs/assets/support/upi-qr.png" width="220" alt="UPI QR code to pay Md Fahim, UPI ID SimplyFahim@sbi. Tap to open UPI payment options."></a>
+<a href="https://simplyfahim.pages.dev/pay-options"><img src="docs/assets/support/upi-qr.png" width="220" alt="UPI QR code to pay Md Fahim, UPI ID SimplyFahim@sbi. Tap to open UPI payment options."></a>
 
 ### 👆 **Tap the QR to open UPI payment options**
 
@@ -135,9 +135,7 @@ SimplyFahim@sbi
 </tr>
 </table>
 
-<a href="https://simplyfahim.pages.dev/pay/"><img src="https://img.shields.io/badge/Pay_with-UPI-009E3B?style=for-the-badge&logo=googlepay&logoColor=white" height="44" alt="Pay with UPI"></a>
-&nbsp;
-<a href="https://ko-fi.com/simplyfahim"><img src="https://img.shields.io/badge/Support_me_on-Ko--fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white" height="44" alt="Support me on Ko-fi"></a>
+<a href="https://simplyfahim.pages.dev/pay-options"><img src="https://img.shields.io/badge/Pay_with-UPI-009E3B?style=for-the-badge&logo=googlepay&logoColor=white" height="44" alt="Pay with UPI"></a>
 
 <sub>You choose the amount. Check that your UPI app shows <b>Md Fahim</b> before you pay.</sub>
 

@@ -172,6 +172,29 @@ class FirstUseAndNavigationTest {
         tab("Today").assertIsSelected()
     }
 
+    // Tall enough to show the whole Settings list, so no scrolling is needed to reach the last row.
+    @Config(sdk = [35], qualifiers = "w360dp-h1400dp-xhdpi")
+    @Test fun settings_helpAndSupport_opensSupportMyWork_andBackUnwindsOneLevelAtATime() {
+        runBlocking { c.settings.completeOnboarding(null) }
+        showApp(); settle()
+        compose.onNodeWithContentDescription("Settings").performClick(); settle()
+        compose.onNodeWithText("Help & Support").performClick(); settle()
+        compose.onNodeWithText("Telegram Community").assertIsDisplayed()
+
+        compose.onNodeWithText("Support My Work").performClick(); settle()
+        compose.onNodeWithText("More Ways to Pay").assertExists() // the native donation page, not a link
+        gone("Telegram Community")
+
+        compose.onNodeWithContentDescription("Back").performClick(); settle() // app-bar back: to Help & Support
+        compose.onNodeWithText("Telegram Community").assertIsDisplayed()
+        gone("More Ways to Pay")
+        back() // system back: to Settings
+        compose.onNodeWithText("Appearance").assertIsDisplayed()
+        gone("Telegram Community")
+        back() // and out to Today
+        tab("Today").assertIsSelected()
+    }
+
     @Test fun settings_doubleTapOnBack_popsOnlyOnePage() {
         runBlocking { c.settings.completeOnboarding(null) }
         showApp(); settle()

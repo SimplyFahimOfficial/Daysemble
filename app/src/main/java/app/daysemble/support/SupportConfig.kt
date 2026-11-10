@@ -1,25 +1,31 @@
 package app.daysemble.support
 
 /**
- * "Support my work" configuration: the developer's payment and contact details. This is the only
- * place these values live, so updating a link is a one-line change.
+ * Help & Support configuration: the project's help links and the developer's payment details.
+ * This is the only place these values live, so updating a link is a one-line change.
  *
- * Daysemble's GitHub repository is private, so no repository link is shown; the public GitHub
- * profile is linked instead. If the repository becomes public, add its URL here and show it on the
- * Support screen.
+ * Daysemble's GitHub repository is private, so there is no repository or issue-tracker link and
+ * no "Report a bug" row. If the repository becomes public, add its issues URL here and show a row
+ * for it in the Help & Support page.
  *
  * Nothing here is sent anywhere by the app: links open in apps the user picks, and the UPI QR
  * code is generated on the device.
  */
 object SupportConfig {
-    /** Ko-fi profile (account "SimplyFahim"). */
-    const val KOFI_URL = "https://ko-fi.com/simplyfahim"
+    /**
+     * The Daysemble Telegram group. Verified: the project page links it as "Daysemble Telegram
+     * group" and t.me resolves it to a group titled DAYSEMBLE. Don't guess other usernames.
+     */
+    const val TELEGRAM_URL = "https://t.me/daysemble"
 
-    /** The developer's personal website. Not a project page. */
-    const val WEBSITE = "https://SimplyFahim.pages.dev"
+    /** The Daysemble page on the developer's site. */
+    const val PROJECT_WEBSITE = "https://simplyfahim.pages.dev/daysemble"
 
-    /** The developer's public GitHub profile. */
-    const val GITHUB_PROFILE = "https://github.com/Fahimofficial/"
+    /** Website, email and social links for the developer, kept on the site instead of in the app. */
+    const val CONTACT_URL = "https://simplyfahim.pages.dev/contactme"
+
+    /** Payment methods beyond UPI, kept on the site instead of in the app. */
+    const val PAY_OPTIONS_URL = "https://simplyfahim.pages.dev/pay-options"
 
     /** Public UPI ID (VPA) and the payee name UPI apps show before the user confirms. */
     const val UPI_ID = "SimplyFahim@sbi"
@@ -31,7 +37,7 @@ object SupportConfig {
      * `upi://pay?pa=SimplyFahim@sbi&pn=Md%20Fahim&cu=INR`.
      *
      * No amount (`am`) is ever set: the user enters it and confirms in their own UPI app. The same
-     * string is the "Open UPI app" intent data and the QR payload. `@` stays literal (valid in a URI
+     * string is the "Pay with UPI" intent data and the QR payload. `@` stays literal (valid in a URI
      * query, and what bank-issued UPI QR codes use); anything else outside the RFC 3986 unreserved
      * set is percent-encoded.
      */

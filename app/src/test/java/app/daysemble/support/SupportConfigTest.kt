@@ -18,8 +18,12 @@ class SupportConfigTest {
         assertThat(SupportConfig.UPI_ID).isEqualTo("SimplyFahim@sbi")
         assertThat(SupportConfig.UPI_PAYEE_NAME).isEqualTo("Md Fahim")
         assertThat(SupportConfig.UPI_CURRENCY).isEqualTo("INR")
-        assertThat(SupportConfig.KOFI_URL).isEqualTo("https://ko-fi.com/simplyfahim")
-        assertThat(SupportConfig.WEBSITE).isEqualTo("https://SimplyFahim.pages.dev")
-        assertThat(SupportConfig.GITHUB_PROFILE).isEqualTo("https://github.com/Fahimofficial/")
+    }
+
+    @Test fun helpLinksAreTheRequestedDestinations() {
+        assertThat(SupportConfig.PROJECT_WEBSITE).isEqualTo("https://simplyfahim.pages.dev/daysemble")
+        assertThat(SupportConfig.TELEGRAM_URL).isEqualTo("https://t.me/daysemble")
+        assertThat(SupportConfig.CONTACT_URL).isEqualTo("https://simplyfahim.pages.dev/contactme")
+        assertThat(SupportConfig.PAY_OPTIONS_URL).isEqualTo("https://simplyfahim.pages.dev/pay-options")
     }
 }

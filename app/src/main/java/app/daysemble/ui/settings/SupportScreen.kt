@@ -22,11 +22,10 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarDuration
@@ -46,12 +45,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -67,14 +64,11 @@ import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
 import app.daysemble.ui.components.DsCard
 import app.daysemble.ui.components.DsRow
-import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Space
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Ko-fi's brand red, only used to tint the Ko-fi cup. */
-private val KofiRed = Color(0xFFFF5E5B)
 private const val COPIED_FEEDBACK_MS = 2_000L
 private val QrSize = 232.dp
 
@@ -88,17 +82,23 @@ internal class SupportActions(
     val onSaveQr: () -> Unit,
 )
 
+/** Shows a short snackbar message from a string resource. Shared by the Help and Support pages. */
+@Composable
+internal fun rememberSay(): (Int) -> Unit {
+    val res = LocalResources.current
+    val snackbar = LocalSnackbar.current
+    val scope = rememberCoroutineScope()
+    return { id -> scope.launch { snackbar.showSnackbar(res.getString(id), duration = SnackbarDuration.Short) } }
+}
+
 /**
- * Settings › Support my work: Ko-fi and UPI payment options, then project and contact links.
- * Nothing is collected or stored, and no payment is ever reported as made.
+ * Help & Support › Support My Work: the optional, native UPI donation page. Nothing is collected
+ * or stored, and no payment is ever reported as made.
  */
 @Composable
 fun SupportRoute(onBack: () -> Unit) {
     val context = LocalContext.current
-    val res = LocalResources.current
-    val snackbar = LocalSnackbar.current
-    val scope = rememberCoroutineScope()
-    val say: (Int) -> Unit = { id -> scope.launch { snackbar.showSnackbar(res.getString(id), duration = SnackbarDuration.Short) } }
+    val say = rememberSay()
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(SupportIntents.QR_MIME_TYPE)) { uri ->
         if (uri != null) say(if (SupportIntents.saveQr(context, uri)) R.string.support_qr_saved else R.string.support_qr_save_failed)
     }
@@ -119,50 +119,27 @@ fun SupportRoute(onBack: () -> Unit) {
 @Composable
 internal fun SupportContent(actions: SupportActions) {
     val c = DsTheme.colors
-    val external: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
-        Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, tint = c.textTertiary, modifier = Modifier.size(18.dp))
-    }
     Text(
         stringResource(R.string.support_intro),
         style = DsTheme.type.body,
         color = c.textPrimary,
         modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
     )
-
-    SectionHeader(stringResource(R.string.support_payment_options), Modifier.padding(top = Space.l))
-    DsRow(
-        stringResource(R.string.support_kofi),
-        subtitle = SupportConfig.KOFI_URL.withoutScheme(),
-        icon = ImageVector.vectorResource(R.drawable.ic_kofi),
-        iconTint = KofiRed,
-        onClick = { actions.onOpenUrl(SupportConfig.KOFI_URL) },
-        trailing = external,
-    )
     DsCard(Modifier.padding(horizontal = Space.gutter, vertical = Space.s).fillMaxWidth()) {
         UpiSection(actions)
     }
-
-    // Project and contact links, kept apart from the payment options.
-    SectionHeader(stringResource(R.string.support_project_and_contact), Modifier.padding(top = Space.xl))
+    DsRow(
+        stringResource(R.string.support_more_ways),
+        subtitle = stringResource(R.string.support_more_ways_sub),
+        icon = Icons.Rounded.Payments,
+        onClick = { actions.onOpenUrl(SupportConfig.PAY_OPTIONS_URL) },
+        trailing = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, tint = c.textTertiary, modifier = Modifier.size(18.dp)) },
+    )
     Text(
-        stringResource(R.string.support_project_info),
+        stringResource(R.string.support_optional_note),
         style = DsTheme.type.bodySmall,
         color = c.textSecondary,
         modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.xs),
-    )
-    DsRow(
-        stringResource(R.string.support_website),
-        subtitle = SupportConfig.WEBSITE.withoutScheme(),
-        icon = Icons.Rounded.Language,
-        onClick = { actions.onOpenUrl(SupportConfig.WEBSITE) },
-        trailing = external,
-    )
-    DsRow(
-        stringResource(R.string.support_github_profile),
-        subtitle = SupportConfig.GITHUB_PROFILE.withoutScheme(),
-        icon = Icons.Rounded.Code,
-        onClick = { actions.onOpenUrl(SupportConfig.GITHUB_PROFILE) },
-        trailing = external,
     )
 }
 
@@ -194,7 +171,7 @@ private fun UpiSection(actions: SupportActions) {
         Row(horizontalArrangement = Arrangement.spacedBy(Space.s)) {
             CopyUpiIdButton(actions.onCopyUpiId, Modifier.weight(1f))
             DsButton(
-                stringResource(R.string.support_open_upi_app), actions.onOpenUpiApp, Modifier.weight(1f),
+                stringResource(R.string.support_pay_with_upi), actions.onOpenUpiApp, Modifier.weight(1f),
                 style = DsButtonStyle.Accent, icon = Icons.Rounded.Favorite,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = Space.m, vertical = Space.m),
             )
@@ -269,5 +246,3 @@ private fun CopyUpiIdButton(onCopy: () -> Unit, modifier: Modifier = Modifier) {
         )
     }
 }
-
-private fun String.withoutScheme(): String = removePrefix("https://").removeSuffix("/")
