@@ -13,6 +13,7 @@ import app.daysemble.data.sync.ChangeListener
 import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.Priority
 import app.daysemble.domain.model.TaskDraft
+import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -105,6 +106,58 @@ class TaskRepositoryTest {
         val p = repo.allTasks.first().first { it.id == parent }
         assertThat(p.subtaskCount).isEqualTo(2)
         assertThat(p.subtasksDone).isEqualTo(1)
+    }
+
+    @Test
+    fun `date range matches the full task view including subtask progress and visibility`() = runTest {
+        val from = LocalDate.of(2026, 10, 22)
+        val to = from.plusDays(6)
+        val first = repo.create(TaskDraft(title = "First day", dueDate = from), localList)
+        repo.create(TaskDraft(title = "Last day", dueDate = to), localList)
+        val doneChild = repo.create(TaskDraft(title = "Done child", parentId = first), localList)
+        repo.setCompleted(doneChild, true)
+        repo.create(TaskDraft(title = "Future child", parentId = first, dueDate = to.plusDays(1)), localList)
+        val deletedChild = repo.create(TaskDraft(title = "Deleted child", parentId = first), localList)
+        repo.delete(deletedChild)
+        val outside = repo.create(TaskDraft(title = "Earlier parent", dueDate = from.minusDays(1)), localList)
+        repo.create(TaskDraft(title = "Child in range", parentId = outside, dueDate = from), localList)
+        repo.create(TaskDraft(title = "Later parent", dueDate = to.plusDays(1)), localList)
+        repo.create(TaskDraft(title = "Undated"), localList)
+        val completed = repo.create(TaskDraft(title = "Completed", dueDate = from), localList)
+        repo.setCompleted(completed, true)
+        val deleted = repo.create(TaskDraft(title = "Deleted", dueDate = from), localList)
+        repo.delete(deleted)
+        db.taskLists().upsert(TaskListEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "r1", accountEmail = "a@example.com", title = "G"))
+        repo.create(TaskDraft(title = "Google", dueDate = from), "g")
+
+        for (enabled in listOf(true, false)) {
+            db.taskLists().setSyncEnabled("g", enabled)
+            val expected = repo.allTasks.first().filter {
+                it.parentId == null && !it.isCompleted && it.dueDate?.let { date -> date in from..to } == true
+            }
+            val actual = repo.openTasksInRange(from, to).first()
+            assertThat(actual).containsExactlyElementsIn(expected)
+            val parent = actual.single { it.id == first }
+            assertThat(parent.subtaskCount).isEqualTo(2)
+            assertThat(parent.subtasksDone).isEqualTo(1)
+        }
+        assertThat(repo.openTasksInRange(to.plusDays(2), to.plusDays(3)).first()).isEmpty()
+    }
+
+    @Test
+    fun `date range updates when a task is completed reopened or moved`() = runTest {
+        val date = LocalDate.of(2026, 10, 22)
+        val id = repo.create(TaskDraft(title = "Task", dueDate = date), localList)
+        repo.openTasksInRange(date, date).test {
+            assertThat(awaitItem().map { it.id }).containsExactly(id)
+            repo.setCompleted(id, true)
+            assertThat(awaitItem()).isEmpty()
+            repo.setCompleted(id, false)
+            assertThat(awaitItem().map { it.id }).containsExactly(id)
+            repo.update(id, TaskDraft(title = "Task", dueDate = date.plusDays(1)))
+            assertThat(awaitItem()).isEmpty()
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test

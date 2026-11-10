@@ -67,12 +67,11 @@ class CalendarViewModel(
     // switch never waits for them; the result is collected on the main thread as before.
     val state: StateFlow<CalendarUiState> = window.flatMapLatest { (range, z, _) ->
         val (from, to) = range
-        combine(events.occurrences(from, to, z), tasks.allTasks, mode, selected, tick) { occ, all, m, s, now ->
+        combine(events.occurrences(from, to, z), tasks.openTasksInRange(from, to), mode, selected, tick) { occ, all, m, s, now ->
             CalendarUiState(
                 mode = m, selected = s, today = now.atZone(z).toLocalDate(),
                 byDate = groupByDate(occ, from, to),
-                tasksByDate = all.filter { !it.isCompleted && it.parentId == null && it.dueDate != null && it.dueDate in from..to }
-                    .groupBy { it.dueDate!! },
+                tasksByDate = all.groupBy { it.dueDate!! },
                 loadedFrom = from, loadedTo = to, isLoading = false,
             )
         }
@@ -128,4 +127,3 @@ class CalendarViewModel(
         }
     }
 }
-
