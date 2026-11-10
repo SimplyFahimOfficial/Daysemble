@@ -58,8 +58,8 @@ class CalendarViewModelTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), DaysembleDatabase::class.java)
             .allowMainThreadQueries().build()
         val listener = object : ChangeListener {
-            override fun onTaskChanged(taskId: String) {}
-            override fun onPendingSync() {}
+            override fun onTaskChanged(taskId: String) = Unit
+            override fun onPendingSync() = Unit
         }
         val outbox = Outbox(db.sync()) { clock.now().toEpochMilli() }
         tasks = TaskRepository(db, outbox, clock, listener)
