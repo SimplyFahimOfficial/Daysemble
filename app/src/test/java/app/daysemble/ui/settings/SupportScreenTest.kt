@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -118,9 +119,13 @@ class SupportScreenTest {
         compose.onNodeWithContentDescription(qr).performClick()
         compose.onAllNodesWithContentDescription(qr).assertCountEquals(2) // the small tile and the enlarged one
         compose.onNodeWithText("Close").assertExists()
+        // The enlarged view repeats who is being paid, so it can be checked against the UPI app.
+        compose.onAllNodesWithText(SupportConfig.UPI_ID).assertCountEquals(2)
+        compose.onAllNodesWithText("Payee: ${SupportConfig.UPI_PAYEE_NAME}").assertCountEquals(2)
 
         compose.onNodeWithText("Close").performClick()
         compose.onAllNodesWithContentDescription(qr).assertCountEquals(1)
+        compose.onAllNodesWithText(SupportConfig.UPI_ID).assertCountEquals(1)
         compose.onNodeWithText("Close").assertDoesNotExist()
         assertThat(calls).isEmpty() // viewing the QR is not a payment action
     }

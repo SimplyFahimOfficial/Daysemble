@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import app.daysemble.ui.components.DsDialogAction
 import app.daysemble.ui.components.DsDialogButtons
@@ -246,6 +247,18 @@ private fun EnlargedQr(bitmap: ImageBitmap, description: String, onClose: () -> 
                     Modifier.semantics(mergeDescendants = true) { contentDescription = description },
                     Modifier.widthIn(max = EnlargedQrMaxSize).fillMaxWidth().aspectRatio(1f),
                     padding = Space.m,
+                )
+                // Who the money goes to, large enough to check against the UPI app before paying.
+                Spacer(Modifier.height(Space.l))
+                Text(stringResource(R.string.support_upi_id_label).uppercase(), style = DsTheme.type.caps, color = DsTheme.colors.textSecondary)
+                SelectionContainer {
+                    Text(SupportConfig.UPI_ID, style = DsTheme.type.titleLarge, color = DsTheme.colors.textPrimary, textAlign = TextAlign.Center)
+                }
+                Text(
+                    stringResource(R.string.support_upi_payee, SupportConfig.UPI_PAYEE_NAME),
+                    style = DsTheme.type.body,
+                    color = DsTheme.colors.textSecondary,
+                    textAlign = TextAlign.Center,
                 )
             }
         },
