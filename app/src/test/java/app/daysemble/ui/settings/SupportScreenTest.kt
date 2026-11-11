@@ -30,8 +30,8 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
 /**
- * Renders the Support page in both themes: the QR code on the rendered screen must decode to the
- * UPI link, the links must be the configured ones, and each button must call its action.
+ * Renders the Support My Work page in both themes: the QR code on the rendered screen must decode
+ * to the UPI link, More Ways to Pay must open the configured URL, and each button must call its action.
  * Renders are kept in build/support-qr/ for review.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -80,18 +80,37 @@ class SupportScreenTest {
 
     @Test fun linksAndActionsAreWired() {
         show(ThemeMode.LIGHT)
-        compose.onNodeWithText("Support on Ko-fi").performClick()
         compose.onNodeWithText("Copy UPI ID").performClick()
-        compose.onNodeWithText("Open UPI app").performClick()
+        compose.onNodeWithText("Pay with UPI").performClick()
         compose.onNodeWithText("Share QR").performClick()
         compose.onNodeWithText("Save QR").performClick()
-        compose.onNodeWithText("Personal website").performClick()
-        compose.onNodeWithText("Projects on GitHub").performClick()
+        compose.onNodeWithText("More Ways to Pay").performClick()
         compose.onNodeWithText("Copied").assertExists()
 
-        assertThat(opened).containsExactly(SupportConfig.KOFI_URL, SupportConfig.WEBSITE, SupportConfig.GITHUB_PROFILE).inOrder()
+        assertThat(opened).containsExactly(SupportConfig.PAY_OPTIONS_URL)
         assertThat(calls).containsExactly("copy", "upi", "share", "save").inOrder()
-        // The repository is private: no link to it may appear.
-        assertThat(opened.none { it.contains("Daysemble", ignoreCase = true) }).isTrue()
+    }
+
+    /**
+     * A 360 x 800 dp phone, less the status bar (24 dp) and a three-button navigation bar (48 dp):
+     * with the top bar, everything down to the last note is on screen without scrolling. (Only the
+     * Settings pages' shared bottom padding may sit below the fold.)
+     */
+    @Config(qualifiers = "w360dp-h728dp-xxhdpi")
+    @Test fun wholePageFitsOnOnePhoneScreenWithoutScrolling() {
+        compose.setContent {
+            DaysembleTheme(themeMode = ThemeMode.LIGHT) { SettingsScaffold("Support My Work", onBack = {}) { SupportContent(actions) } }
+        }
+        val screen = compose.onRoot().fetchSemanticsNode().size.height
+        val last = compose.onNodeWithText("Contributions are optional", substring = true).fetchSemanticsNode()
+        assertThat(last.positionInRoot.y + last.size.height).isAtMost(screen.toFloat())
+    }
+
+    @Test fun showsThePayeeAndTheOptionalNoteButNoKofi() {
+        show(ThemeMode.LIGHT)
+        compose.onNodeWithText(SupportConfig.UPI_ID).assertExists()
+        compose.onNodeWithText("Payee: ${SupportConfig.UPI_PAYEE_NAME}").assertExists()
+        compose.onNodeWithText("Contributions are optional", substring = true).assertExists()
+        compose.onNodeWithText("Ko-fi", substring = true, ignoreCase = true).assertDoesNotExist()
     }
 }

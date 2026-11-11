@@ -467,7 +467,7 @@
     <string name="about_zone">Time zone</string>
     <string name="about_build">Build</string>
 
-    <!-- Support my work -->
+    <!-- Support My Work -->
     <string name="support_intro">Your support helps me maintain existing applications, improve features and continue developing independent open-source projects. Every contribution is voluntary and appreciated.</string>
 
     <plurals name="minutes_short">
@@ -710,12 +710,23 @@
     <string name="name_hint_body">Daysemble greets you with it on Today.</string>
     <string name="name_hint_action">Add</string>
     <string name="settings_your_name_unset">Not set. Shown next to the logo on Today.</string>
-    <!-- Support my work -->
-    <string name="support_my_work">Support my work</string>
-    <string name="support_my_work_sub">Ko-fi, UPI and project links. Always optional.</string>
-    <string name="support_payment_options">Payment options</string>
-    <string name="support_kofi">Support on Ko-fi</string>
-    <string name="support_upi">Pay with UPI</string>
+    <!-- Help & Support -->
+    <string name="settings_help">Help &amp; Support</string>
+    <string name="settings_help_sub">Community, project website and contact</string>
+    <string name="help_section_get_help">Get help</string>
+    <string name="help_section_project">Project</string>
+    <string name="help_section_support">Support development</string>
+    <string name="help_section_developer">Developer</string>
+    <string name="help_telegram">Telegram Community</string>
+    <string name="help_telegram_sub">Ask questions, share feedback and get help.</string>
+    <string name="help_website">Project Website</string>
+    <string name="help_website_sub">Explore project links, downloads and resources.</string>
+    <string name="help_contact">Contact Developer</string>
+    <string name="help_contact_sub">Website, email and personal social links.</string>
+    <!-- Support My Work -->
+    <string name="support_my_work">Support My Work</string>
+    <string name="support_my_work_sub">Optional contributions via UPI and other payment methods.</string>
+    <string name="support_upi">UPI</string>
     <string name="support_upi_scan_hint">Scan this code with any UPI app, or open one on this phone. You choose the amount.</string>
     <string name="support_upi_id_label">UPI ID</string>
     <string name="support_upi_payee">Payee: %1$s</string>
@@ -723,7 +734,7 @@
     <string name="support_upi_qr_description">UPI QR code for %1$s, payee %2$s</string>
     <string name="support_copy_upi_id">Copy UPI ID</string>
     <string name="support_upi_id_copied">Copied</string>
-    <string name="support_open_upi_app">Open UPI app</string>
+    <string name="support_pay_with_upi">Pay with UPI</string>
     <string name="support_choose_upi_app">Pay with</string>
     <string name="support_no_upi_app">No UPI app found on this phone. The UPI ID was copied, so you can pay from another UPI app or scan the code with another phone.</string>
     <string name="support_share_qr">Share QR</string>
@@ -732,9 +743,8 @@
     <string name="support_save_qr">Save QR</string>
     <string name="support_qr_saved">QR code saved</string>
     <string name="support_qr_save_failed">Couldn\'t save the QR code</string>
-    <string name="support_project_and_contact">Project and contact</string>
-    <string name="support_project_info">Daysemble is a calm calendar and task planner by SimplyFahim. Its source code isn\'t public yet; other projects are on GitHub.</string>
-    <string name="support_website">Personal website</string>
-    <string name="support_github_profile">Projects on GitHub</string>
+    <string name="support_more_ways">More Ways to Pay</string>
+    <string name="support_more_ways_sub">Explore additional payment options</string>
+    <string name="support_optional_note">Contributions are optional. Daysemble works the same whether or not you contribute.</string>
     <string name="support_no_app_for_link">No app found to open this link. It was copied to your clipboard.</string>
 </resources>

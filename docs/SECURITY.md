@@ -8,7 +8,7 @@ To report a vulnerability, see the [security policy](../SECURITY.md).
 | Area | State | Enforced by |
 | --- | --- | --- |
 | Network | HTTPS only: `cleartextTrafficPermitted="false"`, system CAs only (no user-installed CAs) | `res/xml/network_security_config.xml`; APK audit |
-| Support page | No network calls: the UPI QR code is generated on the device (ZXing). Links open in the user's browser or UPI app; nothing about a payment is sent, stored or confirmed by the app. `<queries>` for the `upi` scheme only detects whether a UPI app exists | `support/`; `SupportScreenTest` |
+| Help & Support pages | No network calls: the UPI QR code is generated on the device (ZXing). Links (Telegram, project website, contact, more ways to pay) open in the user's browser or the matching app; nothing about a payment is sent, stored or confirmed by the app. `<queries>` for the `upi` scheme only detects whether a UPI app exists | `support/`; `HelpScreenTest`, `SupportScreenTest` |
 | Endpoints | Only Google APIs (`www.googleapis.com/calendar/v3`, `tasks.googleapis.com/tasks/v1`) and Google sign-in, and only after the user connects an account | code review |
 | Tokens | OAuth access tokens are held in memory only and never written to disk or logs. The account store keeps the account email and two on/off switches | `data/google/auth/AccountStore.kt` |
 | Backups | Enabled, limited to the settings DataStore (`settings.preferences_pb`) by `backup_rules.xml` and `data_extraction_rules.xml`. Database, outbox and account state are not backed up | APK audit (rules must be present) |
