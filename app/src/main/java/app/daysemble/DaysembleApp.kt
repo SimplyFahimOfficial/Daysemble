@@ -2,6 +2,7 @@ package app.daysemble
 
 import android.app.Application
 import androidx.work.Configuration
+import androidx.work.WorkManager
 import app.daysemble.reminders.Notifications
 import app.daysemble.reminders.ReminderRefreshWorker
 import kotlinx.coroutines.Dispatchers
@@ -24,17 +25,8 @@ class DaysembleApp : Application(), Configuration.Provider {
         ReminderRefreshWorker.schedule(this)
         // Re-plan once per process start: covers force-stops, which clear all alarms.
         container.appScope.launch(Dispatchers.IO) { container.reminders.rescheduleAll() }
-        // Sync on foreground when the last success is older than 15 minutes.
-        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
-            override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
-                container.appScope.launch(Dispatchers.IO) {
-                    if (!container.accounts.current().isConnected) return@launch
-                    container.syncScheduler.enablePeriodic()
-                    val last = container.database.sync().state(app.daysemble.data.db.SyncService.CALENDAR)?.lastSuccessAt ?: 0
-                    if (container.clock.now().toEpochMilli() - last > 15 * 60_000) container.syncScheduler.requestSoon(0)
-                }
-            }
-        })
+        // shortcut: drop this once no install can still hold work queued by the removed Google sync.
+        listOf("google-sync-periodic", "google-sync-soon", "google-sync-now").forEach { WorkManager.getInstance(this).cancelUniqueWork(it) }
     }
 
     /**

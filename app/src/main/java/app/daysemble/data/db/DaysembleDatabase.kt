@@ -14,20 +14,15 @@ class Converters {
     @TypeConverter fun syncState(v: SyncState) = v.name
     @TypeConverter fun ownerType(v: String) = OwnerType.valueOf(v)
     @TypeConverter fun ownerType(v: OwnerType) = v.name
-    @TypeConverter fun outboxOp(v: String) = OutboxOp.valueOf(v)
-    @TypeConverter fun outboxOp(v: OutboxOp) = v.name
-    @TypeConverter fun syncService(v: String) = SyncService.valueOf(v)
-    @TypeConverter fun syncService(v: SyncService) = v.name
 }
 
 @Database(
     entities = [
         CalendarSourceEntity::class, EventEntity::class, TaskListEntity::class, TaskEntity::class,
         ReminderEntity::class, ScheduledAlarmEntity::class, DeliveredReminderEntity::class,
-        OutboxEntity::class, ConflictLogEntity::class, SyncStateEntity::class, TaskSeriesEntity::class,
-        TaskOccurrenceSkipEntity::class, SleepSessionEntity::class,
+        TaskSeriesEntity::class, TaskOccurrenceSkipEntity::class, SleepSessionEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -39,7 +34,6 @@ abstract class DaysembleDatabase : RoomDatabase() {
     abstract fun taskSeries(): TaskSeriesDao
     abstract fun reminders(): ReminderDao
     abstract fun alarms(): AlarmDao
-    abstract fun sync(): SyncDao
     abstract fun skips(): TaskOccurrenceSkipDao
     abstract fun sleep(): SleepDao
     abstract fun backup(): BackupDao

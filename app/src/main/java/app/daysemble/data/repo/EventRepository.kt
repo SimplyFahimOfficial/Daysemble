@@ -12,9 +12,7 @@ import app.daysemble.data.db.EventEntity
 import app.daysemble.data.db.OwnerType
 import app.daysemble.data.db.ReminderEntity
 import app.daysemble.data.db.SourceKind
-import app.daysemble.data.db.SyncState
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.CalendarInfo
 import app.daysemble.domain.model.EventDraft
 import app.daysemble.domain.model.EventOccurrence
@@ -35,16 +33,13 @@ import java.util.UUID
 
 class EventRepository(
     private val db: DaysembleDatabase,
-    private val outbox: Outbox,
     private val clock: AppClock,
     private val listener: ChangeListener,
 ) {
     private val events = db.events()
     private val calendars = db.calendars()
 
-    val calendarList: Flow<List<CalendarInfo>> = calendars.observeAll().map { rows ->
-        rows.filter { it.kind == SourceKind.LOCAL || it.isSyncEnabled }.map { it.toInfo() }
-    }
+    val calendarList: Flow<List<CalendarInfo>> = calendars.observeAll().map { rows -> rows.map { it.toInfo() } }
 
     val allCalendars: Flow<List<CalendarSourceEntity>> = calendars.observeAll()
 
@@ -61,7 +56,7 @@ class EventRepository(
         calendars.rename(id, name.trim())
     }
 
-    /** Colour is a display preference: allowed for Google calendars too (local only, never pushed). */
+    /** Colour is a display preference: allowed for device calendars too (kept in Daysemble only). */
     suspend fun setCalendarColor(id: String, colorArgb: Int) = calendars.setColor(id, colorArgb)
 
     /** Hidden calendars don't appear in views and don't remind. Nothing is deleted. */
@@ -206,55 +201,46 @@ class EventRepository(
     /**
      * Changes only the occurrence [key] of series [masterId], by storing (or updating) an override
      * row for it. The rule, the other occurrences, the reminders and the calendar stay as they are.
-     * For Google the change is pushed as an edit of that instance.
      */
     suspend fun updateOccurrence(masterId: String, key: String, draft: EventDraft) {
         require(draft.validationError == null) { "Invalid event: ${draft.validationError}" }
-        val google = db.withTransaction {
-            val master = get(masterId) ?: return@withTransaction null
+        val changed = db.withTransaction {
+            val master = get(masterId) ?: return@withTransaction false
             require(master.rrule != null && !master.isReadOnlyRecurrence) { "Not an editable series" }
-            val cal = calendars.get(master.calendarId) ?: return@withTransaction null
+            val cal = calendars.get(master.calendarId) ?: return@withTransaction false
             require(isWritableRole(cal.accessRole)) { "Calendar is read-only" }
-            val g = cal.kind == SourceKind.GOOGLE
             val now = clock.now().toEpochMilli()
             val existing = events.override(masterId, key)
             val base = existing ?: master.copy(
                 id = UUID.randomUUID().toString(), rrule = null, exdates = "", recurringParentId = masterId, originalStartKey = key,
-                remoteId = null, etag = null, remoteUpdatedAt = null, pendingClientId = null, instancesUntil = null,
                 isCancelled = false, createdAt = now,
             )
             // An override has no rule of its own and stays in its series' calendar.
             val row = applyDraft(base, draft.copy(rrule = null, calendarId = master.calendarId))
-            // A change of a Google instance is an edit of that instance on Google (CalendarSyncer finds its
-            // id), never a new event: so it is always queued as an update.
-            val state = if (g) outbox.recordUpdate(OwnerType.EVENT, row.id, SyncState.PENDING_UPDATE) else SyncState.LOCAL
-            events.upsert(row.copy(isCancelled = false, isDeleted = false, updatedAt = now, syncState = state))
-            g
-        } ?: return
-        notify(masterId, google)
+            events.upsert(row.copy(isCancelled = false, isDeleted = false, updatedAt = now))
+            true
+        }
+        if (changed) listener.onEventChanged(masterId)
     }
 
     suspend fun create(draft: EventDraft, fallbackCalendarId: String): String {
         require(draft.validationError == null) { "Invalid event: ${draft.validationError}" }
         val cal = draft.calendarId?.let { calendars.get(it) } ?: calendars.get(fallbackCalendarId) ?: error("No calendar")
         require(isWritableRole(cal.accessRole)) { "Calendar is read-only" }
-        val google = cal.kind == SourceKind.GOOGLE
         val now = clock.now().toEpochMilli()
         val id = UUID.randomUUID().toString()
         val row = applyDraft(
             EventEntity(
                 id = id, calendarId = cal.id, title = "", isAllDay = false, timeZone = draft.zone.id,
                 rangeStartUtc = 0, rangeEndUtc = 0, createdAt = now, updatedAt = now,
-                syncState = if (google) SyncState.PENDING_CREATE else SyncState.LOCAL,
             ),
             draft,
         )
         db.withTransaction {
             events.upsert(row)
             saveReminders(id, draft.reminderMinutesBefore)
-            if (google) outbox.recordCreate(OwnerType.EVENT, id)
         }
-        notify(id, google)
+        listener.onEventChanged(id)
         return id
     }
 
@@ -263,33 +249,31 @@ class EventRepository(
         require(draft.validationError == null) { "Invalid event: ${draft.validationError}" }
         // Moving to another calendar and editing are one transaction, so a failure can't leave the
         // event moved but not edited. (Room joins the nested transactions below to this one.)
-        val google = db.withTransaction {
-            val current = get(id) ?: return@withTransaction null
+        val changed = db.withTransaction {
+            val current = get(id) ?: return@withTransaction false
             val target = draft.calendarId?.takeIf { it != current.calendarId }
             // The event exists, so a move that doesn't happen means a calendar is gone. Fail the save
             // (nothing is written) instead of reporting success and dropping the other edits.
-            val moved = if (target != null) checkNotNull(moveRow(id, target)) { "The calendar is no longer available" } else false
-            val edited = updateRow(id, draft) ?: return@withTransaction null
-            moved || edited
-        } ?: return
-        notify(id, google)
+            check(target == null || moveRow(id, target)) { "The calendar is no longer available" }
+            updateRow(id, draft)
+        }
+        if (changed) listener.onEventChanged(id)
     }
 
-    /** Applies [draft] to the row. Returns whether it is a Google event, or null if it's gone. */
-    private suspend fun updateRow(id: String, draft: EventDraft): Boolean? =
+    /** Applies [draft] to the row. Returns false if the event is gone. */
+    private suspend fun updateRow(id: String, draft: EventDraft): Boolean =
         db.withTransaction {
-            val row = get(id) ?: return@withTransaction null
-            val cal = calendars.get(row.calendarId) ?: return@withTransaction null
-            val g = cal.kind == SourceKind.GOOGLE
-            val state = if (g) outbox.recordUpdate(OwnerType.EVENT, id, row.syncState) else SyncState.LOCAL
-            var updated = applyDraft(row, draft).copy(updatedAt = clock.now().toEpochMilli(), syncState = state)
+            val row = get(id) ?: return@withTransaction false
+            val cal = calendars.get(row.calendarId) ?: return@withTransaction false
+            require(isWritableRole(cal.accessRole)) { "Calendar is read-only" }
+            var updated = applyDraft(row, draft).copy(updatedAt = clock.now().toEpochMilli())
             // Keep EXDATEs only when the series timing is unchanged; otherwise their keys no longer line up.
             if (updated.startUtc != row.startUtc || updated.startDate != row.startDate || updated.isAllDay != row.isAllDay || updated.rrule != row.rrule) {
                 updated = updated.copy(exdates = "")
             }
             events.upsert(updated)
             saveReminders(id, draft.reminderMinutesBefore)
-            g
+            true
         }
 
     /** True when an event can change calendar (series with individually changed occurrences can't). */
@@ -298,61 +282,23 @@ class EventRepository(
         return e.rrule == null || events.overridesFor(listOf(id)).isEmpty()
     }
 
-    /**
-     * Moves an event to another calendar. Google: the copy in the old calendar is deleted (by snapshot)
-     * and the event is created in the new one with a server-assigned id, so there's no leftover remote
-     * copy to resurrect on the next pull.
-     */
+    /** Moves an event to another calendar. */
     suspend fun moveToCalendar(id: String, newCalendarId: String) {
-        val google = moveRow(id, newCalendarId) ?: return
-        notify(id, google)
+        if (moveRow(id, newCalendarId)) listener.onEventChanged(id)
     }
 
-    /** Moves the row. Returns whether Google is involved, or null if nothing moved. */
-    private suspend fun moveRow(id: String, newCalendarId: String): Boolean? =
+    /** Moves the row. Returns false if nothing moved. */
+    private suspend fun moveRow(id: String, newCalendarId: String): Boolean =
         db.withTransaction {
-            val row = get(id) ?: return@withTransaction null
-            if (row.calendarId == newCalendarId) return@withTransaction null
+            val row = get(id) ?: return@withTransaction false
+            if (row.calendarId == newCalendarId) return@withTransaction false
             require(canMove(id)) { "Series with changed occurrences can't change calendar" }
-            val from = calendars.get(row.calendarId) ?: return@withTransaction null
-            val to = calendars.get(newCalendarId) ?: return@withTransaction null
-            require(isWritableRole(to.accessRole)) { "Calendar is read-only" }
-            val google = recordMoveForSync(row, from, to)
-            events.upsert(movedRow(row, to))
-            google
+            val from = calendars.get(row.calendarId) ?: return@withTransaction false
+            val to = calendars.get(newCalendarId) ?: return@withTransaction false
+            require(isWritableRole(from.accessRole) && isWritableRole(to.accessRole)) { "Calendar is read-only" }
+            events.upsert(row.copy(calendarId = to.id, updatedAt = clock.now().toEpochMilli()))
+            true
         }
-
-    /**
-     * Queues the remote side of moving [row] from [from] to [to]: delete the old Google copy, create
-     * the new one. Call inside [moveRow]'s transaction. Returns whether Google is involved.
-     */
-    private suspend fun recordMoveForSync(row: EventEntity, from: CalendarSourceEntity, to: CalendarSourceEntity): Boolean {
-        val fromG = from.kind == SourceKind.GOOGLE
-        val toG = to.kind == SourceKind.GOOGLE
-        if (!fromG && !toG) return false
-        // Remote id of a create with a lost response is our deterministic client id.
-        val oldRemote = when {
-            !fromG -> null
-            row.remoteId != null -> row.remoteId
-            row.syncState == SyncState.PENDING_CREATE -> app.daysemble.data.google.calendar.CalendarMapper.clientIdOf(row)
-            else -> null
-        }
-        outbox.recordMove(OwnerType.EVENT, row.id, oldRemote, if (fromG) from.remoteId else null, toG)
-        return true
-    }
-
-    /** [row] as it is stored in [to]: no remote identity yet, to be created there if [to] is a Google calendar. */
-    private fun movedRow(row: EventEntity, to: CalendarSourceEntity): EventEntity {
-        val toG = to.kind == SourceKind.GOOGLE
-        return row.copy(
-            calendarId = to.id, remoteId = null, etag = null,
-            // New stable client id per move: the previous one may still be held by the deleted copy,
-            // and reusing it on retries means a lost create response can't produce a duplicate.
-            pendingClientId = if (toG) app.daysemble.data.google.calendar.CalendarMapper.newClientId() else null,
-            remoteUpdatedAt = null, updatedAt = clock.now().toEpochMilli(),
-            syncState = if (toG) SyncState.PENDING_CREATE else SyncState.LOCAL,
-        )
-    }
 
     /**
      * What a delete removed (the event, its changed occurrences and their reminders), kept in memory
@@ -366,38 +312,25 @@ class EventRepository(
         return Deleted(rows, rows.flatMap { db.reminders().forOwner(OwnerType.EVENT, it.id) })
     }
 
-    /**
-     * Undoes [delete] or [deleteOccurrence]. On-device rows are written back as they were. A Google
-     * event whose delete hasn't been pushed gets its pending delete cancelled; one that is already
-     * gone from Google is created again (with a new id). Occurrences of a Google series that was
-     * deleted remotely meanwhile can't be brought back and are left out.
-     */
+    /** Undoes [delete] or [deleteOccurrence]: the rows are written back as they were. */
     suspend fun restore(deleted: Deleted) {
-        val now = clock.now().toEpochMilli()
         val restored = mutableListOf<String>()
-        var google = false
         db.withTransaction {
             for (r in deleted.rows) {
-                val g = restoreRow(r, deleted.reminders.filter { it.ownerId == r.id }, now) ?: continue
-                restored += r.id
-                google = google || g
+                if (restoreRow(r, deleted.reminders.filter { it.ownerId == r.id })) restored += r.id
             }
         }
         restored.forEach(listener::onEventChanged)
-        if (google) listener.onPendingSync()
     }
 
-    /** Restores row [r] with its [reminders]. Returns null if nothing was written, else whether it is a Google event. */
-    private suspend fun restoreRow(r: EventEntity, reminders: List<ReminderEntity>, now: Long): Boolean? {
-        val cur = events.get(r.id)
-        // The row is untouched (a changed occurrence of a kept series, or of a Google series whose
-        // delete isn't pushed yet), but the series delete removed its reminders: put them back.
-        if (cur == r) return if (restoreReminders(r.id, reminders)) false else null
-        val g = calendars.get(r.calendarId)?.kind == SourceKind.GOOGLE
-        val row = (if (g) restoredGoogleRow(r, cur, now) else r) ?: return null
-        events.upsert(row)
+    /** Restores row [r] with its [reminders]. Returns whether anything was written. */
+    private suspend fun restoreRow(r: EventEntity, reminders: List<ReminderEntity>): Boolean {
+        // The row is untouched (a changed occurrence of a kept series), but the series delete removed
+        // its reminders: put them back.
+        if (events.get(r.id) == r) return restoreReminders(r.id, reminders)
+        events.upsert(r)
         db.reminders().replace(OwnerType.EVENT, r.id, reminders)
-        return g
+        return true
     }
 
     /** Puts back [reminders] of [id] if it has none now. Returns whether anything was written. */
@@ -407,68 +340,38 @@ class EventRepository(
         return true
     }
 
-    /**
-     * The Google row [r] as restored, given what is stored now ([cur]), with its sync queued; null if it
-     * can't come back (a changed occurrence of a series already deleted on Google). Call inside [restore].
-     */
-    private suspend fun restoredGoogleRow(r: EventEntity, cur: EventEntity?, now: Long): EventEntity? = when {
-        cur != null && cur.syncState == SyncState.PENDING_DELETE -> {
-            outbox.cancelDelete(OwnerType.EVENT, r.id, r.remoteId != null)
-            r.copy(isDeleted = false, updatedAt = now, syncState = if (r.remoteId != null) SyncState.PENDING_UPDATE else SyncState.PENDING_CREATE)
-        }
-        cur != null -> r.copy(
-            remoteId = cur.remoteId, etag = cur.etag, remoteUpdatedAt = cur.remoteUpdatedAt, updatedAt = now,
-            syncState = outbox.recordUpdate(OwnerType.EVENT, r.id, cur.syncState),
-        )
-        r.recurringParentId != null && r.remoteId != null -> null
-        else -> {
-            outbox.recordCreate(OwnerType.EVENT, r.id)
-            r.copy(
-                remoteId = null, etag = null, remoteUpdatedAt = null, isDeleted = false, updatedAt = now,
-                pendingClientId = app.daysemble.data.google.calendar.CalendarMapper.newClientId(),
-                syncState = SyncState.PENDING_CREATE,
-            )
-        }
-    }
+    /** Whether the calendar of [row] can be changed (device calendars are read-only mirrors). */
+    private suspend fun writable(row: EventEntity) = calendars.get(row.calendarId)?.let { isWritableRole(it.accessRole) } == true
 
-    /** Deletes a whole event / series (soft delete for Google until the remote delete succeeds). */
+    /** Deletes a whole event / series. */
     suspend fun delete(id: String): Deleted? {
         var removed: Deleted? = null
-        val google = db.withTransaction {
+        val done = db.withTransaction {
+            val row = events.get(id)?.takeIf { writable(it) } ?: return@withTransaction false
             removed = snapshot(id)
-            val row = events.get(id) ?: return@withTransaction null
-            val g = calendars.get(row.calendarId)?.kind == SourceKind.GOOGLE
-            if (!g) {
-                events.hardDelete(id)
-            } else when (outbox.recordDelete(OwnerType.EVENT, id, row.remoteId != null)) {
-                Outbox.DeleteResult.HARD_DELETE_LOCALLY -> events.hardDelete(id)
-                Outbox.DeleteResult.PUSH_DELETE -> events.upsert(row.copy(isDeleted = true, syncState = SyncState.PENDING_DELETE))
-            }
+            events.hardDelete(id)
             // The series' changed occurrences go with it, so their reminders do too.
             removed?.rows.orEmpty().forEach { db.reminders().deleteForOwner(OwnerType.EVENT, it.id) }
-            g
-        } ?: return null
-        notify(id, google)
+            true
+        }
+        if (!done) return null
+        listener.onEventChanged(id)
         return removed
     }
 
     /** Removes one instance of a series by adding an EXDATE to the master. */
     suspend fun deleteOccurrence(eventId: String, key: String): Deleted? {
         var removed: Deleted? = null
-        val google = db.withTransaction {
+        val changed = db.withTransaction {
+            val row = get(eventId)?.takeIf { it.rrule != null && writable(it) } ?: return@withTransaction false
             removed = snapshot(eventId)
-            val row = get(eventId) ?: return@withTransaction null
-            if (row.rrule == null) return@withTransaction null
-            val g = calendars.get(row.calendarId)?.kind == SourceKind.GOOGLE
             val keys = row.exdates.split(',').filter { it.isNotBlank() }.toMutableSet().apply { add(key) }
-            val state = if (g) outbox.recordUpdate(OwnerType.EVENT, eventId, row.syncState) else SyncState.LOCAL
-            events.upsert(row.copy(exdates = keys.sorted().joinToString(","), updatedAt = clock.now().toEpochMilli(), syncState = state))
-            g
-        } ?: run {
-            // Not a series: deleting "this occurrence" is deleting the event.
-            return delete(eventId)
+            events.upsert(row.copy(exdates = keys.sorted().joinToString(","), updatedAt = clock.now().toEpochMilli()))
+            true
         }
-        notify(eventId, google)
+        // Not a series: deleting "this occurrence" is deleting the event.
+        if (!changed) return delete(eventId)
+        listener.onEventChanged(eventId)
         return removed
     }
 
@@ -518,11 +421,6 @@ class EventRepository(
             OwnerType.EVENT, id,
             minutes.distinct().filter { it >= 0 }.take(5).map { ReminderEntity.of(OwnerType.EVENT, id, it) },
         )
-    }
-
-    private fun notify(id: String, google: Boolean) {
-        listener.onEventChanged(id)
-        if (google) listener.onPendingSync()
     }
 
     companion object {
@@ -589,8 +487,7 @@ class EventRepository(
                 val exdates = row.exdates.split(',').filter { it.isNotBlank() }.toSet()
                 val ovByKey = overridesByParent[row.id].orEmpty().associateBy { it.originalStartKey }
                 val instances: List<Triple<String, Instant, Instant>> = if (!rule.isSupported || row.isReadOnlyRecurrence) {
-                    // Can't expand locally. For Google series, sync stores Google's instances as override
-                    // rows (picked up below); otherwise show the first occurrence only.
+                    // Can't expand locally: show the changed occurrences stored for it, or else the first one only.
                     if (overridesByParent[row.id].orEmpty().any { !it.isCancelled }) emptyList()
                     else listOfNotNull(single(row, cal, zone)?.let { Triple(it.occurrenceKey, it.start, it.end) })
                 } else if (row.isAllDay) {
@@ -662,7 +559,7 @@ class EventRepository(
                 timeZone = runCatching { ZoneId.of(row.timeZone) }.getOrDefault(zone),
                 colorArgb = row.colorArgb ?: cal.colorArgb,
                 isRecurring = recurring,
-                isGoogle = cal.kind == SourceKind.GOOGLE,
+                isDevice = cal.kind == SourceKind.DEVICE,
                 isReadOnly = !isWritableRole(cal.accessRole) || row.isReadOnlyRecurrence,
             )
     }
@@ -671,8 +568,8 @@ class EventRepository(
 fun isWritableRole(role: String) = role == "owner" || role == "writer" || role == "writerWithoutPrivateAccess"
 
 internal fun CalendarSourceEntity.toInfo() = CalendarInfo(
-    id = id, name = name, colorArgb = colorArgb, isGoogle = kind == SourceKind.GOOGLE, accountEmail = accountEmail,
-    isVisible = isVisible, isWritable = isWritableRole(accessRole), isSyncEnabled = isSyncEnabled,
+    id = id, name = name, colorArgb = colorArgb, isDevice = kind == SourceKind.DEVICE,
+    isVisible = isVisible, isWritable = isWritableRole(accessRole),
 )
 
 internal fun androidx.compose.ui.graphics.Color.toArgbInt(): Int {

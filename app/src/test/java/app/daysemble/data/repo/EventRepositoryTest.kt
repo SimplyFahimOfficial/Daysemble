@@ -5,12 +5,10 @@ import androidx.test.core.app.ApplicationProvider
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.core.time.FixedAppClock
 import app.daysemble.data.db.DaysembleDatabase
-import app.daysemble.data.db.OutboxOp
+import app.daysemble.data.db.EventEntity
 import app.daysemble.data.db.SourceKind
-import app.daysemble.data.db.SyncState
 import app.daysemble.data.db.CalendarSourceEntity
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.EventDraft
 import app.daysemble.domain.model.EventValidation
 import com.google.common.truth.Truth.assertThat
@@ -41,7 +39,7 @@ class EventRepositoryTest {
     fun setUp() = runTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), DaysembleDatabase::class.java)
             .allowMainThreadQueries().build()
-        repo = EventRepository(db, Outbox(db.sync()) { clock.now().toEpochMilli() }, clock, ChangeListener.None)
+        repo = EventRepository(db, clock, ChangeListener.None)
         cal = repo.ensureDefaultCalendar("Personal")
     }
 
@@ -143,13 +141,27 @@ class EventRepositoryTest {
     }
 
     @Test
-    fun `google events are queued, read-only calendars reject writes`() = runTest {
-        db.calendars().upsert(CalendarSourceEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "primary", accountEmail = "a@example.com", name = "G", colorArgb = 0, accessRole = "owner"))
-        db.calendars().upsert(CalendarSourceEntity(id = "ro", kind = SourceKind.GOOGLE, remoteId = "holidays", accountEmail = "a@example.com", name = "H", colorArgb = 0, accessRole = "reader"))
-        val id = repo.create(draft().copy(calendarId = "g"), cal)
-        assertThat(repo.get(id)!!.syncState).isEqualTo(SyncState.PENDING_CREATE)
-        assertThat(db.sync().outbox().map { it.op }).containsExactly(OutboxOp.CREATE)
-        assertThat(runCatching { repo.create(draft().copy(calendarId = "ro"), cal) }.isFailure).isTrue()
+    fun `mirrored device events can't be created, changed, moved or deleted`() = runTest {
+        db.calendars().upsert(CalendarSourceEntity(id = "device:1", kind = SourceKind.DEVICE, remoteId = "1", name = "Work", colorArgb = 0, accessRole = "reader"))
+        val mirrored = EventRepository.withEnvelope(
+            EventEntity(
+                id = "device:7:1", calendarId = "device:1", title = "Standup", isAllDay = false, timeZone = berlin.id,
+                startUtc = Instant.parse("2026-10-22T07:00:00Z").toEpochMilli(), endUtc = Instant.parse("2026-10-22T07:30:00Z").toEpochMilli(),
+                rangeStartUtc = 0, rangeEndUtc = 0, createdAt = 0, updatedAt = 0,
+            ),
+        )
+        db.events().upsert(mirrored)
+
+        assertThat(runCatching { repo.create(draft().copy(calendarId = "device:1"), cal) }.isFailure).isTrue()
+        assertThat(runCatching { repo.update(mirrored.id, draft(title = "Changed")) }.isFailure).isTrue()
+        assertThat(runCatching { repo.moveToCalendar(mirrored.id, cal) }.isFailure).isTrue()
+        assertThat(repo.delete(mirrored.id)).isNull()
+        assertThat(repo.deleteOccurrence(mirrored.id, "2026-10-22T09:00")).isNull()
+
+        val shown = repo.occurrences(d("2026-10-22"), d("2026-10-22"), berlin).first().single()
+        assertThat(shown.title).isEqualTo("Standup")
+        assertThat(shown.isDevice).isTrue()
+        assertThat(shown.isReadOnly).isTrue()
     }
 
     @Test

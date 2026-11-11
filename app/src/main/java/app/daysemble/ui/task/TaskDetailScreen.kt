@@ -303,7 +303,7 @@ private fun DeleteDialog(task: Task, state: TaskDetailUiState, onDelete: (Series
     } else {
         DsConfirmDialog(
             stringResource(R.string.delete_task_title),
-            stringResource(if (task.isGoogle) R.string.delete_task_google_body else R.string.delete_task_body),
+            stringResource(R.string.delete_task_body),
             stringResource(R.string.action_delete), onConfirm = { onDelete(SeriesScope.THIS) }, onDismiss = onDismiss, destructive = true,
         )
     }

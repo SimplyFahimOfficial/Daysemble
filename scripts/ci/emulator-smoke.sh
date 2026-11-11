@@ -2,7 +2,7 @@
 # Install an APK on a fresh emulator, launch it from the launcher and fail if it crashes.
 #
 # This is a smoke test of the *minified release* build: R8 can strip classes that only
-# reflection or serialization reach (Google API DTOs, navigation routes), which compiles and
+# reflection or serialization reach (backup file models, navigation routes), which compiles and
 # passes JVM unit tests but crashes on a device. It is not a functional UI test; the behaviour
 # of the screens is covered by the Robolectric tests in app/src/test.
 #

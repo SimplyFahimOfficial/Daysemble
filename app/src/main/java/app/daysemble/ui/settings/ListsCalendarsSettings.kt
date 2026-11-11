@@ -1,26 +1,17 @@
 package app.daysemble.ui.settings
 
 import android.Manifest
-import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.provider.CalendarContract
 import android.provider.Settings
-import android.widget.Toast
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.rounded.CalendarMonth
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import app.daysemble.data.device.DeviceCalendarEvent
-import app.daysemble.data.device.DeviceCalendarReader
-import app.daysemble.ui.components.CardDivider
-import app.daysemble.ui.format.Fmt
-import app.daysemble.ui.format.LocalTimePrefs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +48,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.daysemble.AppContainer
 import app.daysemble.DaysembleApp
 import app.daysemble.R
 import app.daysemble.ui.components.DsDialogAction
@@ -109,7 +101,8 @@ fun ListsCalendarsRoute(onBack: () -> Unit) {
             cals.forEach { cal ->
                 DsSwitchRow(
                     cal.name, cal.isVisible, { v -> scope.launch { c.events.setCalendarVisible(cal.id, v) } },
-                    subtitle = stringResource(if (cal.kind == SourceKind.GOOGLE) R.string.calendar_google_sub else R.string.on_this_device),
+                    subtitle = if (cal.kind == SourceKind.DEVICE) cal.accountEmail ?: stringResource(R.string.calendar_device_sub)
+                    else stringResource(R.string.on_this_device),
                 )
                 Box(Modifier.padding(start = Space.gutter, bottom = Space.xs)) {
                     Row2(cal.colorArgb, onEdit = {
@@ -120,19 +113,15 @@ fun ListsCalendarsRoute(onBack: () -> Unit) {
             Hint(stringResource(R.string.calendar_hidden_note))
             DsButton(stringResource(R.string.new_calendar), { editing = Editing.NewCalendar() }, style = DsButtonStyle.Secondary, icon = Icons.Rounded.Add, modifier = Modifier.padding(horizontal = Space.gutter))
 
-            DeviceCalendarSection()
+            DeviceCalendarSection(c)
 
             SectionHeader(stringResource(R.string.task_lists_title), Modifier.padding(top = Space.xl))
             SettingsCard {
                 lists.forEach { l ->
-                    DsRow(
-                        l.title,
-                        subtitle = stringResource(if (l.kind == SourceKind.GOOGLE) R.string.list_google_sub else R.string.on_this_device),
-                        onClick = if (l.kind == SourceKind.LOCAL) ({ editing = Editing.RenameList(l.id, l.title) }) else null,
-                    )
+                    DsRow(l.title, subtitle = stringResource(R.string.on_this_device), onClick = { editing = Editing.RenameList(l.id, l.title) })
                 }
             }
-            Hint(stringResource(R.string.list_google_note))
+            Hint(stringResource(R.string.tasks_not_synced_note))
             DsButton(stringResource(R.string.new_list), { editing = Editing.NewList() }, style = DsButtonStyle.Secondary, icon = Icons.Rounded.Add, modifier = Modifier.padding(horizontal = Space.gutter))
         }
     }
@@ -184,25 +173,28 @@ fun ListsCalendarsRoute(onBack: () -> Unit) {
 }
 
 
-/** Read-only preview held in memory only: nothing is copied into Room, backed up or sent through Google sync. */
+/**
+ * Access to the phone's calendars. They are mirrored (read-only) into the calendar list above, where
+ * each one can be shown or hidden. The permission is rechecked on every resume, so allowing or
+ * revoking it in Android settings is picked up when the user comes back.
+ */
 @Composable
-private fun DeviceCalendarSection() {
+private fun DeviceCalendarSection(container: AppContainer) {
     val context = LocalContext.current
     val activity = LocalActivity.current
-    val prefs = LocalTimePrefs.current
     val c = DsTheme.colors
     var resume by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resume++ }
-    // Rechecked on every resume: revoking in Android settings is picked up when the user comes back.
     val allowed = remember(resume) {
         context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
     }
     var denied by rememberSaveable { mutableStateOf(false) }
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { denied = !it; resume++ }
-    var preview by remember { mutableStateOf<Result<List<DeviceCalendarEvent>>?>(null) }
-    LaunchedEffect(allowed, resume, prefs.zone) {
-        preview = if (allowed) DeviceCalendarReader.upcoming(context, prefs.zone) else null
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        denied = !it
+        resume++
+        container.deviceCalendars.requestRefresh()
     }
+    val failed by container.deviceCalendars.failed.collectAsStateWithLifecycle()
 
     SectionHeader(stringResource(R.string.device_calendar_title), Modifier.padding(top = Space.xl))
     SettingsCard {
@@ -227,37 +219,13 @@ private fun DeviceCalendarSection() {
             }, style = DsButtonStyle.Secondary)
         }
     }
-    if (!allowed) return
     Hint(stringResource(R.string.device_calendar_note))
-    SectionHeader(stringResource(R.string.device_calendar_preview), Modifier.padding(top = Space.l))
-    val result = preview
-    val events = result?.getOrNull()
-    when {
-        result == null -> Hint(stringResource(R.string.loading))
-        events == null -> {
-            Hint(stringResource(R.string.device_calendar_failed))
-            DsButton(
-                stringResource(R.string.action_retry), { preview = null; resume++ },
-                style = DsButtonStyle.Ghost, modifier = Modifier.padding(horizontal = Space.gutter),
-            )
-        }
-        events.isEmpty() -> Hint(stringResource(R.string.device_calendar_none))
-        else -> SettingsCard {
-            events.forEachIndexed { index, event ->
-                if (index > 0) CardDivider()
-                val date = Fmt.mediumDate(event.localDate(prefs.zone), prefs)
-                val time = if (event.allDay) stringResource(R.string.device_calendar_all_day) else Fmt.time(event.startsAt, prefs)
-                DsRow(event.title, subtitle = "$date · $time", onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.eventId))
-                        // Without the instance times, calendar apps open the first occurrence of a repeating event.
-                        .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.startsAt.toEpochMilli())
-                        .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.endsAt.toEpochMilli())
-                    if (runCatching { context.startActivity(intent) }.isFailure) {
-                        Toast.makeText(context, R.string.device_calendar_no_viewer, Toast.LENGTH_SHORT).show()
-                    }
-                })
-            }
-        }
+    if (allowed && failed) {
+        Hint(stringResource(R.string.device_calendar_failed))
+        DsButton(
+            stringResource(R.string.action_retry), { container.deviceCalendars.requestRefresh() },
+            style = DsButtonStyle.Ghost, modifier = Modifier.padding(horizontal = Space.gutter),
+        )
     }
 }
 

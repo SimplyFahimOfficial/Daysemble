@@ -217,11 +217,6 @@
     <string name="cd_clear_due">Remove due date</string>
     <string name="delete_task_title">Delete this task?</string>
     <string name="delete_task_body">Its subtasks are deleted too.</string>
-    <string name="delete_task_google_body">It’s also deleted from Google Tasks, with its subtasks.</string>
-    <string name="google_task_badge">Synced with Google Tasks</string>
-    <string name="google_task_time_local">Google Tasks only stores dates. The time is kept on this device.</string>
-    <string name="google_task_priority_local">Google Tasks has no priority. It’s kept on this device.</string>
-    <string name="google_task_countdown_local">Google Tasks has no countdown. It’s shown on this device only.</string>
 
     <!-- Repeating tasks -->
     <string name="repeat_does_not">Doesn’t repeat</string>
@@ -239,8 +234,6 @@
     <string name="repeat_past_occurrence">This occurrence is done, so changes here apply to it alone. To change how the task repeats, open its current occurrence.</string>
     <string name="scope_this_delete_done_desc">Removes this one from the history. The repeat goes on.</string>
     <string name="repeat_needs_due">A repeating task needs a due date. Without one, saving stops the repeat.</string>
-    <string name="repeat_google_unavailable">Google Tasks can’t store repeat rules, so tasks in Google lists don’t repeat. Choose a list on this device to repeat this task.</string>
-    <string name="repeat_local_lists_only">Repeating tasks stay in lists on this device. Google Tasks can’t store repeat rules.</string>
     <string name="scope_save_title">Save changes to a repeating task</string>
     <string name="scope_delete_title">Delete a repeating task</string>
     <string name="scope_this">This occurrence</string>
@@ -326,20 +319,16 @@
     <string name="settings_lists_calendars_sub">Create, rename, colour, show or hide</string>
     <string name="calendars_title">Calendars</string>
     <string name="task_lists_title">Task lists</string>
-    <string name="calendar_google_sub">Google Calendar</string>
-    <string name="list_google_sub">Google Tasks</string>
     <string name="device_calendar_title">Device calendar</string>
     <string name="device_calendar_permission">Calendar access</string>
-    <string name="device_calendar_explanation">Optional and read-only. See events from calendar apps on this phone.</string>
-    <string name="device_calendar_denied">Not allowed. Tap Allow to ask again or to open Android settings.</string>
-    <string name="device_calendar_preview">Upcoming device events</string>
-    <string name="device_calendar_note">Read-only preview of up to 10 events over the next 14 days. Nothing is imported, uploaded or added to the Daysemble timeline. Turn access off any time in Android settings.</string>
-    <string name="device_calendar_none">No upcoming events are available from device calendars.</string>
-    <string name="device_calendar_failed">Couldn’t read device calendars. The calendar app may be unavailable or access was turned off.</string>
-    <string name="device_calendar_all_day">All day</string>
-    <string name="device_calendar_no_viewer">No calendar app could open this event.</string>
-    <string name="calendar_hidden_note">Hidden calendars don’t appear in Today or Calendar and don’t send reminders. Nothing is deleted. Colours are a display choice on this device and aren’t changed in Google.</string>
-    <string name="list_google_note">Rename or delete Google task lists in Google Tasks; changes appear here after the next sync.</string>
+    <string name="device_calendar_explanation">Optional and read-only. Show the events of the calendar apps on this phone, including Google accounts synced to it, in Today and Calendar.</string>
+    <string name="device_calendar_denied">Not allowed, so phone calendars aren’t shown. Tap Allow to ask again or to open Android settings.</string>
+    <string name="device_calendar_note">Daysemble reads these calendars and keeps a read-only copy on this phone for the past two months and the next 13. It never changes them or sends them anywhere. Edit events in your calendar app. Google Tasks aren’t part of the phone’s calendars and aren’t synced. Turn access off any time in Android settings.</string>
+    <string name="device_calendar_failed">Couldn’t read the phone’s calendars just now. What was shown before is kept.</string>
+    <string name="device_calendar_unnamed">Phone calendar</string>
+    <string name="calendar_device_sub">Phone calendar, read-only</string>
+    <string name="tasks_not_synced_note">Tasks stay on this device. Google Tasks aren’t synced.</string>
+    <string name="calendar_hidden_note">Hidden calendars don’t appear in Today or Calendar and don’t send reminders. Nothing is deleted. Colours are a display choice in Daysemble only.</string>
     <string name="new_calendar">New calendar</string>
     <string name="edit_calendar">Edit</string>
     <string name="new_list">New list</string>
@@ -370,13 +359,11 @@
     <string name="repeat_unsupported">This event uses a repeat rule Daysemble can’t edit. It’s kept exactly as it is.</string>
     <string name="open_in_maps">Open in Maps</string>
     <string name="no_maps_app">No maps app is installed.</string>
-    <string name="google_calendar">Google Calendar</string>
     <string name="on_this_device">On this device</string>
     <string name="event_read_only">You can’t edit this event.</string>
     <string name="event_missing">This event no longer exists.</string>
     <string name="delete_event_title">Delete this event?</string>
     <string name="delete_event_body">This can’t be undone.</string>
-    <string name="delete_event_google_body">It’s also deleted from Google Calendar.</string>
     <string name="delete_recurring_title">Delete repeating event</string>
     <string name="delete_recurring_body">Delete only this occurrence, or every event in the series?</string>
     <string name="delete_this_event">This event</string>
@@ -428,9 +415,9 @@
     <string name="setting_default_sort">Default sort</string>
     <string name="setting_default_list">New tasks go to</string>
     <string name="data_what_stored">What’s stored</string>
-    <string name="data_what_stored_body">Your events, tasks, sleep records and settings are stored only on this device. Daysemble has no analytics and sends nothing anywhere unless you connect a Google account. Android’s automatic backups include your settings only; to keep your events and tasks, export them below.</string>
+    <string name="data_what_stored_body">Your events, tasks, sleep records and settings are stored on this device. If you allow calendar access, Daysemble also keeps a read-only copy of the events in your phone’s calendars here. Daysemble has no analytics, no account and no internet access: it sends nothing anywhere. Android’s automatic backups include your settings only, not events or tasks.</string>
     <string name="data_backup_title">Back up to a file</string>
-    <string name="data_backup_body">Saves your on-device calendars, events, task lists, tasks and sleep records to a file you choose. Google calendars and task lists aren’t included; they come back when you connect your account again. The file isn’t encrypted, so keep it somewhere private.</string>
+    <string name="data_backup_body">Saves your calendars, events, task lists, tasks and sleep records created in Daysemble to a file you choose. Events from your phone’s calendars aren’t included; they come from the calendar apps themselves. The file isn’t encrypted, so keep it somewhere private.</string>
     <string name="data_export_action">Export</string>
     <string name="data_import_action">Import</string>
     <string name="data_import_body">Importing adds what isn’t on this device yet. Nothing here is changed or deleted.</string>
@@ -591,47 +578,6 @@
         <item quantity="one">%d day before</item>
         <item quantity="other">%d days before</item>
     </plurals>
-    <!-- Google -->
-    <string name="settings_section_sync">Accounts</string>
-    <string name="settings_accounts">Google Calendar &amp; Tasks</string>
-    <string name="settings_accounts_sub">Connect, choose calendars, sync status</string>
-    <string name="google_intro_title">Sync with Google</string>
-    <string name="google_intro_body">See and edit your Google Calendar events and Google Tasks in Daysemble. Changes go both ways, including ones made offline, which sync when you’re back online.</string>
-    <string name="connect_google">Connect Google account</string>
-    <string name="connecting">Connecting…</string>
-    <string name="google_privacy_note">Daysemble asks for access to your calendars and tasks only. Data goes directly between this device and Google; there is no Daysemble server. You can disconnect at any time.</string>
-    <string name="google_setup_required_title">Google sign-in isn’t set up for this build</string>
-    <string name="google_setup_required_body">The developer must register an Android OAuth client for package %1$s and this build’s signing certificate (SHA-1) in Google Cloud Console, with the Calendar and Tasks APIs enabled. See docs/GOOGLE_SETUP.md.</string>
-    <string name="google_no_play_title">Google Play services required</string>
-    <string name="google_no_play_body">Install or update Google Play services to connect a Google account.</string>
-    <string name="google_partial_title">Not everything was allowed</string>
-    <string name="google_partial_calendar">Google Calendar access wasn’t allowed, so calendars won’t sync. To add it, turn Google Calendar on and allow it.</string>
-    <string name="google_partial_tasks">Google Tasks access wasn’t allowed, so task lists won’t sync. To add it, turn Google Tasks on and allow it.</string>
-    <string name="google_connect_failed">Couldn’t connect</string>
-    <string name="google_error_code">Reason: %1$s. Check your connection and try again.</string>
-    <string name="google_account">Google account</string>
-    <string name="google_tasks">Google Tasks</string>
-    <string name="reauth_title">Google needs you to sign in again</string>
-    <string name="reauth_body">Access expired or was revoked. Sync is paused; your changes are kept and will sync after you reconnect.</string>
-    <string name="reconnect">Reconnect</string>
-    <string name="sync_now">Sync now</string>
-    <string name="sync_up_to_date">Everything on this device has been sent</string>
-    <string name="sync_calendars">Calendars to sync</string>
-    <string name="sync_task_lists">Task lists to sync</string>
-    <string name="sync_lists_pending">Appears after the first sync.</string>
-    <string name="sync_unchecked_note">Unchecked calendars and lists are hidden in Daysemble and not synced. Nothing is deleted from Google.</string>
-    <string name="sync_how">How sync works</string>
-    <string name="sync_how_body">Daysemble syncs when you open it, about every hour, and a few seconds after you change something. If the same item changed in both places, the most recent edit wins, and the other version is listed under Sync conflicts. Google Tasks has no priority or due time, so those stay on this device. Repeating Google events can be edited as a whole series or have single occurrences deleted; editing just one occurrence isn’t supported yet.</string>
-    <string name="sync_never">Not synced yet</string>
-    <string name="sync_last_success">Last synced %1$s</string>
-    <string name="sync_last_error">Last attempt failed: %1$s</string>
-    <string name="sync_state_syncing">Syncing</string>
-    <string name="sync_state_reauth">Sign in needed</string>
-    <string name="sync_state_offline">Offline</string>
-    <string name="sync_state_error">Sync problem</string>
-    <string name="sync_offline_title">You\'re offline</string>
-    <string name="sync_offline_body">Your changes are saved on this device and sync with Google when you\'re back online.</string>
-    <string name="sync_error_title">The last sync didn\'t finish</string>
     <!-- Launcher shortcuts (long-press the app icon). Short labels: about 10 characters. -->
     <string name="shortcut_new_task">New task</string>
     <string name="shortcut_new_task_long">Add a task</string>
@@ -639,44 +585,10 @@
     <string name="shortcut_new_event_long">Add an event</string>
     <string name="shortcut_search">Search</string>
     <string name="shortcut_search_long">Search events and tasks</string>
-    <string name="sync_state_synced">Synced %1$s</string>
-    <string name="sync_state_waiting">Waiting to sync</string>
-    <string name="err_offline">no connection</string>
-    <string name="err_auth">sign-in expired</string>
-    <string name="err_rate">Google asked us to slow down; retrying</string>
-    <string name="err_server">Google had a problem; retrying</string>
-    <string name="err_other">unexpected error</string>
-    <string name="err_rejected">Google refused some changes</string>
-    <string name="retry_parked">Retry changes Google refused</string>
-    <string name="role_owner">Yours</string>
-    <string name="role_writer">You can edit</string>
-    <string name="role_reader">Read-only</string>
-    <string name="disconnect">Disconnect Google account</string>
-    <string name="disconnect_title">Disconnect Google?</string>
-    <string name="disconnect_body">Daysemble’s access is revoked and the Google calendars and task lists are removed from this device. Nothing is deleted from your Google account. Your on-device events and tasks stay.</string>
-    <string name="conflicts_title">Sync conflicts</string>
-    <string name="conflicts_sub">Versions replaced when an item changed in two places</string>
-    <string name="conflicts_rule">When the same item was edited here and on Google before syncing, the most recent edit is kept. A deletion made here always wins over a remote edit, and a remote deletion never removes edits you haven’t synced.</string>
-    <string name="conflicts_empty">No conflicts so far.</string>
-    <string name="conflicts_clear">Clear list</string>
-    <string name="conflict_kept_local">Kept your version</string>
-    <string name="conflict_kept_remote">Kept the Google version</string>
 
-    <plurals name="parked_changes">
-        <item quantity="one">%d change was refused several times and is paused</item>
-        <item quantity="other">%d changes were refused several times and are paused</item>
-    </plurals>
-    <plurals name="pending_changes">
-        <item quantity="one">%d change waiting to sync</item>
-        <item quantity="other">%d changes waiting to sync</item>
-    </plurals>
-    <plurals name="disconnect_pending">
-        <item quantity="one">%d change hasn’t synced yet and will be lost.</item>
-        <item quantity="other">%d changes haven’t synced yet and will be lost.</item>
-    </plurals>
     <!-- Onboarding -->
     <string name="onboarding_headline">Make room for what matters.</string>
-    <string name="onboarding_body">Your calendar, tasks and reminders in one calm daily plan. It all works offline on this phone; syncing with Google is optional.</string>
+    <string name="onboarding_body">Your calendar, tasks and reminders in one calm daily plan. It all works offline on this phone, and your phone’s calendars can show up too.</string>
     <string name="onboarding_get_started">Get started</string>
     <string name="onboarding_skip_setup">Skip setup</string>
     <string name="onboarding_skip">Skip</string>
@@ -692,8 +604,10 @@
     <string name="onboarding_notifications_title">Reminders</string>
     <string name="onboarding_notifications_body">Allow notifications so Daysemble can remind you before events and when tasks are due.</string>
     <string name="onboarding_allowed">Allowed</string>
-    <string name="onboarding_google_title">Google Calendar &amp; Tasks</string>
-    <string name="onboarding_google_body">Bring in your Google events and tasks and keep them in sync. Without it, everything stays on this device.</string>
+    <string name="onboarding_not_allowed">Not allowed</string>
+    <string name="onboarding_calendar_title">Phone calendars</string>
+    <string name="onboarding_calendar_body">Show events from the calendar apps on this phone, including synced Google calendars, in Daysemble. Read-only. Google Tasks aren’t included.</string>
+    <string name="onboarding_calendar_denied">No problem. You can allow it later in Settings › Lists &amp; calendars.</string>
     <!-- Onboarding preview card: sample content only, never the user's data. -->
     <string name="onboarding_preview_cd">Example of a day in Daysemble: this week, two events, a finished task and two tasks to do</string>
     <string name="onboarding_preview_event">Design review</string>

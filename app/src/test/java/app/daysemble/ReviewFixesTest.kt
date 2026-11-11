@@ -1,20 +1,18 @@
 package app.daysemble
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.core.recurrence.RecurrenceExpander
-import app.daysemble.data.db.CalendarSourceEntity
+import app.daysemble.core.time.FixedAppClock
+import app.daysemble.data.db.DaysembleDatabase
+import app.daysemble.data.repo.EventRepository
+import app.daysemble.data.repo.TaskRepository
+import app.daysemble.data.sync.ChangeListener
 import app.daysemble.data.db.EventEntity
-import app.daysemble.data.db.OutboxOp
 import app.daysemble.data.db.OwnerType
 import app.daysemble.data.db.ReminderEntity
-import app.daysemble.data.db.SourceKind
-import app.daysemble.data.db.SyncState
-import app.daysemble.data.google.SyncTestBase
-import app.daysemble.data.google.calendar.CalendarApi
-import app.daysemble.data.google.calendar.CalendarMapper
-import app.daysemble.data.google.calendar.CalendarSyncer
-import app.daysemble.data.google.json
 import app.daysemble.data.prefs.SettingsRepository
 import app.daysemble.domain.model.EventDraft
 import app.daysemble.domain.model.TaskDraft
@@ -28,6 +26,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -44,11 +44,21 @@ import java.time.ZoneId
 /** Regression tests for the Greptile review findings on PR #1. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
-class ReviewFixesTest : SyncTestBase() {
+class ReviewFixesTest {
     @get:Rule val tmp = TemporaryFolder()
-    private val acct = "me@example.com"
-    private fun syncer() = CalendarSyncer(db, CalendarApi(http, base("/calendar/v3/")), clock)
-    private fun calList() = json(body = """{"items":[{"id":"cal","summary":"Me","accessRole":"owner","timeZone":"Europe/Berlin"}]}""")
+    private val zone: ZoneId = ZoneId.of("Europe/Berlin")
+    private val clock = FixedAppClock(Instant.parse("2026-10-22T08:00:00Z"), zone)
+    private lateinit var db: DaysembleDatabase
+    private lateinit var events: EventRepository
+    private lateinit var tasks: TaskRepository
+
+    @Before fun setUp() {
+        db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), DaysembleDatabase::class.java).allowMainThreadQueries().build()
+        events = EventRepository(db, clock, ChangeListener.None)
+        tasks = TaskRepository(db, clock, ChangeListener.None)
+    }
+
+    @After fun tearDown() { db.close() }
 
     private class Alarms : AlarmGateway {
         val set = mutableMapOf<Int, Instant>()
@@ -89,7 +99,7 @@ class ReviewFixesTest : SyncTestBase() {
         assertThat(alarms.set).isEmpty()
     }
 
-    @Test fun `a due alarm survives an unrelated edit and a google pull that rewrite reminders`() = runTest {
+    @Test fun `a due alarm survives an unrelated edit that rewrites reminders`() = runTest {
         val list = tasks.ensureDefaultList("My tasks")
         val due = LocalDateTime.ofInstant(clock.now(), zone).plusMinutes(40)
         val id = tasks.create(TaskDraft(title = "Call", dueDate = due.toLocalDate(), dueTime = due.toLocalTime(), reminderMinutesBefore = listOf(30)), list)
@@ -161,120 +171,16 @@ class ReviewFixesTest : SyncTestBase() {
         assertThat(alarms.set).isEmpty()
     }
 
-    @Test fun `transient errors don't park changes, permanent rejections do and are reported`() = runTest {
-        router.on("GET", "/calendar/v3/users/me/calendarList") { calList() }
-        router.on("GET", "/calendar/v3/calendars/cal/events") { json(body = """{"items":[],"nextSyncToken":"t"}""") }
-        syncer().refreshCalendars(acct)
-        val cal = db.calendars().byKind(SourceKind.GOOGLE).single()
-        events.create(EventDraft(title = "A", startDate = LocalDate.parse("2026-10-23"), zone = zone), cal.id)
-        router.on("POST", "/calendar/v3/calendars/cal/events") { json(503, "{}") }
-        repeat(7) { runCatching { syncer().pushOutbox() } }
-        assertThat(db.sync().outbox().single().permanentFailures).isEqualTo(0) // still eligible
-        router.on("POST", "/calendar/v3/calendars/cal/events") { json(400, """{"error":{"errors":[{"reason":"invalid"}]}}""") }
-        val r = syncer().sync(acct)
-        assertThat(r.failedOps).isEqualTo(1)
-        assertThat(db.sync().outbox().single().permanentFailures).isEqualTo(1)
-        db.sync().resetFailures()
-        assertThat(db.sync().outbox().single().permanentFailures).isEqualTo(0)
-    }
-
-    @Test fun `sync status reports rejected changes instead of success`() = runTest {
-        router.on("GET", "/calendar/v3/users/me/calendarList") { calList() }
-        router.on("GET", "/calendar/v3/calendars/cal/events") { json(body = """{"items":[],"nextSyncToken":"t"}""") }
-        val accounts = app.daysemble.data.google.auth.AccountStore(
-            PreferenceDataStoreFactory.create(scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)) { File(tmp.root, "acct.preferences_pb") },
-        )
-        accounts.setConnected(acct); accounts.setTasksEnabled(false)
-        val manager = app.daysemble.data.google.sync.SyncManager(
-            db, accounts, app.daysemble.data.google.auth.GoogleAuthManager(androidx.test.core.app.ApplicationProvider.getApplicationContext()),
-            syncer(), app.daysemble.data.google.tasks.TasksSyncer(db, app.daysemble.data.google.tasks.TasksApi(http, base("/tasks/v1/")), clock),
-            clock, onLocalDataChanged = {},
-        )
-        assertThat(manager.syncNow()).isEqualTo(app.daysemble.data.google.sync.SyncOutcome.OK)
-        val cal = db.calendars().byKind(SourceKind.GOOGLE).single()
-        events.create(EventDraft(title = "A", startDate = LocalDate.parse("2026-10-23"), zone = zone), cal.id)
-        router.on("POST", "/calendar/v3/calendars/cal/events") { json(403, """{"error":{"errors":[{"reason":"forbidden"}]}}""") }
-        assertThat(manager.syncNow()).isEqualTo(app.daysemble.data.google.sync.SyncOutcome.FAILED)
-        val st = manager.status.first()
-        assertThat(st.calendar.lastError).isEqualTo("rejected_changes")
-        assertThat(st.hasError).isTrue()
-        // Keep refusing until the change is parked; later runs skip it but must still report it.
-        repeat(6) { manager.syncNow() }
-        assertThat(db.sync().outbox().single().permanentFailures).isAtLeast(CalendarSyncer.MAX_ATTEMPTS)
-        val postsBefore = router.count("POST", "/calendar/v3/calendars/cal/events")
-        assertThat(manager.syncNow()).isEqualTo(app.daysemble.data.google.sync.SyncOutcome.FAILED)
-        assertThat(router.count("POST", "/calendar/v3/calendars/cal/events")).isEqualTo(postsBefore) // skipped, not retried
-        assertThat(manager.status.first().calendar.lastError).isEqualTo("rejected_changes")
-        assertThat(manager.status.first().parkedChanges).isEqualTo(1)
-        // After "Retry" and a successful push the error clears.
-        router.on("POST", "/calendar/v3/calendars/cal/events") { r ->
-            val id = Regex("\"id\":\"([a-f0-9]+)\"").find(r.body!!.utf8())!!.groupValues[1]
-            json(body = """{"id":"$id","summary":"A","updated":"2026-10-22T08:00:05Z"}""")
-        }
-        manager.retryParked()
-        assertThat(manager.syncNow()).isEqualTo(app.daysemble.data.google.sync.SyncOutcome.OK)
-        assertThat(manager.status.first().calendar.lastError).isNull()
-    }
-
-    @Test fun `RDATE instances stored from Google remind even though the RRULE parses`() {
+    @Test fun `stored instances of a read-only series remind even though the RRULE parses`() {
         val now = Instant.parse("2026-10-22T06:00:00Z")
         val master = EventEntity(id = "m", calendarId = "c", title = "T", isAllDay = false,
             startUtc = Instant.parse("2026-10-01T07:00:00Z").toEpochMilli(), endUtc = Instant.parse("2026-10-01T08:00:00Z").toEpochMilli(),
             timeZone = zone.id, rrule = "RRULE:FREQ=MONTHLY;COUNT=3", isReadOnlyRecurrence = true, // had an RDATE
-            rangeStartUtc = 0, rangeEndUtc = Long.MAX_VALUE, createdAt = 0, updatedAt = 0, syncState = SyncState.SYNCED)
+            rangeStartUtc = 0, rangeEndUtc = Long.MAX_VALUE, createdAt = 0, updatedAt = 0)
         val extra = master.copy(id = "rd", rrule = null, isReadOnlyRecurrence = false, recurringParentId = "m", originalStartKey = "2026-10-24T09:00",
             startUtc = Instant.parse("2026-10-24T07:00:00Z").toEpochMilli(), endUtc = Instant.parse("2026-10-24T08:00:00Z").toEpochMilli())
         val plan = ReminderPlanner.forEvent(master, listOf(ReminderEntity("r", OwnerType.EVENT, "m", 10)), listOf(extra), now, zone, 540)
         assertThat(plan.map { it.triggerAt }).containsExactly(Instant.parse("2026-10-24T06:50:00Z"))
-    }
-
-    @Test fun `deleting an event whose create response was lost deletes the deterministic remote id`() = runTest {
-        router.on("GET", "/calendar/v3/users/me/calendarList") { calList() }
-        syncer().refreshCalendars(acct)
-        val cal = db.calendars().byKind(SourceKind.GOOGLE).single()
-        val id = events.create(EventDraft(title = "A", startDate = LocalDate.parse("2026-10-23"), zone = zone), cal.id)
-        router.on("POST", "/calendar/v3/calendars/cal/events") { json(503, "{}") } // server may have created it
-        runCatching { syncer().pushOutbox() }
-        events.delete(id)
-        assertThat(db.sync().outbox().single().op).isEqualTo(OutboxOp.DELETE)
-        val rid = CalendarMapper.remoteIdFor(id)
-        router.on("DELETE", "/calendar/v3/calendars/cal/events/$rid") { json(204, "") }
-        syncer().pushOutbox()
-        assertThat(router.count("DELETE", "/calendar/v3/calendars/cal/events/$rid")).isEqualTo(1)
-    }
-
-    @Test fun `moving an event between calendars deletes the old Google copy and recreates it`() = runTest {
-        router.on("GET", "/calendar/v3/users/me/calendarList") { calList() }
-        val ev = """{"id":"e1","summary":"Lunch","start":{"dateTime":"2026-10-23T12:00:00+02:00","timeZone":"Europe/Berlin"},"end":{"dateTime":"2026-10-23T13:00:00+02:00"},"updated":"2026-10-20T00:00:00Z"}"""
-        router.on("GET", "/calendar/v3/calendars/cal/events") { json(body = """{"items":[$ev],"nextSyncToken":"t"}""") }
-        syncer().sync(acct)
-        val google = db.calendars().byKind(SourceKind.GOOGLE).single()
-        val local = events.ensureDefaultCalendar("Personal")
-        val id = db.events().byRemoteId(google.id, "e1")!!.id
-        events.update(id, events.draftFor(id, zone)!!.copy(calendarId = local))
-        assertThat(db.events().get(id)!!.calendarId).isEqualTo(local)
-        router.on("DELETE", "/calendar/v3/calendars/cal/events/e1") { json(204, "") }
-        router.on("GET", "/calendar/v3/calendars/cal/events") { json(body = """{"items":[{"id":"e1","status":"cancelled"}],"nextSyncToken":"t2"}""") }
-        syncer().sync(acct)
-        assertThat(router.count("DELETE", "/calendar/v3/calendars/cal/events/e1")).isEqualTo(1)
-        assertThat(db.events().get(id)!!.title).isEqualTo("Lunch") // local copy kept
-        // And back to Google with a new stable client id. The first create's response is lost (503);
-        // the retry sends the SAME id, Google answers 409 and the existing copy is adopted, not duplicated.
-        events.update(id, events.draftFor(id, zone)!!.copy(calendarId = google.id))
-        val sent = mutableListOf<String>()
-        router.on("POST", "/calendar/v3/calendars/cal/events") { r ->
-            sent += Regex("\"id\":\"([a-f0-9]+)\"").find(r.body!!.utf8())!!.groupValues[1]
-            if (sent.size == 1) json(503, "{}") else json(409, """{"error":{"errors":[{"reason":"duplicate"}],"code":409}}""")
-        }
-        runCatching { syncer().pushOutbox() }
-        val cid = sent.single()
-        assertThat(cid).isNotEqualTo(CalendarMapper.remoteIdFor(id))
-        router.on("GET", "/calendar/v3/calendars/cal/events/$cid") {
-            json(body = """{"id":"$cid","summary":"Lunch","start":{"dateTime":"2026-10-23T12:00:00+02:00"},"end":{"dateTime":"2026-10-23T13:00:00+02:00"},"updated":"2026-10-22T08:00:05Z"}""")
-        }
-        syncer().pushOutbox()
-        assertThat(sent).containsExactly(cid, cid).inOrder()
-        assertThat(db.events().get(id)!!.remoteId).isEqualTo(cid)
     }
 
     @Test fun `an occurrence moved beyond a bounded series still shows`() = runTest {
@@ -294,19 +200,11 @@ class ReviewFixesTest : SyncTestBase() {
         val master = EventEntity(id = "m", calendarId = "c", title = "T", isAllDay = false,
             startUtc = Instant.parse("2026-09-01T07:00:00Z").toEpochMilli(), endUtc = Instant.parse("2026-09-01T08:00:00Z").toEpochMilli(),
             timeZone = zone.id, rrule = "RRULE:FREQ=MONTHLY;COUNT=2", rangeStartUtc = 0, rangeEndUtc = Long.MAX_VALUE,
-            createdAt = 0, updatedAt = 0, syncState = SyncState.LOCAL)
+            createdAt = 0, updatedAt = 0)
         val ov = master.copy(id = "o", rrule = null, recurringParentId = "m", originalStartKey = "2026-09-01T09:00",
             startUtc = Instant.parse("2026-10-23T07:00:00Z").toEpochMilli(), endUtc = Instant.parse("2026-10-23T08:00:00Z").toEpochMilli())
         val plan = ReminderPlanner.forEvent(master, listOf(ReminderEntity("r", OwnerType.EVENT, "m", 10)), listOf(ov), now, zone, 540)
         assertThat(plan.map { it.triggerAt }).containsExactly(Instant.parse("2026-10-23T06:50:00Z"))
-    }
-
-    @Test fun `unchecked google calendars disappear from views`() = runTest {
-        db.calendars().upsert(CalendarSourceEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "x", accountEmail = acct, name = "G", colorArgb = 0))
-        events.create(EventDraft(title = "G event", startDate = LocalDate.parse("2026-10-22"), zone = zone), "g")
-        assertThat(events.occurrences(LocalDate.parse("2026-10-22"), LocalDate.parse("2026-10-22"), zone).first()).hasSize(1)
-        db.calendars().setSyncEnabled("g", false)
-        assertThat(events.occurrences(LocalDate.parse("2026-10-22"), LocalDate.parse("2026-10-22"), zone).first()).isEmpty()
     }
 
     @Test fun `time grid uses wall-clock minutes on DST days`() {

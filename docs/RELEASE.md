@@ -184,8 +184,7 @@ the first release using internal testing before production.
 
 ## F-Droid status
 
-Daysemble is currently in a private GitHub repository and uses Google Play Services authentication
-(`play-services-auth` and the Play Services coroutine bridge). It cannot be submitted to the
-official public F-Droid repository in this state. That requires publishing the source publicly under
-a FOSS-compatible licence and providing a FOSS build path that replaces the proprietary Google
-authentication integration. See `docs/STORE_DISTRIBUTION.md` for the store-readiness checklist.
+Daysemble is currently in a private GitHub repository, so it cannot be submitted to the official
+public F-Droid repository in this state. It no longer depends on Google Play services. Publishing the
+source publicly under a FOSS-compatible licence is the remaining prerequisite. See
+`docs/STORE_DISTRIBUTION.md` for the store-readiness checklist.

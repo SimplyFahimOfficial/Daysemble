@@ -1,86 +1,102 @@
 package app.daysemble.ui.settings
 
 import android.Manifest
-import android.provider.CalendarContract
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.lifecycle.Lifecycle
+import app.daysemble.DaysembleApp
 import app.daysemble.data.device.FakeCalendarProvider
+import app.daysemble.data.device.FakeCalendarProvider.Companion.calendar
+import app.daysemble.data.device.FakeCalendarProvider.Companion.instance
 import app.daysemble.ui.theme.DaysembleTheme
+import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
-import java.time.temporal.ChronoUnit
 
-/** Settings → Lists & calendars: device calendar permission states and preview. */
+/** Settings > Lists & calendars: calendar permission states and the phone's calendars in the list. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], qualifiers = "w393dp-h852dp-xxhdpi")
+@Config(sdk = [35], qualifiers = "w393dp-h1400dp-xxhdpi")
 class DeviceCalendarSectionTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val app get() = compose.activity.application
+    private val container get() = (app as DaysembleApp).container
 
     @Before fun setUp() {
-        val today = LocalDate.now(ZoneOffset.UTC).atStartOfDay(ZoneOffset.UTC).toInstant()
-        val soon = Instant.now().plus(1, ChronoUnit.HOURS)
-        FakeCalendarProvider.failure = null
-        FakeCalendarProvider.rows = listOf(
-            arrayOf(1L, "Public holiday", today.toEpochMilli(), today.plus(2, ChronoUnit.DAYS).toEpochMilli(), 1),
-            arrayOf(2L, "Dentist", soon.toEpochMilli(), soon.plus(1, ChronoUnit.HOURS).toEpochMilli(), 0),
+        FakeCalendarProvider.install()
+        runBlocking { container.clearLocalData() }
+        FakeCalendarProvider.calendars = listOf(calendar(1, "Work", account = "work@example.com"), calendar(2, "Family"))
+        FakeCalendarProvider.instances = listOf(
+            instance(10, 1, "Standup", Instant.now().plusSeconds(3600).toEpochMilli(), Instant.now().plusSeconds(4500).toEpochMilli()),
         )
-        Robolectric.setupContentProvider(FakeCalendarProvider::class.java, CalendarContract.AUTHORITY)
+        FakeCalendarProvider.queries = 0
     }
 
     private fun show() = compose.setContent { DaysembleTheme { ListsCalendarsRoute(onBack = {}) } }
 
     private fun waitFor(text: String, substring: Boolean = true) =
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(8_000) { compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty() }
 
-    @Test fun deniedOffersAllowAndReadsNothing() {
+    private fun waitUntilGone(text: String) =
+        compose.waitUntil(8_000) { compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isEmpty() }
+
+    @Test fun deniedOffersAllowAndShowsNoPhoneCalendars() {
         shadowOf(app).denyPermissions(Manifest.permission.READ_CALENDAR)
-        FakeCalendarProvider.lastUri = null
+        runBlocking { container.deviceCalendars.refresh() }
         show()
         waitFor("Calendar access")
         compose.onNodeWithText("Allow").assertExists()
-        compose.onAllNodesWithText("Upcoming device events").assertCountEquals(0)
-        check(FakeCalendarProvider.lastUri == null)
+        compose.onAllNodesWithText("Work").assertCountEquals(0)
+        check(FakeCalendarProvider.queries == 0) { "nothing may be read without permission" }
     }
 
-    @Test fun grantedShowsOccurrencesIncludingAllDay() {
+    @Test fun grantedListsThePhonesCalendarsWithTheirAccount_andTheSwitchHidesOne() {
         shadowOf(app).grantPermissions(Manifest.permission.READ_CALENDAR)
+        runBlocking { container.deviceCalendars.refresh() }
         show()
-        waitFor("Dentist")
-        compose.onNodeWithText("Public holiday").assertExists()
-        compose.onNodeWithText("All day", substring = true).assertExists()
+        waitFor("work@example.com")
+        compose.onNodeWithText("Work").assertExists()
+        compose.onNodeWithText("Family").assertExists()
         compose.onAllNodesWithText("Allow").assertCountEquals(0)
+        compose.onNodeWithText("Allowed").assertExists()
+        // Google Tasks are not part of the phone's calendars, and the page says so instead of implying a sync.
+        compose.onNodeWithText("Google Tasks aren’t synced", substring = true).assertExists()
+
+        compose.onNodeWithText("Work").performClick()
+        compose.waitUntil(8_000) { runBlocking { container.database.calendars().get("device:1")!!.isVisible } == false }
     }
 
-    @Test fun revokingInAndroidSettingsHidesThePreviewOnReturn() {
+    @Test fun revokingInAndroidSettingsOffersAllowAgainOnReturn() {
         shadowOf(app).grantPermissions(Manifest.permission.READ_CALENDAR)
+        runBlocking { container.deviceCalendars.refresh() }
         show()
-        waitFor("Dentist")
+        waitFor("Allowed", substring = false)
         shadowOf(app).denyPermissions(Manifest.permission.READ_CALENDAR)
         compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
         waitFor("Allow", substring = false)
-        compose.onAllNodesWithText("Dentist").assertCountEquals(0)
     }
 
-    @Test fun providerFailureShowsErrorAndRetry() {
+    @Test fun providerFailureShowsAMessageAndRetryRecovers() {
         shadowOf(app).grantPermissions(Manifest.permission.READ_CALENDAR)
         FakeCalendarProvider.failure = IllegalStateException("provider crashed")
+        runBlocking { container.deviceCalendars.refresh() }
         show()
-        waitFor("Couldn’t read device calendars")
+        waitFor("Couldn’t read the phone’s calendars")
         compose.onNodeWithText("Try again").assertExists()
+
+        FakeCalendarProvider.failure = null
+        compose.onNodeWithText("Try again").performClick()
+        waitUntilGone("Couldn’t read the phone’s calendars")
+        waitFor("work@example.com")
     }
 }

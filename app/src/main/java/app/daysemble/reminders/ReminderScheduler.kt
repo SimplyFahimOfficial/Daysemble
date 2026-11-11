@@ -98,15 +98,14 @@ class ReminderScheduler(
         if (!s.remindersEnabled) { reconcile(emptyList(), existing, keepSnoozes = false); return@withLock }
         val zone = clock.zone()
         val reminders = db.reminders().all().groupBy { it.ownerType to it.ownerId }
-        val inactiveCals = db.calendars().all().filter { !sourceActive(it.kind, it.isVisible, it.isSyncEnabled) }.map { it.id }.toSet()
-        val inactiveLists = db.taskLists().all().filter { !sourceActive(it.kind, true, it.isSyncEnabled) }.map { it.id }.toSet()
+        val inactiveCals = db.calendars().all().filter { !it.isVisible }.map { it.id }.toSet()
         val planned = ArrayList<PlannedAlarm>()
         db.events().activeAfter(now.toEpochMilli()).filter { it.recurringParentId == null && it.calendarId !in inactiveCals }.forEach { e ->
             val r = reminders[OwnerType.EVENT to e.id] ?: return@forEach
             val ov = if (e.rrule != null) db.events().overridesFor(listOf(e.id)) else emptyList()
             planned += ReminderPlanner.forEvent(e, r, ov, now, zone, s.defaultTaskReminderMinuteOfDay)
         }
-        db.tasks().openTasks().filter { it.listId !in inactiveLists }.forEach { t ->
+        db.tasks().openTasks().forEach { t ->
             val r = reminders[OwnerType.TASK to t.id] ?: return@forEach
             planned += ReminderPlanner.forTask(t, r, now, zone, s.defaultTaskReminderMinuteOfDay)
         }
@@ -116,10 +115,6 @@ class ReminderScheduler(
     }
 
     private fun isSnooze(a: ScheduledAlarmEntity) = '#' in a.occurrenceKey
-
-    /** Google sources the user unchecked behave like hidden ones; local sources only depend on visibility. */
-    private fun sourceActive(kind: app.daysemble.data.db.SourceKind, visible: Boolean, syncEnabled: Boolean) =
-        visible && (kind == app.daysemble.data.db.SourceKind.LOCAL || syncEnabled)
 
     /**
      * True if the current data would still notify for [a] at its trigger time: the item is active and
@@ -148,13 +143,11 @@ class ReminderScheduler(
         return plan.any { it.occurrenceKey == a.occurrenceKey && it.triggerAt.toEpochMilli() == a.triggerAt }
     }
 
-    /** Whether reminders may still fire for this item (exists, not completed/deleted, its source shown). */
+    /** Whether reminders may still fire for this item (exists, not completed/deleted, its calendar shown). */
     private suspend fun isActive(type: OwnerType, ownerId: String): Boolean = when (type) {
-        OwnerType.TASK -> db.tasks().get(ownerId)?.let { t ->
-            !t.isDeleted && !t.isCompleted && db.taskLists().get(t.listId)?.let { sourceActive(it.kind, true, it.isSyncEnabled) } == true
-        } == true
+        OwnerType.TASK -> db.tasks().get(ownerId)?.let { t -> !t.isDeleted && !t.isCompleted && db.taskLists().get(t.listId) != null } == true
         OwnerType.EVENT -> db.events().get(ownerId)?.let { e ->
-            !e.isDeleted && !e.isCancelled && db.calendars().get(e.calendarId)?.let { sourceActive(it.kind, it.isVisible, it.isSyncEnabled) } == true
+            !e.isDeleted && !e.isCancelled && db.calendars().get(e.calendarId)?.isVisible == true
         } == true
     }
 

@@ -142,7 +142,7 @@ enum class EventSwatch(val light: Color, val dark: Color, @param:StringRes val l
     fun color(dark: Boolean) = if (dark) this.dark else light
 
     companion object {
-        /** Maps an arbitrary ARGB (e.g. a Google calendar colour) to the nearest swatch. */
+        /** Maps an arbitrary ARGB (e.g. a colour from a phone calendar) to the nearest swatch. */
         fun nearest(argb: Int): EventSwatch {
             val c = Color(argb)
             return entries.minBy { s ->

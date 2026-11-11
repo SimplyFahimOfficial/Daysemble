@@ -2,7 +2,6 @@ package app.daysemble.domain.model
 
 import androidx.compose.runtime.Immutable
 import app.daysemble.core.recurrence.RRule
-import app.daysemble.data.db.SyncState
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -21,8 +20,6 @@ enum class Priority(val level: Int) {
 data class TaskList(
     val id: String,
     val title: String,
-    val isGoogle: Boolean,
-    val accountEmail: String?,
 )
 
 @Immutable
@@ -33,7 +30,7 @@ data class Task(
     val title: String,
     val notes: String,
     val dueDate: LocalDate?,
-    /** Local wall time; only meaningful with [dueDate]. Local-only for Google tasks. */
+    /** Local wall time; only meaningful with [dueDate]. */
     val dueTime: LocalTime?,
     val priority: Priority,
     val isCompleted: Boolean,
@@ -41,8 +38,6 @@ data class Task(
     val createdAt: Instant,
     val updatedAt: Instant,
     val sortKey: Long,
-    val isGoogle: Boolean,
-    val syncState: SyncState,
     val subtaskCount: Int = 0,
     val subtasksDone: Int = 0,
     /** Live countdown to [dueMoment] is shown for this task. */

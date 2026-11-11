@@ -5,10 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.core.time.FixedAppClock
 import app.daysemble.data.db.DaysembleDatabase
-import app.daysemble.data.db.SourceKind
-import app.daysemble.data.db.TaskListEntity
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.Priority
 import app.daysemble.domain.model.SeriesScope
 import app.daysemble.domain.model.Task
@@ -45,9 +42,8 @@ class RecurringTaskRepositoryTest {
     private val changed = mutableListOf<String>()
     private lateinit var list: String
 
-    private fun newRepo() = TaskRepository(db, Outbox(db.sync()) { clock.now().toEpochMilli() }, clock, object : ChangeListener {
+    private fun newRepo() = TaskRepository(db, clock, object : ChangeListener {
         override fun onTaskChanged(taskId: String) { changed += taskId }
-        override fun onPendingSync() {}
     })
 
     @Before fun setUp() = runTest {
@@ -460,16 +456,9 @@ class RecurringTaskRepositoryTest {
         assertThat(open(repo.get(id)!!.seriesId!!).single().dueDate).isEqualTo(d("2026-10-28"))
     }
 
-    @Test fun repeatNeedsADueDate_andAnOnDeviceList() = runTest {
+    @Test fun repeatNeedsADueDate() = runTest {
         val noDate = repo.create(TaskDraft(title = "Someday", repeat = RRule.parse("FREQ=DAILY")), list)
         assertThat(repo.get(noDate)!!.isRecurring).isFalse()
-        db.taskLists().upsert(TaskListEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "r", accountEmail = "a@example.com", title = "Google"))
-        val google = repo.create(TaskDraft(title = "Synced", listId = "g", dueDate = d("2026-10-27"), repeat = RRule.parse("FREQ=DAILY")), list)
-        assertThat(repo.get(google)!!.isRecurring).isFalse() // Google Tasks can't store the rule
-        // A repeating task can't be moved into a Google list either.
-        val local = repeating("FREQ=DAILY", "2026-10-27")
-        repo.moveToList(local, "g")
-        assertThat(repo.get(local)!!.listId).isEqualTo(list)
     }
 
     @Test fun subtasks_carryForward_unticked_once() = runTest {

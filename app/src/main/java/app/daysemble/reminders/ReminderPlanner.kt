@@ -55,7 +55,7 @@ object ReminderPlanner {
         // (occurrenceKey, start instant used for reminders)
         val unsupportedSeries = event.rrule != null && (event.isReadOnlyRecurrence || RRule.parse(event.rrule)?.isSupported != true)
         val starts: List<Pair<String, Instant>> = if (unsupportedSeries && overrides.any { !it.isCancelled }) {
-            // Google-expanded instances stored by sync; their own start times apply below.
+            // Changed occurrences stored for it: their own start times apply below.
             overrides.mapNotNull { o -> o.originalStartKey?.let { it to Instant.ofEpochMilli(o.startUtc) } }
         } else if (event.isAllDay) {
             val s = LocalDate.ofEpochDay(event.startDate)

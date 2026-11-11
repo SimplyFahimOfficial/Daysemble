@@ -17,7 +17,6 @@ import app.daysemble.data.repo.SleepRepository
 import app.daysemble.data.repo.TaskRepository
 import app.daysemble.data.repo.TaskSeriesReader
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.EventDraft
 import app.daysemble.domain.model.TaskDraft
 import app.daysemble.ui.today.FreeTimeEntry
@@ -65,7 +64,6 @@ class FreeTimeAndSleepTest {
         .addMigrations(*Migrations.ALL).allowMainThreadQueries().build().also { open += it }
     private val listener = object : ChangeListener {
         override fun onTaskChanged(taskId: String) {}
-        override fun onPendingSync() {}
     }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -83,9 +81,8 @@ class FreeTimeAndSleepTest {
     }
 
     private fun vm(d: DaysembleDatabase): Triple<TodayViewModel, TaskRepository, EventRepository> {
-        val outbox = Outbox(d.sync()) { clock.now().toEpochMilli() }
-        val tasks = TaskRepository(d, outbox, clock, listener)
-        val events = EventRepository(d, outbox, clock, listener)
+        val tasks = TaskRepository(d, clock, listener)
+        val events = EventRepository(d, clock, listener)
         val handle = SavedStateHandle(mapOf("today_selected" to day.toEpochDay()))
         val vm = TodayViewModel(events, tasks, c.settings, clock, MutableStateFlow(TimeContext(zone)), handle, Dispatchers.Unconfined, SleepRepository(d, clock), TaskSeriesReader(d))
         return Triple(vm, tasks, events)
@@ -202,9 +199,8 @@ class FreeTimeAndSleepTest {
         assertThat(c.settings.current().schedule.default).isEqualTo(SleepSchedule(7 * 60, 23 * 60))
 
         // Today shows it as last night's sleep, next to the planned 8 h.
-        val outbox = Outbox(second.sync()) { clock.now().toEpochMilli() }
         val vm = TodayViewModel(
-            EventRepository(second, outbox, clock, listener), TaskRepository(second, outbox, clock, listener), c.settings, clock,
+            EventRepository(second, clock, listener), TaskRepository(second, clock, listener), c.settings, clock,
             MutableStateFlow(TimeContext(zone)), SavedStateHandle(mapOf("today_selected" to day.toEpochDay())), Dispatchers.Unconfined, sleep2, TaskSeriesReader(second),
         )
         val s = vm.awaitState { it.sleep.lastNight != null }

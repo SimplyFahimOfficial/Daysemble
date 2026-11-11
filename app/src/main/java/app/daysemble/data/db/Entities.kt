@@ -7,14 +7,19 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
-enum class SourceKind { LOCAL, GOOGLE }
+/**
+ * LOCAL: created in Daysemble and editable. DEVICE: a read-only mirror of a calendar from the
+ * phone's Calendar Provider (see data/device/DeviceCalendarSync).
+ */
+enum class SourceKind { LOCAL, DEVICE }
 
 /**
- * Sync lifecycle of a record. LOCAL records never sync. For Google-backed records the
- * PENDING_* states mean an outbox operation exists. CONFLICT means the local copy was kept
- * after a remote change collided with it (see conflict_log).
+ * Legacy column from the removed Google sync; always LOCAL. SQLite on API 26 can't drop a column,
+ * so the column stays (with the other legacy ones: remoteId, etag, remotePosition, remoteUpdatedAt,
+ * pendingClientId, instancesUntil, syncToken, timeZone, defaultReminders, lastPulledAt,
+ * isSyncEnabled) and is never read.
  */
-enum class SyncState { LOCAL, SYNCED, PENDING_CREATE, PENDING_UPDATE, PENDING_DELETE, CONFLICT }
+enum class SyncState { LOCAL }
 
 enum class OwnerType { EVENT, TASK }
 
@@ -26,20 +31,20 @@ enum class OwnerType { EVENT, TASK }
 @Serializable
 data class CalendarSourceEntity(
     @PrimaryKey val id: String,
-    val kind: SourceKind,
+    val kind: SourceKind = SourceKind.LOCAL,
+    /** DEVICE: the Calendar Provider's calendar id. */
     val remoteId: String? = null,
+    /** DEVICE: the account the calendar belongs to (shown as its subtitle). */
     val accountEmail: String? = null,
     val name: String,
     val colorArgb: Int,
     val isVisible: Boolean = true,
     val isSyncEnabled: Boolean = true,
     val isPrimary: Boolean = false,
-    /** "owner" | "writer" | "reader" | "freeBusyReader" for Google; "owner" for local. */
+    /** "owner" for local calendars, "reader" for DEVICE ones (see [app.daysemble.data.repo.isWritableRole]). */
     val accessRole: String = "owner",
     val syncToken: String? = null,
-    /** IANA zone of the calendar (Google), used when an event has no zone of its own. */
     val timeZone: String? = null,
-    /** Google calendar default popup reminders, comma-separated minutes. */
     val defaultReminders: String = "",
 )
 
@@ -96,17 +101,11 @@ data class EventEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val remoteUpdatedAt: Long? = null,
-    val syncState: SyncState,
+    val syncState: SyncState = SyncState.LOCAL,
     val isDeleted: Boolean = false,
-    /** Google recurrence rules we can't expand locally; the series is shown read-only. */
+    /** A repeat rule Daysemble can't expand locally; the series is shown read-only. */
     val isReadOnlyRecurrence: Boolean = false,
-    /**
-     * Client-supplied Google id to use for the next create when the default (derived from [id]) can't be
-     * used because an earlier remote copy with that id was deleted (moves, re-creates). Stable across
-     * retries, so a create whose response was lost is adopted on retry instead of duplicated.
-     */
     val pendingClientId: String? = null,
-    /** For read-only series: Google instances are stored up to this instant; refreshed before it runs out. */
     val instancesUntil: Long? = null,
 )
 
@@ -118,7 +117,7 @@ data class EventEntity(
 @Serializable
 data class TaskListEntity(
     @PrimaryKey val id: String,
-    val kind: SourceKind,
+    val kind: SourceKind = SourceKind.LOCAL,
     val remoteId: String? = null,
     val accountEmail: String? = null,
     val title: String,
@@ -158,9 +157,9 @@ data class TaskEntity(
     val notes: String = "",
     /** Epoch day. */
     val dueDate: Long? = null,
-    /** Minute of day in the device zone. Local only (Google Tasks has no due time). */
+    /** Minute of day in the device zone. */
     val dueTimeMinutes: Int? = null,
-    /** 0 none … 3 high. Local only. */
+    /** 0 none … 3 high. */
     val priority: Int = 0,
     val isCompleted: Boolean = false,
     val completedAt: Long? = null,
@@ -169,10 +168,10 @@ data class TaskEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val remoteUpdatedAt: Long? = null,
-    val syncState: SyncState,
+    val syncState: SyncState = SyncState.LOCAL,
     val isDeleted: Boolean = false,
     val deletedAt: Long? = null,
-    /** Show a live countdown to the due moment. Local only (not a Google Tasks field). */
+    /** Show a live countdown to the due moment. */
     @ColumnInfo(defaultValue = "0") val countdownEnabled: Boolean = false,
     /** The [TaskSeriesEntity] this row is an occurrence of, or null for a one-off task. */
     val seriesId: String? = null,
@@ -183,7 +182,7 @@ data class TaskEntity(
      */
     val occurrenceDate: Long? = null,
     /**
-     * Minutes the task takes. Local only. With a due time it is a time block (due time → + duration)
+     * Minutes the task takes. With a due time it is a time block (due time → + duration)
      * that takes free time on Today; without one it counts as estimated work and is never placed on
      * the clock. Null = no estimate: the task takes no time.
      */
@@ -194,7 +193,6 @@ data class TaskEntity(
  * A repeating task's rule and template. Only the current occurrence (and completed history) exist
  * as [TaskEntity] rows; the next row is created when the current one is completed or skipped, so
  * a series never fans out into unbounded future rows. Fields here are what new occurrences copy.
- * On-device lists only: the Google Tasks API has no repeat rules.
  */
 @Entity(
     tableName = "task_series",
@@ -294,7 +292,7 @@ data class ReminderEntity(
     companion object {
         /**
          * Deterministic id: the same item + offset always gets the same id, so saving an unchanged
-         * reminder (local edit or Google pull) keeps scheduled alarms and delivery records valid.
+         * reminder keeps scheduled alarms and delivery records valid.
          */
         fun idFor(type: OwnerType, ownerId: String, minutesBefore: Int) = "${type.name}:$ownerId:$minutesBefore"
 
@@ -323,49 +321,4 @@ data class DeliveredReminderEntity(
     /** "$reminderId|$occurrenceKey" */
     @PrimaryKey val key: String,
     val deliveredAt: Long,
-)
-
-enum class OutboxOp { CREATE, UPDATE, DELETE }
-
-@Entity(tableName = "outbox", indices = [Index(value = ["entityType", "entityId"])])
-data class OutboxEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val entityType: OwnerType,
-    val entityId: String,
-    val op: OutboxOp,
-    val createdAt: Long,
-    val attempts: Int = 0,
-    val lastError: String? = null,
-    val lastAttemptAt: Long? = null,
-    /** Non-retryable rejections only (network/rate-limit/auth errors don't count). Parked at MAX_ATTEMPTS. */
-    val permanentFailures: Int = 0,
-    /**
-     * For a DELETE of a record that has since moved elsewhere (e.g. a task moved to another
-     * list): the remote id and remote container (list/calendar) to delete from. The local row is kept.
-     */
-    val snapshotRemoteId: String? = null,
-    val snapshotContainerId: String? = null,
-)
-
-@Entity(tableName = "conflict_log", indices = [Index("at")])
-data class ConflictLogEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val entityType: OwnerType,
-    val entityId: String,
-    val title: String,
-    /** Human-readable summary of the version that lost. Never logged. */
-    val losingVersion: String,
-    val resolvedWith: String,
-    val at: Long,
-)
-
-enum class SyncService { CALENDAR, TASKS }
-
-@Entity(tableName = "sync_state")
-data class SyncStateEntity(
-    @PrimaryKey val service: SyncService,
-    val lastSuccessAt: Long? = null,
-    val lastAttemptAt: Long? = null,
-    val lastError: String? = null,
-    val needsReauth: Boolean = false,
 )

@@ -1,6 +1,5 @@
 package app.daysemble.ui.components
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -11,19 +10,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material.icons.rounded.SyncProblem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,9 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -140,45 +132,6 @@ fun SkeletonRows(modifier: Modifier = Modifier, count: Int = 4) {
                     .clip(Radii.chip)
                     .background(DsTheme.colors.surfaceVariant),
             )
-        }
-    }
-}
-
-enum class SyncIndicator { Idle, Syncing, Synced, Offline, Error, NeedsAttention }
-
-/** Compact sync status pill. Announced politely to screen readers when it changes. */
-@Composable
-fun SyncBadge(state: SyncIndicator, label: String, modifier: Modifier = Modifier) {
-    val c = DsTheme.colors
-    val m = DsTheme.motion
-    AnimatedContent(
-        targetState = state to label,
-        transitionSpec = { m.fadeThrough(size = m.contentSize()) },
-        label = "sync",
-        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
-    ) { (s, text) ->
-        val (icon, tint) = when (s) {
-            SyncIndicator.Idle, SyncIndicator.Synced -> Icons.Rounded.CheckCircle to c.success
-            SyncIndicator.Syncing -> Icons.Rounded.Sync to c.textSecondary
-            SyncIndicator.Offline -> Icons.Rounded.CloudOff to c.textSecondary
-            SyncIndicator.Error, SyncIndicator.NeedsAttention -> Icons.Rounded.SyncProblem to c.error
-        }
-        Row(
-            Modifier
-                .heightIn(min = 28.dp)
-                .clip(Radii.pill)
-                .background(c.surfaceVariant)
-                .padding(horizontal = Space.m - Space.xxs, vertical = Space.xs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.xs + Space.xxs),
-        ) {
-            val rotation = if (s == SyncIndicator.Syncing && !m.reduced) {
-                val t = rememberInfiniteTransition(label = "spin")
-                val r by t.animateFloat(360f, 0f, infiniteRepeatable(tween(m.spinnerTurn, easing = LinearEasing)), label = "r")
-                r
-            } else 0f
-            Icon(icon, null, tint = tint, modifier = Modifier.size(14.dp).graphicsLayer { rotationZ = rotation })
-            Text(text, style = DsTheme.type.label, color = c.textSecondary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
     }
 }

@@ -8,7 +8,6 @@ import app.daysemble.core.recurrence.RRule
 import app.daysemble.core.time.FixedAppClock
 import app.daysemble.data.db.DaysembleDatabase
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.SeriesScope
 import app.daysemble.domain.model.TaskDraft
 import com.google.common.truth.Truth.assertThat
@@ -44,9 +43,8 @@ class OccurrenceTrackingTest {
 
     @Before fun setUp() = runTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), DaysembleDatabase::class.java).allowMainThreadQueries().build()
-        repo = TaskRepository(db, Outbox(db.sync()) { clock.now().toEpochMilli() }, clock, object : ChangeListener {
+        repo = TaskRepository(db, clock, object : ChangeListener {
             override fun onTaskChanged(taskId: String) {}
-            override fun onPendingSync() {}
         })
         list = repo.ensureDefaultList("My tasks")
     }

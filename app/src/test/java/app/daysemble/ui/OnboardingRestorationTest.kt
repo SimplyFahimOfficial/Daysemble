@@ -25,7 +25,7 @@ class OnboardingRestorationTest {
     @Test fun restoresStepAndName() {
         val restore = StateRestorationTester(compose)
         restore.setContent {
-            DaysembleTheme { OnboardingScreen(initialName = null) { _, _ -> } }
+            DaysembleTheme { OnboardingScreen(initialName = null) { } }
         }
         compose.onNodeWithText("Get started").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("Ada")

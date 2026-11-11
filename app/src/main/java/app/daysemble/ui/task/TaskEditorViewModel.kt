@@ -85,9 +85,6 @@ data class TaskEditorUiState(
 ) {
     val isDirty: Boolean get() = if (isNew) form.copy(listId = null) != TaskForm(dueEpochDay = form.dueEpochDay) || form.title.isNotBlank()
         else original != null && form != original
-    val isGoogle: Boolean get() = task?.isGoogle ?: lists.firstOrNull { it.id == form.listId }?.isGoogle ?: false
-    /** The list the task will be in after saving is a Google Tasks list (which can't store repeat rules). */
-    val inGoogleListAfterSave: Boolean get() = lists.firstOrNull { it.id == form.listId }?.isGoogle ?: isGoogle
     /** An occurrence of a repeating task: deleting asks which occurrences it applies to. */
     val isRecurring: Boolean get() = task?.isRecurring == true
     /**
@@ -175,16 +172,11 @@ class TaskEditorViewModel(
         saving = true
         if (taskId == null) repo.create(f.toDraft(parentId), f.listId ?: defaultListId())
         else {
-            // The repository only lets tasks in on-device lists repeat. Into a list on this device:
-            // move first, so a task from a Google list can start repeating in the same save. Into a
-            // Google list: save first, so a repeat turned off here has ended before the move.
             val newList = f.listId?.takeIf { it != original.value?.listId }
-            val toGoogle = newList != null && state.value.lists.firstOrNull { it.id == newList }?.isGoogle == true
             // The move follows the chosen scope like the other changes: "this occurrence" leaves the
             // series (and so the next occurrences) in its list.
-            if (newList != null && !toGoogle) repo.moveToList(taskId, newList, scope)
+            if (newList != null) repo.moveToList(taskId, newList, scope)
             repo.update(taskId, f.toDraft(null), scope)
-            if (newList != null && toGoogle) repo.moveToList(taskId, newList, scope)
         }
         original.value = form.value
         persist()

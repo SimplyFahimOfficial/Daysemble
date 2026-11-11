@@ -4,14 +4,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.core.time.FixedAppClock
-import app.daysemble.data.db.CalendarSourceEntity
 import app.daysemble.data.db.DaysembleDatabase
-import app.daysemble.data.db.OutboxOp
 import app.daysemble.data.db.OwnerType
-import app.daysemble.data.db.SourceKind
-import app.daysemble.data.db.SyncState
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.EventDraft
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
@@ -41,11 +36,8 @@ class EventOccurrenceEditTest {
     @Before fun setUp() = runTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), DaysembleDatabase::class.java)
             .allowMainThreadQueries().build()
-        repo = EventRepository(db, Outbox(db.sync()) { clock.now().toEpochMilli() }, clock, ChangeListener.None)
+        repo = EventRepository(db, clock, ChangeListener.None)
         local = repo.ensureDefaultCalendar("Personal")
-        db.calendars().upsert(
-            CalendarSourceEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "primary", accountEmail = "a@example.com", name = "G", colorArgb = 0, accessRole = "owner"),
-        )
     }
 
     @After fun tearDown() = db.close()
@@ -86,19 +78,6 @@ class EventOccurrenceEditTest {
         repo.updateOccurrence(id, key, again.copy(title = "Second"))
         assertThat(db.events().overridesFor(listOf(id))).hasSize(1)
         assertThat(on(day.plusDays(1)).single().title).isEqualTo("Second")
-    }
-
-    @Test fun `an occurrence of a google series is queued as an edit of that instance`() = runTest {
-        val id = repo.create(series(calendarId = "g"), local)
-        db.events().upsert(repo.get(id)!!.copy(remoteId = "s1", syncState = SyncState.SYNCED))
-        db.sync().clearFor(OwnerType.EVENT, id)
-
-        repo.updateOccurrence(id, "2026-10-23T09:00", repo.draftForOccurrence(id, "2026-10-23T09:00", berlin)!!.copy(title = "Changed"))
-        val ov = db.events().overridesFor(listOf(id)).single()
-        assertThat(ov.remoteId).isNull()
-        assertThat(ov.syncState).isEqualTo(SyncState.PENDING_UPDATE)
-        assertThat(db.sync().outbox().map { it.entityId to it.op }).containsExactly(ov.id to OutboxOp.UPDATE)
-        assertThat(repo.get(id)!!.syncState).isEqualTo(SyncState.SYNCED) // the series itself isn't pushed
     }
 
     @Test fun `a single event or a read-only series can't be edited per occurrence`() = runTest {

@@ -22,7 +22,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
@@ -36,9 +35,6 @@ import androidx.test.core.app.ApplicationProvider
 import app.daysemble.DaysembleApp
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.core.time.FixedAppClock
-import app.daysemble.data.db.SourceKind
-import app.daysemble.data.db.SyncState
-import app.daysemble.data.db.TaskListEntity
 import app.daysemble.data.prefs.ClockFormat
 import app.daysemble.data.prefs.ThemeMode
 import app.daysemble.domain.model.Priority
@@ -188,27 +184,6 @@ class RecurringTaskUiTest {
         assertThat(state.copy(form = changed).repeatChanged).isTrue()
     }
 
-    @Test fun turningRepeatOff_andPickingAGoogleList_inOneSave_movesTheTask() {
-        runBlocking {
-            c.database.taskLists().upsert(TaskListEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "r", accountEmail = "a@example.com", title = "Google"))
-        }
-        val id = runBlocking { c.tasks.create(TaskDraft(title = "Pay rent", dueDate = today, repeat = RRule.parse("FREQ=MONTHLY")), listId()) }
-        show { TaskEditorRoute(id, null, null) {} }
-        settle()
-        reveal("Doesn’t repeat")
-        compose.onNodeWithText("Doesn’t repeat").performClick(); settle()
-        reveal("Google")
-        // By semantics: the editor grew (Time needed), and the chip can sit at the very bottom edge,
-        // where a touch at its centre would land outside the viewport.
-        compose.onNodeWithText("Google").performSemanticsAction(SemanticsActions.OnClick); settle()
-        compose.onNodeWithText("Save").performClick(); settle()
-        compose.onNodeWithText("This and future occurrences").performClick()
-        repeat(20) { settle() }
-        val t = runBlocking { c.tasks.get(id) }!!
-        assertThat(t.listId).isEqualTo("g")
-        assertThat(t.isRecurring).isFalse()
-    }
-
     @Test fun aCompletedOccurrence_isHistory_itsRepeatIsntEditedThere() {
         val id = runBlocking { c.tasks.create(TaskDraft(title = "Water plants", dueDate = today, repeat = RRule.parse("FREQ=DAILY")), listId()) }
         runBlocking { c.tasks.setCompleted(id, true) }
@@ -232,16 +207,6 @@ class RecurringTaskUiTest {
         assertThat(tasks().map { it.dueDate }).containsExactly(today.plusDays(1))
     }
 
-    @Test fun googleList_explainsWhyItCantRepeat() {
-        runBlocking {
-            c.database.taskLists().upsert(TaskListEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "r", accountEmail = "a@example.com", title = "Google"))
-        }
-        val id = runBlocking { c.tasks.create(TaskDraft(title = "Synced", listId = "g", dueDate = today), listId()) }
-        show { TaskEditorRoute(id, null, null) {} }
-        reveal("Google Tasks can’t store repeat rules, so tasks in Google lists don’t repeat. Choose a list on this device to repeat this task.")
-        assertThat(compose.onAllNodesWithText("Weekdays").fetchSemanticsNodes()).isEmpty()
-    }
-
     @Test fun countdownNeedsADueDate() {
         show { TaskEditorRoute(null, null, null) {} }
         reveal("Live countdown")
@@ -252,7 +217,7 @@ class RecurringTaskUiTest {
     private fun task(due: LocalDate, time: LocalTime?, countdown: Boolean, rule: String?) = Task(
         id = "t", listId = "l", parentId = null, title = "Exam", notes = "", dueDate = due, dueTime = time,
         priority = Priority.NONE, isCompleted = false, completedAt = null, createdAt = Instant.EPOCH, updatedAt = Instant.EPOCH,
-        sortKey = 0, isGoogle = false, syncState = SyncState.LOCAL, countdownEnabled = countdown, repeat = rule?.let(RRule::parse),
+        sortKey = 0, countdownEnabled = countdown, repeat = rule?.let(RRule::parse),
     )
 
     @Test fun taskRow_showsTheRepeatAndACompactCountdown_spokenAtMinutePrecision() {

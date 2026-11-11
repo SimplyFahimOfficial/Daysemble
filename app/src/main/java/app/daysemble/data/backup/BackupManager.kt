@@ -9,7 +9,6 @@ import app.daysemble.data.db.OwnerType
 import app.daysemble.data.db.ReminderEntity
 import app.daysemble.data.db.SleepSessionEntity
 import app.daysemble.data.db.SourceKind
-import app.daysemble.data.db.SyncState
 import app.daysemble.data.db.TaskEntity
 import app.daysemble.data.db.TaskListEntity
 import app.daysemble.data.db.TaskOccurrenceSkipEntity
@@ -27,9 +26,8 @@ import java.time.ZoneId
 
 /**
  * One JSON file with everything stored on this device: on-device calendars and events, task lists,
- * tasks (with repeats and skipped dates), reminders and sleep records. Google calendars and task
- * lists aren't included; they come back from Google when the account is connected again. Nothing
- * that identifies an account or a sync state is written.
+ * tasks (with repeats and skipped dates), reminders and sleep records. Calendars mirrored from the
+ * phone's calendar apps aren't included: they come back from the Calendar Provider on their own.
  */
 @Serializable
 data class BackupFile(
@@ -72,7 +70,9 @@ class BackupManager(
 ) {
     private val dao = db.backup()
     private val writes = db.backupImport()
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }
+    // coerceInputValues: a file from an older version can hold values that no longer exist (a "GOOGLE"
+    // calendar kind, a "SYNCED" sync state); they become the defaults instead of failing the import.
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false; coerceInputValues = true }
 
     suspend fun snapshot(): BackupFile = db.withTransaction {
         val calendars = dao.localCalendars()
@@ -82,9 +82,9 @@ class BackupManager(
         val owners = events.map { OwnerType.EVENT to it.id }.toSet() + tasks.map { OwnerType.TASK to it.id }
         BackupFile(
             exportedAt = clock.now().toEpochMilli(),
-            calendars = calendars.map { it.copy(syncToken = null) },
+            calendars = calendars,
             events = events,
-            lists = lists.map { it.copy(lastPulledAt = null) },
+            lists = lists,
             tasks = tasks,
             series = dao.localSeries(),
             skips = dao.localSkips(),
@@ -129,8 +129,8 @@ class BackupManager(
     /**
      * Adds what isn't here yet; never changes or removes anything that is. Every row is stored as
      * on-device data, whatever the file says, and rows that point at something missing are skipped.
-     * Only on-device rows count as "here" for references: an id that matches a Google calendar, list
-     * or item must not pull imported rows into synced data, so rows pointing at one are skipped too.
+     * Only on-device rows count as "here" for references: an id that matches a mirrored device
+     * calendar must not pull imported rows into it, so rows pointing at one are skipped too.
      */
     suspend fun merge(file: BackupFile): ImportResult = db.withTransaction {
         val tally = Tally()
@@ -200,23 +200,16 @@ class BackupManager(
             e.rangeEndUtc > e.rangeStartUtc && (e.isAllDay || e.endUtc >= e.startUtc) &&
             (e.recurringParentId == null || e.recurringParentId in seriesIds)
 
-    /** [e] as on-device data: no Google identity or sync state, whatever the file says. */
+    /** [e] as on-device data: no remote identity, whatever the file says. */
     private fun asLocalEvent(e: EventEntity) = e.copy(
-        remoteId = null, etag = null, remoteUpdatedAt = null, syncState = SyncState.LOCAL,
-        isDeleted = false, pendingClientId = null, instancesUntil = null,
+        remoteId = null, etag = null, remoteUpdatedAt = null, isDeleted = false, pendingClientId = null, instancesUntil = null,
     )
 
     private suspend fun mergeTasks(tasks: List<TaskEntity>, lists: Set<String>, series: Set<String>, tally: Tally) {
-        // A parent that is here but not on-device (a Google task) doesn't adopt an imported subtask.
-        val foreign = dao.taskIds().toHashSet().apply { removeAll(dao.localTasks().mapTo(HashSet()) { it.id }) }
         for (t in tasks.filter { validId(it.id) }) {
             val usable = t.listId in lists && (t.seriesId == null || t.seriesId in series) && validTaskTimes(t)
             if (!usable) { tally.skipped++; continue }
-            val row = t.copy(
-                parentId = t.parentId?.takeIf { it !in foreign },
-                remoteId = null, etag = null, remotePosition = null, remoteUpdatedAt = null,
-                syncState = SyncState.LOCAL, isDeleted = false, deletedAt = null,
-            )
+            val row = t.copy(remoteId = null, etag = null, remotePosition = null, remoteUpdatedAt = null, isDeleted = false, deletedAt = null)
             if (tally.added(writes.insertTask(row))) tally.tasks++
         }
         writes.detachOrphanSubtasks()

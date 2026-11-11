@@ -3,7 +3,7 @@
 <img src="docs/assets/brand/banner.png" width="520" alt="Daysemble">
 
 **Your events, tasks and reminders on one calm timeline.**<br>
-An offline-first Android planner with optional two-way sync for Google Calendar and Google Tasks.
+An offline-first Android planner that also shows the events from your phone’s calendars.
 
 [![Platform: Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#-download)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue?style=for-the-badge)](LICENSE)
@@ -20,11 +20,10 @@ An offline-first Android planner with optional two-way sync for Google Calendar 
 
 - ☀️ **Today.** One timeline of events and tasks with a live countdown to what's next, overdue tasks and a free-time summary for your waking hours.
 - 🗓️ **Calendar.** Month, Week, Day and Agenda views. Tap an empty slot to create an event there.
-- 📱 **Optional device calendar preview.** Grant read-only calendar permission in Lists & calendars to see upcoming device events and open them in the phone’s calendar app. Previewed events are not imported or shown on Daysemble’s main timeline.
+- 📱 **Phone calendars.** Allow read-only calendar access (offered on first launch, or later in Settings › Lists & calendars) and the events of the calendar apps on your phone, including Google accounts synced to it, appear in Today, Calendar and search. They stay read-only, can be hidden per calendar, and are copied only onto this phone. Google Tasks are not part of the phone’s calendars and are not synced.
 - 🌍 **Events that respect time zones.** Per-event time zones, all-day events, repeat rules (RRULE with exceptions) and edits to one occurrence or the whole series.
 - ✅ **Tasks.** Due dates and times, durations, priorities, subtasks, lists, filters, repeats with skip and history, and optional live countdowns.
 - 🔔 **Reliable reminders.** Exact alarms where Android allows them, re-planned after reboots and time-zone changes, with *Complete* and *Snooze* actions.
-- 🔄 **Optional Google sync.** Two-way sync with Google Calendar and Google Tasks, narrow permissions, an offline queue and listed conflicts.
 - 😴 **Daily schedule and sleep log.** Set your wake-up time and bedtime and log sleep by hand.
 - ⚡ **Quick add and shortcuts.** Quick Add, long-press item menus with undo, search, and launcher shortcuts for *New task*, *New event* and *Search*.
 - 💾 **Export and import.** Save on-device data to a JSON file and merge it back later.
@@ -61,7 +60,6 @@ cd Daysemble
 ```
 
 - The debug build installs as `app.daysemble.debug`, next to a release build.
-- **Google sync** needs a one-time Google Cloud setup ([docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md)). Everything else works without it.
 - **Release signing** uses the `DAYSEMBLE_KEYSTORE_PATH`, `DAYSEMBLE_KEYSTORE_PASSWORD`, `DAYSEMBLE_KEY_ALIAS` and `DAYSEMBLE_KEY_PASSWORD` environment variables. Without them, `assembleRelease` builds an unsigned R8 APK.
 
 More: [CONTRIBUTING.md](CONTRIBUTING.md), [docs/CI_CD.md](docs/CI_CD.md) and the audit and roadmap in [docs/audit/AUDIT.md](docs/audit/AUDIT.md).
@@ -73,8 +71,8 @@ More: [CONTRIBUTING.md](CONTRIBUTING.md), [docs/CI_CD.md](docs/CI_CD.md) and the
 | Language | Kotlin 2.4 (JVM 17), Coroutines and `StateFlow` |
 | UI | Jetpack Compose, Material 3, Navigation Compose with typed routes |
 | Data | Room, DataStore, kotlinx.serialization |
-| Background | WorkManager for sync, `AlarmManager` for reminders |
-| Sync | OkHttp against the Google Calendar v3 and Tasks v1 REST APIs, Google Identity Services |
+| Background | `AlarmManager` and WorkManager for reminders |
+| Phone calendars | Android Calendar Provider, read-only (`READ_CALENDAR`) |
 | DI | Manual (`AppContainer`) |
 | Other | ZXing (on-device UPI QR) |
 | Build | Gradle 9.8, AGP 9.5, KSP, CycloneDX SBOM, detekt |
@@ -82,13 +80,13 @@ More: [CONTRIBUTING.md](CONTRIBUTING.md), [docs/CI_CD.md](docs/CI_CD.md) and the
 ## 🔐 Privacy
 
 - Data lives on your device. There are no analytics, ads, crash reporting or Daysemble servers.
-- Network traffic goes only to Google's APIs over HTTPS, and only after you connect an account.
-- OAuth tokens stay in memory and are never written to disk or logs. Disconnecting never deletes anything from Google.
+- The app has no internet permission, so it cannot send your data anywhere. Links you tap open in your browser or another app.
+- Calendar access is optional and read-only. Events from your phone’s calendars are copied into the app’s private storage, left out of exports and backups, and removed when you withdraw the permission.
 - Permissions and their reasons are listed in [docs/SECURITY.md](docs/SECURITY.md#permissions). To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## 🙏 Credits
 
-Daysemble is built with [Android Jetpack](https://developer.android.com/jetpack), [Kotlin](https://kotlinlang.org/) and [kotlinx](https://github.com/Kotlin), [OkHttp](https://github.com/square/okhttp), [Google Play services auth](https://developers.google.com/android/guides/setup), [ZXing](https://github.com/zxing/zxing) and [Material Symbols](https://github.com/google/material-design-icons). Tests use JUnit 4, [Robolectric](https://github.com/robolectric/robolectric), [Truth](https://github.com/google/truth), [Turbine](https://github.com/cashapp/turbine) and MockWebServer. Each project keeps its own license.
+Daysemble is built with [Android Jetpack](https://developer.android.com/jetpack), [Kotlin](https://kotlinlang.org/) and [kotlinx](https://github.com/Kotlin), [ZXing](https://github.com/zxing/zxing) and [Material Symbols](https://github.com/google/material-design-icons). Tests use JUnit 4, [Robolectric](https://github.com/robolectric/robolectric), [Truth](https://github.com/google/truth) and [Turbine](https://github.com/cashapp/turbine). Each project keeps its own license.
 
 Google Calendar and Google Tasks are trademarks of Google LLC. Daysemble is an independent project and is not affiliated with or endorsed by Google. The logos and wordmark were made for this project; see [brand/README.md](brand/README.md).
 

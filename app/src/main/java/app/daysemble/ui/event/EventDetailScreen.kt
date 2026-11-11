@@ -236,7 +236,7 @@ private fun EventDetailScreen(
                 if (calendarName != null || event.isReadOnly) {
                     Tile {
                         calendarName?.let {
-                            DetailLine(null, it, if (event.isGoogle) stringResource(R.string.google_calendar) else stringResource(R.string.on_this_device), marker = color)
+                            DetailLine(null, it, stringResource(if (event.isDevice) R.string.calendar_device_sub else R.string.on_this_device), marker = color)
                         }
                         if (event.isReadOnly) DetailLine(Icons.Rounded.Lock, stringResource(R.string.event_read_only), null)
                     }
@@ -270,7 +270,7 @@ private fun EventDetailScreen(
         } else {
             DsConfirmDialog(
                 stringResource(R.string.delete_event_title),
-                stringResource(if (event.isGoogle) R.string.delete_event_google_body else R.string.delete_event_body),
+                stringResource(R.string.delete_event_body),
                 stringResource(R.string.action_delete), onConfirm = onDeleteSeries, onDismiss = { confirm = false }, destructive = true,
             )
         }

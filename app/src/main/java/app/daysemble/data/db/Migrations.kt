@@ -57,5 +57,41 @@ object Migrations {
         }
     }
 
-    val ALL = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+    /**
+     * v4: Google Calendar & Tasks sync is gone; calendars of the phone's Calendar Provider are
+     * mirrored instead. No table is rebuilt (SQLite on API 26 can't drop columns), so the old sync
+     * columns stay, unused.
+     * - Events of Google calendars are deleted (with their reminders) and the calendars removed:
+     *   the same events now arrive from the device's own calendar, and keeping both would show them twice.
+     *   Alarms stay registered in scheduled_alarm so the next reminder pass cancels them.
+     * - Google task lists become ordinary on-device lists with all their tasks, so no task is lost.
+     *   Tasks waiting to be deleted on Google (already hidden by the user) are removed.
+     * - Everything that is left is marked LOCAL, and the outbox, conflict_log and sync_state tables go.
+     */
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("DELETE FROM `event` WHERE `calendarId` IN (SELECT `id` FROM `calendar_source` WHERE `kind` = 'GOOGLE')")
+            db.execSQL("DELETE FROM `calendar_source` WHERE `kind` = 'GOOGLE'")
+            db.execSQL("DELETE FROM `task` WHERE `syncState` = 'PENDING_DELETE'")
+            db.execSQL(
+                "UPDATE `task_list` SET `kind` = 'LOCAL', `remoteId` = NULL, `accountEmail` = NULL, `isSyncEnabled` = 1, " +
+                    "`lastPulledAt` = NULL WHERE `kind` = 'GOOGLE'",
+            )
+            db.execSQL(
+                "UPDATE `task` SET `syncState` = 'LOCAL', `remoteId` = NULL, `etag` = NULL, `remotePosition` = NULL, `remoteUpdatedAt` = NULL",
+            )
+            db.execSQL(
+                "UPDATE `event` SET `syncState` = 'LOCAL', `remoteId` = NULL, `etag` = NULL, `remoteUpdatedAt` = NULL, " +
+                    "`pendingClientId` = NULL, `instancesUntil` = NULL",
+            )
+            db.execSQL("UPDATE `calendar_source` SET `remoteId` = NULL, `accountEmail` = NULL, `syncToken` = NULL, `accessRole` = 'owner'")
+            db.execSQL("DELETE FROM `reminder` WHERE `ownerType` = 'EVENT' AND `ownerId` NOT IN (SELECT `id` FROM `event`)")
+            db.execSQL("DELETE FROM `reminder` WHERE `ownerType` = 'TASK' AND `ownerId` NOT IN (SELECT `id` FROM `task`)")
+            db.execSQL("DROP TABLE IF EXISTS `outbox`")
+            db.execSQL("DROP TABLE IF EXISTS `conflict_log`")
+            db.execSQL("DROP TABLE IF EXISTS `sync_state`")
+        }
+    }
+
+    val ALL = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 }

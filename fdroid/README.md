@@ -8,7 +8,7 @@ This repository keeps its existing Google Play and GitHub release variants uncha
 
 ## Current blockers
 
-Google Play Services Auth and coroutines-play-services are direct dependencies, and Google auth/calendar/tasks code is wired into the app. A FOSS variant needs a real alternative or a coherent disabled integration with source-set implementations. Repository/source publication and licence review are also required.
+The app no longer uses Google Play services or any Google API. Repository/source publication and licence review are still required.
 
 ## What the workflow does
 
@@ -18,7 +18,7 @@ Google Play Services Auth and coroutines-play-services are direct dependencies, 
 
 1. Keep the project source public and provide a valid FOSS licence covering the app and redistributable assets.
 2. Create a dedicated FOSS variant with a distinct application ID if required by F-Droid's fork policy. Keep Play/GitHub application IDs and variants untouched.
-3. Remove proprietary SDKs only from that FOSS variant. Replace integrations with FOSS alternatives or disable them cleanly with clear UI behaviour.
+3. If a proprietary SDK is ever added again, keep it out of that FOSS variant, replacing it with a FOSS alternative or disabling it cleanly with clear UI behaviour.
 4. Build every native dependency from licensed source; do not consume opaque prebuilt app binaries or download executable artifacts during the build.
 5. Add a pinned, tested `fdroiddata` metadata recipe with exact version name/code, source commit, Gradle task and output APK path. Validate with `fdroid lint` and a real `fdroid build` in the official buildserver.
 6. Submit a merge request to `https://gitlab.com/fdroid/fdroiddata`. GitHub Actions in this app repository cannot add an app to the official F-Droid catalogue by itself.

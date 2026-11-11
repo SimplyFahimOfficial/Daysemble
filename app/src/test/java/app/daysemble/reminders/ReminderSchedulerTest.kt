@@ -10,7 +10,6 @@ import app.daysemble.data.db.OwnerType
 import app.daysemble.data.prefs.SettingsRepository
 import app.daysemble.data.repo.TaskRepository
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.TaskDraft
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.CoroutineScope
@@ -61,7 +60,7 @@ class ReminderSchedulerTest {
     @Before fun setUp() = runTest {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), DaysembleDatabase::class.java).allowMainThreadQueries().build()
         settings = SettingsRepository(PreferenceDataStoreFactory.create(scope = scope) { File(tmp.root, "s.preferences_pb") })
-        tasks = TaskRepository(db, Outbox(db.sync()) { clock.now().toEpochMilli() }, clock, ChangeListener.None)
+        tasks = TaskRepository(db, clock, ChangeListener.None)
         scheduler = ReminderScheduler(db, settings, alarms, clock) { notificationsOn }
         list = tasks.ensureDefaultList("My tasks")
     }

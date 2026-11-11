@@ -9,8 +9,8 @@ import java.time.LocalTime
 
 /**
  * Debug-only sample content for demos and screenshots. Reachable only from
- * Settings › About in debug builds. Items are created in the on-device calendar/list, so they
- * never sync to Google and can be removed with "Delete local data".
+ * Settings › About in debug builds. Items are created in the on-device calendar/list and can be
+ * removed with "Delete local data".
  */
 object SampleData {
     suspend fun load(c: AppContainer) {

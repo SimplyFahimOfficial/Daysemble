@@ -29,7 +29,6 @@ import app.daysemble.ui.format.LocalAppClock
 import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.rememberTimePrefs
 import app.daysemble.ui.search.SearchResults
-import app.daysemble.ui.settings.AccountSettingsRoute
 import app.daysemble.ui.settings.AppearanceRoute
 import app.daysemble.ui.settings.NotificationSettingsRoute
 import app.daysemble.ui.settings.SettingsHomeRoute
@@ -197,11 +196,11 @@ class ScreenSmokeTest {
 
     @Test fun settingsScreensRender() {
         show { SettingsHomeRoute({}, {}) }
-        waitText("Google Calendar & Tasks")
+        waitText("Help & Support")
         waitText("Notifications")
     }
 
-    @Test fun appearance_notifications_accounts_render() {
+    @Test fun appearance_render() {
         show { AppearanceRoute(onBack = {}) }
         waitText("APP LOGO")
         compose.onNodeWithContentDescription("Classic, Default").assertIsDisplayed()
@@ -210,7 +209,7 @@ class ScreenSmokeTest {
         assertThat(runBlocking { c.settings.current().logo.key }).isEqualTo("midnight")
     }
 
-    @Test fun notificationAndAccountSettingsRender() {
+    @Test fun notificationSettingsRender() {
         show {
             androidx.compose.foundation.layout.Column {
                 NotificationSettingsRoute(onBack = {})
@@ -219,10 +218,6 @@ class ScreenSmokeTest {
         waitText("Precise timing")
     }
 
-    @Test fun accountSettings_notConnectedState() {
-        show { AccountSettingsRoute(onBack = {}, onOpenConflicts = {}) }
-        waitText("Connect Google account")
-    }
 }
 
 @Config(sdk = [35], qualifiers = "w320dp-h640dp-mdpi", fontScale = 2.0f)
@@ -239,7 +234,7 @@ class LargeFontSmokeTest {
                 val prefs = rememberTimePrefs(ClockFormat.H12, null, ZoneId.systemDefault())
                 CompositionLocalProvider(LocalTimePrefs provides prefs, LocalAppClock provides c.clock) {
                     androidx.compose.foundation.layout.Column {
-                        MainHeader(null, null, {}, {}, {})
+                        MainHeader(null, {}, {})
                         TodayRoute(PaddingValues(), { _, _ -> }, {})
                     }
                 }

@@ -23,10 +23,10 @@ import sys
 # Reviewed permissions (see docs/SECURITY.md, "Permissions"). Adding one to the app, directly or
 # through a library, fails this check until it is reviewed and added here.
 ALLOWED_PERMISSIONS = {
-    "android.permission.INTERNET",  # Google Calendar / Tasks sync
-    "android.permission.ACCESS_NETWORK_STATE",  # sync only when online (WorkManager constraint)
+    # No INTERNET: the app makes no network calls, and this check keeps it that way.
+    "android.permission.ACCESS_NETWORK_STATE",  # added by WorkManager's manifest (its network constraints); unused by the app
     "android.permission.POST_NOTIFICATIONS",  # reminders
-    "android.permission.READ_CALENDAR",  # optional read-only device calendar preview
+    "android.permission.READ_CALENDAR",  # optional read-only copy of the phone's calendars
     "android.permission.RECEIVE_BOOT_COMPLETED",  # re-plan reminders after a reboot
     "android.permission.SCHEDULE_EXACT_ALARM",  # exact reminders; falls back to inexact
     "android.permission.WAKE_LOCK",  # WorkManager
