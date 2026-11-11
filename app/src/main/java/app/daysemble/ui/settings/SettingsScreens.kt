@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
 import app.daysemble.ui.components.DsConfirmDialog
+import app.daysemble.ui.components.AccentCard
 import app.daysemble.ui.components.CardDivider
 import app.daysemble.ui.components.DsRow
 import app.daysemble.ui.components.SettingsCard
@@ -173,7 +174,8 @@ fun SettingsHomeRoute(onBack: () -> Unit, onOpen: (SettingsPage) -> Unit) {
             DsRow(stringResource(R.string.settings_data), subtitle = stringResource(R.string.settings_data_sub), icon = Icons.Rounded.Shield, onClick = { onOpen(SettingsPage.DATA) }, trailing = chevron)
             CardDivider()
             DsRow(stringResource(R.string.settings_about), subtitle = stringResource(R.string.version_label, BuildConfig.VERSION_NAME), icon = Icons.Rounded.Info, onClick = { onOpen(SettingsPage.ABOUT) }, trailing = chevron)
-            CardDivider()
+        }
+        AccentCard(Modifier.padding(horizontal = Space.l).padding(top = Space.l)) {
             DsRow(
                 stringResource(R.string.settings_help), subtitle = stringResource(R.string.settings_help_sub),
                 icon = Icons.AutoMirrored.Rounded.HelpOutline, onClick = { onOpen(SettingsPage.HELP) }, trailing = chevron,

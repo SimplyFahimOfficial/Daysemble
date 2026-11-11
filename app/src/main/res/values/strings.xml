@@ -732,6 +732,7 @@
     <string name="support_upi_payee">Payee: %1$s</string>
     <string name="support_upi_verify_hint">Check that your UPI app shows the payee %1$s before you pay. Opening a UPI app doesn\'t mean a payment was made: only your UPI app can confirm that.</string>
     <string name="support_upi_qr_description">UPI QR code for %1$s, payee %2$s</string>
+    <string name="support_enlarge_qr">Enlarge QR code</string>
     <string name="support_copy_upi_id">Copy UPI ID</string>
     <string name="support_upi_id_copied">Copied</string>
     <string name="support_pay_with_upi">Pay with UPI</string>

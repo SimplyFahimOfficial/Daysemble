@@ -134,6 +134,23 @@ fun SettingsCard(modifier: Modifier = Modifier, content: @Composable ColumnScope
     )
 }
 
+/**
+ * A [SettingsCard] tinted with the accent and outlined by it, for the one row a page wants to stand
+ * out (Help & Support, Support My Work, More Ways to Pay). Callers add the horizontal margin.
+ */
+@Composable
+fun AccentCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val accent = DsTheme.colors.accent
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(Radii.tile)
+            .background(accent.copy(alpha = 0.10f))
+            .border(Sizes.hairline, accent.copy(alpha = 0.35f), Radii.tile),
+        content = content,
+    )
+}
+
 /** The hairline between two rows of a [SettingsCard], inset past the icon tile. */
 @Composable
 fun CardDivider() = HairlineDivider(Modifier.padding(start = Space.gutter), inset = false)
