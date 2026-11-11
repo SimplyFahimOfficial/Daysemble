@@ -16,8 +16,8 @@ data class WeekdayNum(val day: DayOfWeek, val ordinal: Int = 0) {
 
 /**
  * The subset of RFC 5545 RRULE that Daysemble can expand and edit. Rules using other parts are
- * parsed with [isSupported] = false and their raw text kept in [raw]; such series are displayed
- * from Google's expanded instances and are read-only in the editor.
+ * parsed with [isSupported] = false and their raw text kept in [raw]; such series are read-only
+ * in the editor.
  */
 data class RRule(
     val freq: Freq,
@@ -93,7 +93,7 @@ data class RRule(
             return when {
                 s.length == 8 -> LocalDate.parse(s, UNTIL_DATE) to null
                 s.endsWith("Z") -> null to LocalDateTime.parse(s, UNTIL_UTC_PARSE).toInstant(ZoneOffset.UTC)
-                // Floating UNTIL: interpreted as UTC (Google always sends Z for timed series).
+                // Floating UNTIL: interpreted as UTC (timed series normally end in Z).
                 else -> null to LocalDateTime.parse(s, UNTIL_FLOAT).toInstant(ZoneOffset.UTC)
             }
         }
@@ -121,7 +121,7 @@ private val UNTIL_UTC_PARSE: DateTimeFormatter = DateTimeFormatter.ofPattern("yy
 private val UNTIL_FLOAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss")
 
 /**
- * A Google/ICS recurrence array split into what we understand: the RRULE plus EXDATE keys.
+ * An ICS recurrence array split into what we understand: the RRULE plus EXDATE keys.
  * RDATE or multiple RRULEs make the series unsupported.
  */
 data class Recurrence(val rule: RRule?, val exdateKeys: Set<String>, val isSupported: Boolean, val rawLines: List<String>) {

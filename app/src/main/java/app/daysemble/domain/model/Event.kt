@@ -12,11 +12,10 @@ data class CalendarInfo(
     val id: String,
     val name: String,
     val colorArgb: Int,
-    val isGoogle: Boolean,
-    val accountEmail: String?,
+    /** A read-only mirror of a calendar on the phone (see data/device/DeviceCalendarSync). */
+    val isDevice: Boolean,
     val isVisible: Boolean,
     val isWritable: Boolean,
-    val isSyncEnabled: Boolean,
 )
 
 /** One concrete appearance of an event on the calendar (a single event, or one instance of a series). */
@@ -42,7 +41,7 @@ data class EventOccurrence(
     val timeZone: ZoneId,
     val colorArgb: Int,
     val isRecurring: Boolean,
-    val isGoogle: Boolean,
+    val isDevice: Boolean,
     val isReadOnly: Boolean,
 ) {
     val stableKey: String get() = "$eventId|$occurrenceKey"

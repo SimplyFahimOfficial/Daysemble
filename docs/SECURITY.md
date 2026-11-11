@@ -7,12 +7,11 @@ To report a vulnerability, see the [security policy](../SECURITY.md).
 
 | Area | State | Enforced by |
 | --- | --- | --- |
-| Network | HTTPS only: `cleartextTrafficPermitted="false"`, system CAs only (no user-installed CAs) | `res/xml/network_security_config.xml`; APK audit |
+| Network | None. The app declares no `INTERNET` permission and has no network code, so it cannot send anything. `network_security_config.xml` (no cleartext, system CAs only) stays as a second layer | `ALLOWED_PERMISSIONS` in the APK audit; `res/xml/network_security_config.xml` |
 | Help & Support pages | No network calls: the UPI QR code is generated on the device (ZXing). Links (Telegram, project website, contact, more ways to pay) open in the user's browser or the matching app; nothing about a payment is sent, stored or confirmed by the app. `<queries>` for the `upi` scheme only detects whether a UPI app exists | `support/`; `HelpScreenTest`, `SupportScreenTest` |
-| Endpoints | Only Google APIs (`www.googleapis.com/calendar/v3`, `tasks.googleapis.com/tasks/v1`) and Google sign-in, and only after the user connects an account | code review |
-| Tokens | OAuth access tokens are held in memory only and never written to disk or logs. The account store keeps the account email and two on/off switches | `data/google/auth/AccountStore.kt` |
-| Backups | Enabled, limited to the settings DataStore (`settings.preferences_pb`) by `backup_rules.xml` and `data_extraction_rules.xml`. Database, outbox and account state are not backed up | APK audit (rules must be present) |
-| Exported components | `MainActivity`, the reminder receivers, the androidx startup provider and the Support page's `FileProvider` (shares only `cache/support_share/`, read-only per share) are not exported. Exported: the 3 launcher aliases, and library components protected by a permission (WorkManager `SystemJobService` and `DiagnosticsReceiver`, `ProfileInstallReceiver`, Play services `RevocationBoundService`) | APK audit; lint `Exported*` as errors |
+| Phone calendars | Read-only: `READ_CALENDAR` only, no write permission. Events from the Calendar Provider are copied into the app's private database (`data/device/DeviceCalendarSync`), left out of exports and backups, and removed when the permission is withdrawn. Asked at most once in onboarding, and from Settings on tap | `DeviceCalendarSyncTest`, `OnboardingCalendarPermissionTest` |
+| Backups | Enabled, limited to the settings DataStore (`settings.preferences_pb`) by `backup_rules.xml` and `data_extraction_rules.xml`. The database is not backed up | APK audit (rules must be present) |
+| Exported components | `MainActivity`, the reminder receivers, the androidx startup provider and the Support page's `FileProvider` (shares only `cache/support_share/`, read-only per share) are not exported. Exported: the 3 launcher aliases, and library components protected by a permission (WorkManager `SystemJobService` and `DiagnosticsReceiver`, `ProfileInstallReceiver`) | APK audit; lint `Exported*` as errors |
 | Incoming intents | "Open item" extras and the shortcut actions (New task, New event, Search) are acted on only when the intent targets the non-exported `MainActivity` (notifications, launcher shortcuts). Sent to an exported launcher alias by another app, they are ignored | `MainActivity.isOwnIntent`; `MainActivityIntentTest` |
 | PendingIntents | All `FLAG_IMMUTABLE` | lint `UnspecifiedImmutableFlag`, `MutableImplicitPendingIntent` as errors |
 | Logging | One log line in release code, with an exception class name only. No event, task or account content | code review |
@@ -27,10 +26,9 @@ The APK's permission set (after merging every library manifest) must match this 
 
 | Permission | Why |
 | --- | --- |
-| `INTERNET` | Google Calendar and Tasks sync |
-| `ACCESS_NETWORK_STATE` | Sync waits for a connection (WorkManager constraint) |
+| `ACCESS_NETWORK_STATE` | Added by WorkManager's manifest for its network constraints. The app uses none and makes no network calls; there is no `INTERNET` permission |
 | `POST_NOTIFICATIONS` | Reminders (asked at runtime on Android 13+) |
-| `READ_CALENDAR` | Optional read-only preview of device calendar events, requested on tap in Lists & calendars; no events are stored or uploaded |
+| `READ_CALENDAR` | Optional. Shows the events of the phone's calendars (read-only). Requested on tap in onboarding or in Lists & calendars; the copy stays on the device |
 | `RECEIVE_BOOT_COMPLETED` | Re-plan reminders after a reboot |
 | `SCHEDULE_EXACT_ALARM` | Reminders on time; falls back to inexact alarms when not granted |
 | `WAKE_LOCK` | Added by WorkManager while a worker runs |
@@ -71,8 +69,8 @@ dependency graph and the patched floors in `gradle/libs.versions.toml`.
 ### Licence policy
 
 Allowed: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, EPL-1.0, EPL-2.0, MPL-2.0, CC0-1.0,
-Unicode-3.0, Unicode-DFS-2016 (`ALLOWED_LICENSES` in `scripts/ci/deps_check.py`). Today's 164 shipped
-components: 156 Apache-2.0, 7 Android Software Development Kit License, 1 BSD-3-Clause.
+Unicode-3.0, Unicode-DFS-2016 (`ALLOWED_LICENSES` in `scripts/ci/deps_check.py`). Today's 151 shipped
+components: 150 Apache-2.0, 1 BSD-3-Clause. No licence needs a reviewed exception.
 
 ## Reviewed exceptions
 
@@ -81,9 +79,8 @@ related code changes.
 
 | Finding | Where | Decision |
 | --- | --- | --- |
-| CodeQL `java/android/backup-enabled` (7.5) | `AndroidManifest.xml` `allowBackup="true"` | Excluded in `.github/codeql/codeql-config.yml`. Backups are intended (settings survive a phone change) and are limited to the settings file, which holds no personal content or tokens. The APK audit fails if backups are enabled without both rule files. |
-| Licence "Android Software Development Kit License" (no SPDX id) | `com.google.android.gms` (Play services auth and its base libraries, for Google sign-in; 7 components) | Allowed for `com.google.android.gms` and `com.google.firebase` only (`REVIEWED_NAMED` in `deps_check.py`; no Firebase library ships today). The licence permits distributing the libraries inside an Android app. |
-| detekt findings in `config/detekt/baseline.xml` (370) | existing code | Existing style and complexity findings, also reported by Codacy. Only new findings fail CI. Shrink the baseline when touching the code. |
+| CodeQL `java/android/backup-enabled` (7.5) | `AndroidManifest.xml` `allowBackup="true"` | Excluded in `.github/codeql/codeql-config.yml`. Backups are intended (settings survive a phone change) and are limited to the settings file, which holds no personal content. The APK audit fails if backups are enabled without both rule files. |
+| detekt findings in `config/detekt/baseline.xml` (270) | existing code | Existing style and complexity findings, also reported by Codacy. Only new findings fail CI. Shrink the baseline when touching the code. |
 | `FOREGROUND_SERVICE` permission | from WorkManager's manifest | Unused by the app. Can be removed with `tools:node="remove"` once verified that no worker uses `setForeground` (roadmap P3). |
 
 ## GitHub settings
@@ -124,23 +121,21 @@ form need their own review by the maintainer (see below).
 
 | Data | Where it is kept | Leaves the device |
 | --- | --- | --- |
-| Events, tasks, reminders, sleep logs, schedule | Room database on the device | Only events and tasks in Google calendars and lists, to Google, when an account is connected |
+| Events, tasks, reminders, sleep logs, schedule | Room database on the device | No |
+| Events of the phone's calendars (optional, read-only copy) | Room database on the device | No. Not in exports or backups; removed when the permission is withdrawn |
 | Settings (theme, logo, schedule preferences) | Settings DataStore | Android backup (Google account backup or device transfer), if the user has it on |
-| Google account email, sync switches | Account DataStore | No (not backed up) |
-| OAuth access tokens | Memory only | Sent to Google APIs only |
 
-- No analytics, crash reporting, advertising SDKs or Daysemble server. No third-party SDK other than
-  Google sign-in (Play services auth).
-- OAuth scopes are `auth/calendar.events` and `auth/calendar.calendarlist.readonly` for Calendar,
-  `auth/tasks` for Tasks, plus `email` (`GoogleAuthManager.scopesFor`). The full `auth/calendar`
-  scope, which can also delete calendars and change sharing, is not requested; it is only revoked
-  for accounts that granted it to an earlier build (`GoogleScopesTest`).
-- Disconnecting the account revokes access and removes the Google copies (and unsynced changes to
-  them) from the device. On-device calendars and lists stay. Nothing is deleted from Google.
+- No analytics, crash reporting, advertising SDKs, accounts or Daysemble server, and no `INTERNET`
+  permission. No third-party SDK ships.
+- Google Calendar and Google Tasks are not accessed by the app. Events from a Google account appear
+  only if that account is synced to the phone's own calendar app and the user allows calendar access.
+  Google Tasks are not in the Calendar Provider, so they never appear.
+- Older versions could sync with Google. On update, their Google calendar events are removed from the
+  app (the phone's calendar supplies them), and Google task lists become ordinary on-device lists with
+  all their tasks. Nothing is deleted from Google. Migration `3 → 4`, covered by `MigrationTest`.
 
 Needs a manual review by the maintainer before a public release:
 
-- A privacy policy (required for Google OAuth verification of the Calendar and Tasks scopes, and for
-  Play). Google's restricted/sensitive scope verification for these scopes.
-- Play Console data safety form, if published on Play.
+- A privacy policy, and Play's data safety form if published on Play. The app handles calendar
+  events locally and transmits nothing.
 - Whether GDPR or the DPDP Act applies to how the app is distributed, and what that requires.

@@ -37,7 +37,6 @@ import app.daysemble.ui.today.TodayTags
 import app.daysemble.domain.model.EventOccurrence
 import app.daysemble.domain.model.Task
 import app.daysemble.domain.model.Priority
-import app.daysemble.data.db.SyncState
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.components.AgendaEventCard
@@ -52,7 +51,10 @@ import app.daysemble.ui.format.LocalAppClock
 import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.rememberTimePrefs
 import app.daysemble.ui.settings.AppearanceRoute
+import app.daysemble.data.db.CalendarSourceEntity
+import app.daysemble.data.db.SourceKind
 import app.daysemble.ui.settings.HelpRoute
+import app.daysemble.ui.settings.ListsCalendarsRoute
 import app.daysemble.ui.settings.SettingsHomeRoute
 import app.daysemble.ui.settings.SupportRoute
 import app.daysemble.ui.tasks.TasksRoute
@@ -143,6 +145,28 @@ open class VisualAuditRender {
     // The whole page in one tall, low-density frame (scrolling plus several full-size captures runs out of heap).
     @Config(qualifiers = "w393dp-h1700dp-mdpi") @Test fun settingsLight() { enabled(); render("settings-light", ThemeMode.LIGHT) { SettingsHomeRoute(onBack = {}, onOpen = {}) } }
     @Config(qualifiers = "w393dp-h1700dp-mdpi") @Test fun settingsDark() { enabled(); render("settings-dark", ThemeMode.DARK) { SettingsHomeRoute(onBack = {}, onOpen = {}) } }
+    @Config(qualifiers = "w393dp-h1700dp-mdpi") @Test fun listsCalendarsLight() = listsCalendars(ThemeMode.LIGHT)
+    @Config(qualifiers = "w393dp-h1700dp-mdpi") @Test fun listsCalendarsDark() = listsCalendars(ThemeMode.DARK)
+
+    /** Lists & calendars with two mirrored phone calendars and the permission granted. */
+    private fun listsCalendars(theme: ThemeMode) {
+        enabled()
+        shadowOf(app).grantPermissions(android.Manifest.permission.READ_CALENDAR)
+        render("lists-calendars-${theme.name.lowercase()}", theme) {
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                c.database.calendars().upsert(
+                    CalendarSourceEntity(id = "device:1", kind = SourceKind.DEVICE, remoteId = "1",
+                        accountEmail = "fahim@example.com", name = "Fahim", colorArgb = 0xFF3366CC.toInt(), accessRole = "reader"),
+                )
+                c.database.calendars().upsert(
+                    CalendarSourceEntity(id = "device:2", kind = SourceKind.DEVICE, remoteId = "2",
+                        accountEmail = "fahim@example.com", name = "Holidays in India", colorArgb = 0xFF0B8043.toInt(), isVisible = false, accessRole = "reader"),
+                )
+            }
+            ListsCalendarsRoute(onBack = {})
+        }
+    }
+
     @Test fun supportQrEnlargedLight() = enlargedQr("support-qr-enlarged-light", ThemeMode.LIGHT)
     @Test fun supportQrEnlargedDark() = enlargedQr("support-qr-enlarged-dark", ThemeMode.DARK)
 
@@ -242,12 +266,12 @@ open class VisualAuditRender {
         fun ev(title: String, from: Long, to: Long, loc: String = "", recurring: Boolean = false) = EventOccurrence(
             eventId = title, occurrenceKey = title, overrideId = null, calendarId = "c", title = title, description = "", location = loc,
             isAllDay = false, start = now.plusSeconds(from * 60), end = now.plusSeconds(to * 60), startDate = today, endDate = today,
-            timeZone = zone, colorArgb = 0xFF5B3FE0.toInt(), isRecurring = recurring, isGoogle = false, isReadOnly = false,
+            timeZone = zone, colorArgb = 0xFF5B3FE0.toInt(), isRecurring = recurring, isDevice = false, isReadOnly = false,
         )
         fun task(title: String, dueDays: Long, time: java.time.LocalTime?, countdown: Boolean, rule: String? = null, notes: String = "", subs: Int = 0) = Task(
             id = title, listId = "l", parentId = null, title = title, notes = notes, dueDate = today.plusDays(dueDays), dueTime = time,
             priority = Priority.NONE, isCompleted = false, completedAt = null, createdAt = now, updatedAt = now,
-            sortKey = 0, isGoogle = false, syncState = SyncState.LOCAL, subtaskCount = subs, subtasksDone = if (subs > 0) 1 else 0,
+            sortKey = 0, subtaskCount = subs, subtasksDone = if (subs > 0) 1 else 0,
             countdownEnabled = countdown, repeat = rule?.let(RRule::parse),
         )
         androidx.compose.foundation.layout.Column(

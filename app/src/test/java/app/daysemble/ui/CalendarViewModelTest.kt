@@ -10,7 +10,6 @@ import app.daysemble.data.db.DaysembleDatabase
 import app.daysemble.data.repo.EventRepository
 import app.daysemble.data.repo.TaskRepository
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.EventDraft
 import app.daysemble.domain.model.TaskDraft
 import app.daysemble.ui.calendar.CalendarUiState
@@ -59,11 +58,9 @@ class CalendarViewModelTest {
             .allowMainThreadQueries().build()
         val listener = object : ChangeListener {
             override fun onTaskChanged(taskId: String) = Unit
-            override fun onPendingSync() = Unit
         }
-        val outbox = Outbox(db.sync()) { clock.now().toEpochMilli() }
-        tasks = TaskRepository(db, outbox, clock, listener)
-        events = EventRepository(db, outbox, clock, listener)
+        tasks = TaskRepository(db, clock, listener)
+        events = EventRepository(db, clock, listener)
         list = tasks.ensureDefaultList("Tasks")
         tasks.create(TaskDraft(title = "Task", dueDate = day), list)
         val calendar = events.ensureDefaultCalendar("Calendar")

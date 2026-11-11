@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CalendarSourceDao {
-    @Query("SELECT * FROM calendar_source ORDER BY kind, isPrimary DESC, name COLLATE NOCASE")
+    @Query("SELECT * FROM calendar_source ORDER BY CASE kind WHEN 'LOCAL' THEN 0 ELSE 1 END, isPrimary DESC, name COLLATE NOCASE")
     fun observeAll(): Flow<List<CalendarSourceEntity>>
 
     @Query("SELECT * FROM calendar_source")
@@ -18,9 +18,6 @@ interface CalendarSourceDao {
 
     @Query("SELECT * FROM calendar_source WHERE id = :id")
     suspend fun get(id: String): CalendarSourceEntity?
-
-    @Query("SELECT * FROM calendar_source WHERE kind = 'GOOGLE' AND remoteId = :remoteId AND accountEmail = :account")
-    suspend fun getGoogle(remoteId: String, account: String): CalendarSourceEntity?
 
     @Query("SELECT * FROM calendar_source WHERE kind = :kind")
     suspend fun byKind(kind: SourceKind): List<CalendarSourceEntity>
@@ -36,17 +33,14 @@ interface CalendarSourceDao {
     @Query("UPDATE calendar_source SET colorArgb = :color WHERE id = :id")
     suspend fun setColor(id: String, color: Int)
 
-    @Query("UPDATE calendar_source SET isSyncEnabled = :enabled WHERE id = :id")
-    suspend fun setSyncEnabled(id: String, enabled: Boolean)
-
-    @Query("UPDATE calendar_source SET syncToken = :token WHERE id = :id")
-    suspend fun setSyncToken(id: String, token: String?)
-
     @Query("DELETE FROM calendar_source WHERE id = :id")
     suspend fun delete(id: String)
 
-    @Query("DELETE FROM calendar_source WHERE kind = 'GOOGLE'")
-    suspend fun deleteAllGoogle()
+    @Query("UPDATE calendar_source SET name = :name, accountEmail = :account WHERE id = :id")
+    suspend fun updateDevice(id: String, name: String, account: String?)
+
+    @Query("DELETE FROM calendar_source WHERE kind = 'DEVICE'")
+    suspend fun deleteAllDevice()
 }
 
 @Dao
@@ -55,7 +49,7 @@ interface EventDao {
     @Query(
         """
         SELECT e.* FROM event e JOIN calendar_source c ON c.id = e.calendarId
-        WHERE e.isDeleted = 0 AND c.isVisible = 1 AND (c.kind = 'LOCAL' OR c.isSyncEnabled = 1)
+        WHERE e.isDeleted = 0 AND c.isVisible = 1
           AND e.rangeStartUtc < :end AND e.rangeEndUtc > :start
         """,
     )
@@ -73,16 +67,13 @@ interface EventDao {
     @Query("SELECT * FROM event WHERE id = :id")
     fun observe(id: String): Flow<EventEntity?>
 
-    @Query("SELECT * FROM event WHERE calendarId = :calendarId AND remoteId = :remoteId")
-    suspend fun byRemoteId(calendarId: String, remoteId: String): EventEntity?
-
     @Query("SELECT * FROM event WHERE recurringParentId = :parentId AND originalStartKey = :key")
     suspend fun override(parentId: String, key: String): EventEntity?
 
     @Query(
         """
         SELECT e.* FROM event e JOIN calendar_source c ON c.id = e.calendarId
-        WHERE e.isDeleted = 0 AND c.isVisible = 1 AND (c.kind = 'LOCAL' OR c.isSyncEnabled = 1) AND e.isCancelled = 0
+        WHERE e.isDeleted = 0 AND c.isVisible = 1 AND e.isCancelled = 0
           AND (e.title LIKE '%' || :q || '%' ESCAPE '\' OR e.description LIKE '%' || :q || '%' ESCAPE '\'
                OR e.location LIKE '%' || :q || '%' ESCAPE '\')
         LIMIT 200
@@ -103,13 +94,17 @@ interface EventDao {
     @Query("SELECT * FROM event WHERE calendarId = :calendarId")
     suspend fun allIn(calendarId: String): List<EventEntity>
 
-    @Query("SELECT * FROM event WHERE calendarId = :calendarId AND syncState != 'SYNCED' AND syncState != 'LOCAL'")
-    suspend fun pendingIn(calendarId: String): List<EventEntity>
+    /** The mirrored events of the phone's calendars (see data/device/DeviceCalendarSync). */
+    @Query("SELECT e.* FROM event e JOIN calendar_source c ON c.id = e.calendarId WHERE c.kind = 'DEVICE'")
+    suspend fun deviceEvents(): List<EventEntity>
+
+    @Query("DELETE FROM event WHERE id IN (:ids)")
+    suspend fun deleteAll(ids: List<String>)
 }
 
 @Dao
 interface TaskListDao {
-    @Query("SELECT * FROM task_list ORDER BY kind, sortOrder, title COLLATE NOCASE")
+    @Query("SELECT * FROM task_list ORDER BY sortOrder, title COLLATE NOCASE")
     fun observeAll(): Flow<List<TaskListEntity>>
 
     @Query("SELECT * FROM task_list")
@@ -118,25 +113,13 @@ interface TaskListDao {
     @Query("SELECT * FROM task_list WHERE id = :id")
     suspend fun get(id: String): TaskListEntity?
 
-    @Query("SELECT * FROM task_list WHERE kind = 'GOOGLE' AND remoteId = :remoteId AND accountEmail = :account")
-    suspend fun getGoogle(remoteId: String, account: String): TaskListEntity?
-
     @Upsert suspend fun upsert(list: TaskListEntity)
 
     @Query("UPDATE task_list SET title = :title WHERE id = :id")
     suspend fun rename(id: String, title: String)
 
-    @Query("UPDATE task_list SET isSyncEnabled = :enabled WHERE id = :id")
-    suspend fun setSyncEnabled(id: String, enabled: Boolean)
-
-    @Query("UPDATE task_list SET lastPulledAt = :at WHERE id = :id")
-    suspend fun setLastPulled(id: String, at: Long?)
-
     @Query("DELETE FROM task_list WHERE id = :id")
     suspend fun delete(id: String)
-
-    @Query("DELETE FROM task_list WHERE kind = 'GOOGLE'")
-    suspend fun deleteAllGoogle()
 }
 
 @Dao
@@ -164,10 +147,7 @@ interface TaskDao {
     @Query("SELECT * FROM task WHERE id = :id")
     fun observe(id: String): Flow<TaskEntity?>
 
-    /**
-     * Local-only fields, written in place. They don't touch updatedAt, which is the edit time that
-     * last-writer-wins compares with Google's: a priority change isn't a newer version of the task.
-     */
+    /** Written in place, so a whole-row write of an older copy can't undo a concurrent change. */
     @Query("UPDATE task SET priority = :priority WHERE id = :id")
     suspend fun setPriority(id: String, priority: Int)
 
@@ -179,9 +159,6 @@ interface TaskDao {
 
     @Query("SELECT * FROM task WHERE parentId = :parentId")
     suspend fun subtasks(parentId: String): List<TaskEntity>
-
-    @Query("SELECT * FROM task WHERE listId = :listId AND remoteId = :remoteId")
-    suspend fun byRemoteId(listId: String, remoteId: String): TaskEntity?
 
     @Query("SELECT COALESCE(MAX(sortKey), 0) FROM task WHERE listId = :listId")
     suspend fun maxSortKey(listId: String): Long
@@ -195,15 +172,12 @@ interface TaskDao {
     @Query("DELETE FROM task WHERE id = :id OR parentId = :id")
     suspend fun hardDelete(id: String)
 
-    /** Local-only tombstones whose undo window has passed. */
-    @Query("DELETE FROM task WHERE isDeleted = 1 AND syncState = 'LOCAL' AND deletedAt < :before")
+    /** Tombstones whose undo window has passed. */
+    @Query("DELETE FROM task WHERE isDeleted = 1 AND deletedAt < :before")
     suspend fun purgeLocalTombstones(before: Long)
 
     @Query("SELECT * FROM task WHERE listId = :listId")
     suspend fun allIn(listId: String): List<TaskEntity>
-
-    @Query("SELECT * FROM task WHERE listId = :listId AND syncState != 'SYNCED' AND syncState != 'LOCAL'")
-    suspend fun pendingIn(listId: String): List<TaskEntity>
 
     /** The row for one series date, deleted or not (deleted ones block regenerating that date). */
     @Query("SELECT * FROM task WHERE seriesId = :seriesId AND occurrenceDate = :date")
@@ -343,68 +317,4 @@ interface AlarmDao {
 
     @Query("DELETE FROM delivered_reminder WHERE deliveredAt < :before")
     suspend fun pruneDelivered(before: Long)
-}
-
-@Dao
-interface SyncDao {
-    @Query("SELECT * FROM outbox ORDER BY id")
-    suspend fun outbox(): List<OutboxEntity>
-
-    @Query("SELECT * FROM outbox WHERE entityType = :type ORDER BY id")
-    suspend fun outbox(type: OwnerType): List<OutboxEntity>
-
-    @Query("SELECT COUNT(*) FROM outbox")
-    fun observeOutboxCount(): Flow<Int>
-
-    @Insert suspend fun enqueue(op: OutboxEntity): Long
-
-    /** Clears pending ops for an entity. Move snapshots (delete-old-remote-copy) are independent and kept. */
-    @Query("DELETE FROM outbox WHERE entityType = :type AND entityId = :entityId AND snapshotRemoteId IS NULL")
-    suspend fun clearFor(type: OwnerType, entityId: String)
-
-    @Query("DELETE FROM outbox WHERE id = :id")
-    suspend fun remove(id: Long)
-
-    /** Records a transient error (retried later; doesn't count toward parking). */
-    @Query("UPDATE outbox SET lastError = :error, lastAttemptAt = :at WHERE id = :id")
-    suspend fun markFailed(id: Long, error: String, at: Long)
-
-    /** Records a permanent rejection (e.g. 400/403 permission); parked after MAX_ATTEMPTS. */
-    @Query("UPDATE outbox SET lastError = :error, lastAttemptAt = :at, permanentFailures = permanentFailures + 1 WHERE id = :id")
-    suspend fun markRejected(id: Long, error: String, at: Long)
-
-    @Query("SELECT COUNT(*) FROM outbox WHERE permanentFailures >= :max")
-    fun observeParkedCount(max: Int): Flow<Int>
-
-    /** "Retry parked changes": gives every rejected change a fresh set of attempts. */
-    @Query("UPDATE outbox SET permanentFailures = 0, lastError = NULL")
-    suspend fun resetFailures()
-
-    @Query("UPDATE outbox SET attempts = attempts + 1, lastAttemptAt = :at WHERE id = :id")
-    suspend fun markAttempt(id: Long, at: Long)
-
-    @Query("DELETE FROM outbox")
-    suspend fun clearOutbox()
-
-    @Query("SELECT * FROM sync_state")
-    fun observeStates(): Flow<List<SyncStateEntity>>
-
-    @Query("SELECT * FROM sync_state WHERE service = :service")
-    suspend fun state(service: SyncService): SyncStateEntity?
-
-    @Upsert suspend fun upsertState(state: SyncStateEntity)
-
-    @Query("DELETE FROM sync_state")
-    suspend fun clearStates()
-
-    @Query("DELETE FROM sync_state WHERE service = :service")
-    suspend fun clearState(service: SyncService)
-
-    @Insert suspend fun logConflict(entry: ConflictLogEntity)
-
-    @Query("SELECT * FROM conflict_log ORDER BY at DESC LIMIT 100")
-    fun observeConflicts(): Flow<List<ConflictLogEntity>>
-
-    @Query("DELETE FROM conflict_log")
-    suspend fun clearConflicts()
 }

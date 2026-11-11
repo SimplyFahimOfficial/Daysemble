@@ -19,8 +19,7 @@ You need JDK 17 or newer and the Android SDK with platform 37. Then:
 ./gradlew assembleDebug testDebugUnitTest lintDebug
 ```
 
-Google sync needs a one-time Cloud Console setup: [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md).
-Everything else works without it. Debug builds have *Load sample data* under Settings → About.
+No account or API key is needed. Debug builds have *Load sample data* under Settings → About.
 
 ## Making a change
 

@@ -126,6 +126,8 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavDestination
@@ -138,7 +140,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.daysemble.AppContainer
 import app.daysemble.R
-import app.daysemble.data.google.sync.SyncStatus
 import app.daysemble.data.prefs.AppSettings
 import app.daysemble.ui.add.QuickAddSheet
 import app.daysemble.ui.brand.BrandNameplate
@@ -146,7 +147,6 @@ import app.daysemble.ui.calendar.CalendarRoute as CalendarScreenRoute
 import app.daysemble.ui.components.DsFab
 import app.daysemble.ui.components.DsIconButton
 import app.daysemble.ui.components.pressScale
-import app.daysemble.ui.components.SyncBadge
 import app.daysemble.ui.event.EventDetailRoute as EventDetailScreenRoute
 import app.daysemble.ui.event.EventEditorRoute as EventEditorScreenRoute
 import app.daysemble.ui.format.LocalAppClock
@@ -168,8 +168,6 @@ import app.daysemble.ui.settings.DateTimeSettingsRoute
 import app.daysemble.ui.settings.SettingsHomeRoute
 import app.daysemble.ui.settings.SettingsPage
 import app.daysemble.ui.settings.TaskSettingsRoute
-import app.daysemble.ui.settings.syncIndicator
-import app.daysemble.ui.settings.syncLabel
 import app.daysemble.ui.task.TaskEditorRoute as TaskEditorScreenRoute
 import app.daysemble.ui.tasks.TasksRoute as TasksScreenRoute
 import app.daysemble.ui.theme.DsTheme
@@ -200,11 +198,6 @@ val LocalSnackbar = staticCompositionLocalOf { SnackbarHostState() }
  */
 val LocalAppSettings = androidx.compose.runtime.compositionLocalOf<AppSettings?> { null }
 
-/**
- * Sync status collected once at the app root, which stays alive across navigation, so screens have
- * it on their first frame. Null outside [DaysembleRoot]: collect locally.
- */
-val LocalSyncStatus = staticCompositionLocalOf<State<SyncStatus?>?> { null }
 
 /**
  * Call after a task was soft-deleted. Shows "Task deleted · Undo" from the root scope, so the
@@ -260,7 +253,6 @@ fun DaysembleRoot(
     val prefs = rememberTimePrefs(settings.clockFormat, settings.firstDayOfWeek, zone)
     val snackbar = remember { SnackbarHostState() }
     val nav = rememberNavController()
-    var openAccountsAfterOnboarding by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { container.defaults() }
     app.daysemble.ui.theme.SyncSystemNightMode(settings.themeMode)
@@ -269,8 +261,13 @@ fun DaysembleRoot(
     }
     val open by openRequests.collectAsStateWithLifecycle()
     val shortcut by shortcutRequests.collectAsStateWithLifecycle()
-    val syncFlow = remember(container) { container.sync.status }
-    val syncStatus = syncFlow.collectAsStateWithLifecycle(initialValue = null)
+
+    // The phone's calendars are mirrored into Daysemble. Refresh whenever the app comes to the front
+    // (also after the permission dialog or a visit to Android settings), and while it is on screen
+    // whenever the Calendar Provider reports a change.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { container.deviceCalendars.requestRefresh() }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { container.deviceCalendars.startObserving() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { container.deviceCalendars.stopObserving() }
 
     val rootScope = rememberCoroutineScope()
     val deletedMsg = stringResource(R.string.task_deleted)
@@ -349,7 +346,6 @@ fun DaysembleRoot(
         LocalTaskCompleted provides onTaskCompleted,
         LocalTaskDone provides onTaskDone,
         LocalAppSettings provides settings,
-        LocalSyncStatus provides syncStatus,
     ) {
         val m = DsTheme.motion
         // Finishing setup: the app fades in over the last onboarding step (no blank frame between).
@@ -361,14 +357,12 @@ fun DaysembleRoot(
         ) { done ->
             if (!done) {
                 val scope = rememberCoroutineScope()
-                app.daysemble.ui.onboarding.OnboardingScreen(initialName = settings.displayName) { name, openGoogle ->
-                    openAccountsAfterOnboarding = openGoogle
+                app.daysemble.ui.onboarding.OnboardingScreen(initialName = settings.displayName) { name ->
                     scope.launch { container.settings.completeOnboarding(name) }
                 }
             } else {
                 AppContent(
-                    nav, container, settings, syncStatus.value, open, onOpenHandled,
-                    openAccountsAfterOnboarding, { openAccountsAfterOnboarding = false }, snackbar,
+                    nav, container, settings, open, onOpenHandled, snackbar,
                     shortcut, onShortcutHandled,
                 )
             }
@@ -394,11 +388,8 @@ private fun AppContent(
     nav: NavHostController,
     container: AppContainer,
     settings: AppSettings,
-    syncStatus: SyncStatus?,
     open: app.daysemble.OpenRequest?,
     onOpenHandled: () -> Unit,
-    openAccountsAfterOnboarding: Boolean,
-    onAccountsOpened: () -> Unit,
     snackbar: SnackbarHostState,
     shortcut: app.daysemble.AppShortcut? = null,
     onShortcutHandled: () -> Unit = {},
@@ -458,7 +449,6 @@ private fun AppContent(
             onTab = { tab = it },
             backEnabled = onMain,
             displayName = settings.displayName,
-            syncStatus = syncStatus?.takeIf { it.account.isConnected },
             onSearch = { searching = true },
             searching = searching,
             searchQuery = searchQuery,
@@ -472,7 +462,6 @@ private fun AppContent(
                 )
             },
             onSettings = { nav.openFromMain(SettingsRoute) },
-            onOpenSync = { nav.openFromMain(SettingsPageRoute(SettingsPage.ACCOUNTS.name)) },
             onAdd = {
                 addDate = when (tab) { Tab.TODAY -> todayFocus; Tab.CALENDAR -> calendarFocus; Tab.TASKS -> null }
                 addKind = when (tab) {
@@ -555,13 +544,6 @@ private fun AppContent(
                 }
             }
             onShortcutHandled()
-        }
-        LaunchedEffect(openAccountsAfterOnboarding) {
-            // Runs only once the NavHost above exists, so its graph is set.
-            if (openAccountsAfterOnboarding) {
-                onAccountsOpened()
-                nav.navigate(SettingsPageRoute(SettingsPage.ACCOUNTS.name))
-            }
         }
         // Quick Add: the FAB's container grows into the sheet, and shrinks back into it on close.
         if (addSheet.present) {
@@ -757,9 +739,7 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
             Page {
                 when (runCatching { SettingsPage.valueOf(e.toRoute<SettingsPageRoute>().page) }.getOrNull()) {
                     SettingsPage.APPEARANCE -> AppearanceRoute(onBack = back)
-                    SettingsPage.ACCOUNTS -> app.daysemble.ui.settings.AccountSettingsRoute(onBack = back, onOpenConflicts = { nav.openFrom(e, SettingsPageRoute(SettingsPage.CONFLICTS.name)) })
                     SettingsPage.LISTS_CALENDARS -> app.daysemble.ui.settings.ListsCalendarsRoute(onBack = back)
-                    SettingsPage.CONFLICTS -> app.daysemble.ui.settings.ConflictLogRoute(onBack = back)
                     SettingsPage.NOTIFICATIONS -> app.daysemble.ui.settings.NotificationSettingsRoute(onBack = back)
                     SettingsPage.DATE_TIME -> DateTimeSettingsRoute(onBack = back)
                     SettingsPage.TASKS -> TaskSettingsRoute(onBack = back)
@@ -789,7 +769,6 @@ private fun MainScreen(
     onTab: (Tab) -> Unit,
     backEnabled: Boolean,
     displayName: String?,
-    syncStatus: SyncStatus?,
     onSearch: () -> Unit,
     searching: Boolean,
     searchQuery: String,
@@ -797,7 +776,6 @@ private fun MainScreen(
     onCloseSearch: () -> Unit,
     searchResults: @Composable () -> Unit,
     onSettings: () -> Unit,
-    onOpenSync: () -> Unit,
     onAdd: () -> Unit,
     addOpen: Boolean,
     addSheet: app.daysemble.ui.add.AddSheetState,
@@ -824,7 +802,7 @@ private fun MainScreen(
     Box(modifier.background(DsTheme.colors.background)) {
         Column(Modifier.fillMaxSize()) {
             MainHeader(
-                displayName, syncStatus, onSearch, onSettings, onOpenSync,
+                displayName, onSearch, onSettings,
                 searching = searching, query = searchQuery, onQuery = onSearchQuery, onCloseSearch = onCloseSearch,
             )
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -861,23 +839,20 @@ private fun MainScreen(
 
 /**
  * The identity bar shared by Today, Calendar and Tasks: the logo with the user's name (or the app
- * name), the sync state when Google is connected, and Search and Settings. The name takes the free
+ * name), and Search and Settings. The name takes the free
  * space and ends with "…"; the actions always keep their size.
  */
 @Composable
 internal fun MainHeader(
     displayName: String?,
-    syncStatus: SyncStatus?,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
-    onOpenSync: () -> Unit,
     modifier: Modifier = Modifier,
     searching: Boolean = false,
     query: String = "",
     onQuery: (String) -> Unit = {},
     onCloseSearch: () -> Unit = {},
 ) {
-    val p = LocalTimePrefs.current
     val m = DsTheme.motion
     // 0 = the search icon, 1 = the open field: the field grows out of the icon toward the start.
     val open by animateFloatAsState(if (searching) 1f else 0f, m.spring(), label = "searchOpen")
@@ -903,16 +878,6 @@ internal fun MainHeader(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BrandNameplate(displayName, Modifier.weight(1f).padding(end = Space.s))
-                if (syncStatus != null) {
-                    SyncBadge(
-                        syncIndicator(syncStatus), syncLabel(syncStatus, p),
-                        Modifier
-                            .weight(1f, fill = false)
-                            .minimumInteractiveComponentSize()
-                            .clip(Radii.pill)
-                            .clickable(enabled = !searching, role = Role.Button, onClick = onOpenSync),
-                    )
-                }
             }
             // The icon holds the field's place; once open it is replaced by the field's own icon.
             DsIconButton(

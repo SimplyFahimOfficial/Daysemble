@@ -24,12 +24,10 @@ LEVELS = ["unknown", "low", "medium", "high", "critical"]
 
 # Licences that are compatible with distributing this app (Apache-2.0 licensed) as an APK.
 ALLOWED_LICENSES = {"Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "EPL-1.0", "EPL-2.0", "MPL-2.0", "CC0-1.0", "Unicode-3.0", "Unicode-DFS-2016"}
-# Reviewed exceptions: licence *names* (no SPDX id) for specific groups. Google Play services and
-# Firebase AARs are published under the Android Software Development Kit License, which allows
-# redistributing them inside an Android app. Anything else without an SPDX id needs a review.
-REVIEWED_NAMED = {
-    "Android Software Development Kit License": ("com.google.android.gms", "com.google.firebase"),
-}
+# Reviewed exceptions: licence *names* (no SPDX id) for specific groups. None today: the Play services
+# libraries, the only ones under the Android Software Development Kit License, are gone. Anything
+# without an SPDX id needs a review before it is added here.
+REVIEWED_NAMED: dict[str, tuple[str, ...]] = {}
 
 
 def report(lines):

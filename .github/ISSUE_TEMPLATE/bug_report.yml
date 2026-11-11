@@ -40,14 +40,12 @@ body:
     validations:
       required: true
   - type: dropdown
-    id: google
+    id: calendar_access
     attributes:
-      label: Google account connected?
+      label: Calendar access allowed (shows your phone's calendars)?
       options:
         - "No"
-        - "Yes, Calendar and Tasks"
-        - "Yes, Calendar only"
-        - "Yes, Tasks only"
+        - "Yes"
     validations:
       required: true
   - type: textarea

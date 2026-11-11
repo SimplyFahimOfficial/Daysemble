@@ -139,8 +139,7 @@ fun repeatLabel(rule: RRule): String {
 
 /**
  * Repeat section of the task editor: one row of presets for the common cases; weekdays, the custom
- * interval and the end only appear when they apply. [disabledReason] explains why repeating isn't
- * available (a Google Tasks list).
+ * interval and the end only appear when they apply.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -149,15 +148,10 @@ fun TaskRepeatSection(
     due: LocalDate?,
     onChange: (TaskRepeatForm) -> Unit,
     onPickUntil: () -> Unit,
-    disabledReason: String?,
 ) {
     val c = DsTheme.colors
     val p = LocalTimePrefs.current
     val m = DsTheme.motion
-    if (disabledReason != null) {
-        Text(disabledReason, style = DsTheme.type.bodySmall, color = c.textSecondary, modifier = Modifier.padding(horizontal = Space.gutter))
-        return
-    }
     FlowRow(
         Modifier.padding(horizontal = Space.gutter - Space.xs),
         horizontalArrangement = Arrangement.spacedBy(Space.xs),

@@ -11,7 +11,6 @@ import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import app.daysemble.DaysembleApp
 import app.daysemble.data.db.OwnerType
-import app.daysemble.data.google.sync.SyncWorker
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.domain.model.SeriesScope
 import app.daysemble.domain.model.TaskDraft
@@ -29,7 +28,7 @@ import java.time.LocalDateTime
 /**
  * End-to-end on the real Android plumbing (Robolectric): AlarmManager registration, the
  * manifest-registered receivers, goAsync, notification posting and actions, boot rescheduling,
- * and the sync worker. Closest available substitute for an on-device check in this environment.
+ * and the refresh worker. Closest available substitute for an on-device check in this environment.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -69,7 +68,7 @@ class ReminderDeliveryTest {
 
     /**
      * Review issue: delete a repeating task's whole series from a completed occurrence, let a full
-     * reschedule run while it's deleted (as after a Google sync), then Undo. The current occurrence
+     * reschedule run while it's deleted, then Undo. The current occurrence
      * comes back and must get its reminder again.
      */
     @Test fun `undoing a series delete schedules the restored occurrence's reminder again`() {
@@ -89,7 +88,7 @@ class ReminderDeliveryTest {
 
         runBlocking { c.tasks.delete(first, SeriesScope.ALL) }
         waitFor { alarmsFor(current).isEmpty() } // cancelled with the series
-        runBlocking { c.reminders.rescheduleAll() } // e.g. after a sync, while it's deleted
+        runBlocking { c.reminders.rescheduleAll() } // e.g. after a reboot, while it's deleted
         assertThat(alarmsFor(current)).isEmpty()
 
         runBlocking { c.tasks.restore(first) } // Undo
@@ -136,11 +135,6 @@ class ReminderDeliveryTest {
         assertThat(shadowOf(am).scheduledAlarms).isEmpty()
         app.sendBroadcast(Intent(Intent.ACTION_BOOT_COMPLETED).setPackage(app.packageName))
         waitFor { shadowOf(am).scheduledAlarms.size == 1 }
-    }
-
-    @Test fun `sync worker succeeds without an account and does no network work`() = runBlocking {
-        val result = TestListenableWorkerBuilder<SyncWorker>(app).build().doWork()
-        assertThat(result).isEqualTo(ListenableWorker.Result.success())
     }
 
     @Test fun `reminder refresh worker reschedules`() = runBlocking {

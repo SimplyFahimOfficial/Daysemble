@@ -32,9 +32,6 @@ interface BackupDao {
     @Query("SELECT * FROM reminder")
     suspend fun reminders(): List<ReminderEntity>
 
-    @Query("SELECT id FROM task")
-    suspend fun taskIds(): List<String>
-
     @Query("SELECT id FROM event")
     suspend fun eventIds(): List<String>
 }

@@ -26,7 +26,6 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
@@ -209,9 +208,6 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                     DsChip(stringResource(R.string.day_tomorrow), false, { vm.update { it.withDue(today.plusDays(1).toEpochDay()) } })
                 }
             }
-            if (state.isGoogle && (f.dueTime != null)) {
-                Note(stringResource(R.string.google_task_time_local))
-            }
             if (state.isRecurring && f.dueDate == null) {
                 Note(stringResource(R.string.repeat_needs_due))
             }
@@ -224,7 +220,6 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                 SectionHeader(stringResource(R.string.field_repeat), Modifier.padding(top = Space.l))
                 TaskRepeatSection(
                     form = f.repeat, due = f.dueDate, onChange = setRepeat, onPickUntil = { pickUntil = true },
-                    disabledReason = if (state.inGoogleListAfterSave) stringResource(R.string.repeat_google_unavailable) else null,
                 )
             }
 
@@ -249,7 +244,6 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                 onCheckedChange = { on -> vm.update { it.copy(countdown = on) } },
                 icon = Icons.Rounded.HourglassTop,
             )
-            if (state.isGoogle && f.countdown) Note(stringResource(R.string.google_task_countdown_local))
 
             SectionHeader(stringResource(R.string.field_reminders), Modifier.padding(top = Space.l))
             ReminderPicker(
@@ -268,16 +262,12 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                 onSelect = { pr -> vm.update { it.copy(priority = pr.level) } },
                 modifier = Modifier.padding(horizontal = Space.gutter),
             )
-            if (state.isGoogle && f.priority > 0) Note(stringResource(R.string.google_task_priority_local))
 
-            // A repeating task can only be in a list on this device (Google Tasks can't store the rule).
-            val listChoices = if (f.repeat.repeats) state.lists.filter { !it.isGoogle || it.id == f.listId } else state.lists
-            if (listChoices.size > 1 && !state.isSubtask) {
+            if (state.lists.size > 1 && !state.isSubtask) {
                 SectionHeader(stringResource(R.string.field_list), Modifier.padding(top = Space.l))
                 FlowRow(Modifier.padding(horizontal = Space.gutter - Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    listChoices.forEach { l -> DsChip(l.title, f.listId == l.id, { vm.update { it.copy(listId = l.id) } }) }
+                    state.lists.forEach { l -> DsChip(l.title, f.listId == l.id, { vm.update { it.copy(listId = l.id) } }) }
                 }
-                if (f.repeat.repeats && listChoices.size < state.lists.size) Note(stringResource(R.string.repeat_local_lists_only))
             }
 
             SectionHeader(stringResource(R.string.field_notes), Modifier.padding(top = Space.l))
@@ -312,16 +302,6 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                 AddSubtaskField(onAdd = vm::addSubtask)
             }
 
-            if (state.task?.isGoogle == true) {
-                Row(
-                    Modifier.padding(horizontal = Space.gutter, vertical = Space.xl),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.s),
-                ) {
-                    Icon(Icons.Rounded.CloudQueue, null, tint = c.textTertiary, modifier = Modifier.padding(top = 1.dp))
-                    Text(stringResource(R.string.google_task_badge), style = DsTheme.type.label, color = c.textSecondary)
-                }
-            }
         }
     }
 
@@ -374,7 +354,7 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
     } else if (confirmDelete) {
         DsConfirmDialog(
             title = stringResource(R.string.delete_task_title),
-            body = stringResource(if (state.task?.isGoogle == true) R.string.delete_task_google_body else R.string.delete_task_body),
+            body = stringResource(R.string.delete_task_body),
             confirm = stringResource(R.string.action_delete), onConfirm = vm::delete,
             onDismiss = { confirmDelete = false }, destructive = true,
         )

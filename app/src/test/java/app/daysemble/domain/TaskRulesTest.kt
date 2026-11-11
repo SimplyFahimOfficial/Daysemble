@@ -1,6 +1,5 @@
 package app.daysemble.domain
 
-import app.daysemble.data.db.SyncState
 import app.daysemble.data.prefs.TaskSort
 import app.daysemble.domain.model.Priority
 import app.daysemble.domain.model.Task
@@ -26,7 +25,7 @@ class TaskRulesTest {
     ) = Task(
         id = id, listId = "l", parentId = null, title = id, notes = "", dueDate = due, dueTime = time,
         priority = priority, isCompleted = done, completedAt = completedAt, createdAt = Instant.ofEpochSecond(created),
-        updatedAt = Instant.EPOCH, sortKey = sort, isGoogle = false, syncState = SyncState.LOCAL,
+        updatedAt = Instant.EPOCH, sortKey = sort,
     )
 
     private fun at(local: String) = java.time.LocalDateTime.parse(local).atZone(zone).toInstant()

@@ -49,7 +49,7 @@ class HeaderLayoutTest {
                     LocalAppSettings provides AppSettings(onboardingDone = true, displayName = name),
                 ) {
                     androidx.compose.foundation.layout.Column {
-                        MainHeader(name, null, {}, {}, {})
+                        MainHeader(name, {}, {})
                         TodayRoute(PaddingValues(), { _, _ -> }, {})
                     }
                 }

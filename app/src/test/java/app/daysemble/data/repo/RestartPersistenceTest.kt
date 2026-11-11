@@ -8,7 +8,6 @@ import app.daysemble.core.time.FixedAppClock
 import app.daysemble.data.db.DaysembleDatabase
 import app.daysemble.data.db.Migrations
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.TaskDraft
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
@@ -41,9 +40,8 @@ class RestartPersistenceTest {
     private fun db() = Room.databaseBuilder(ctx, DaysembleDatabase::class.java, name)
         .addMigrations(*Migrations.ALL).allowMainThreadQueries().build().also { open += it }
 
-    private fun repo(db: DaysembleDatabase) = TaskRepository(db, Outbox(db.sync()) { clock.now().toEpochMilli() }, clock, object : ChangeListener {
+    private fun repo(db: DaysembleDatabase) = TaskRepository(db, clock, object : ChangeListener {
         override fun onTaskChanged(taskId: String) {}
-        override fun onPendingSync() {}
     })
 
     @Before fun clean() { ctx.deleteDatabase(name) }

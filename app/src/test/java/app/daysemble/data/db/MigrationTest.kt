@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -165,6 +166,63 @@ class MigrationTest {
                 // Skips go with their series.
                 room.taskSeries().delete("s1")
                 assertThat(room.skips().forSeries("s1")).isEmpty()
+            }
+        } finally {
+            room.close()
+        }
+    }
+
+    @Test fun v3_to_v4_removesGoogleSync_keepsEveryTaskAndLocalEvent() {
+        createAt(3) { db ->
+            val event = "(id, calendarId, remoteId, etag, title, description, location, isAllDay, startUtc, endUtc, startDate, endDateExclusive, timeZone, " +
+                "exdates, isCancelled, rangeStartUtc, rangeEndUtc, createdAt, updatedAt, syncState, isDeleted, isReadOnlyRecurrence, pendingClientId, instancesUntil)"
+            val task = "(id, listId, remoteId, etag, title, notes, priority, isCompleted, sortKey, remotePosition, createdAt, updatedAt, syncState, isDeleted, countdownEnabled)"
+            db.execSQL("INSERT INTO calendar_source (id, kind, remoteId, accountEmail, name, colorArgb, isVisible, isSyncEnabled, isPrimary, accessRole, syncToken, defaultReminders) VALUES " +
+                "('local', 'LOCAL', NULL, NULL, 'Personal', 1, 1, 1, 1, 'owner', NULL, '')," +
+                "('g', 'GOOGLE', 'primary', 'me@example.com', 'Google', 2, 1, 1, 0, 'writer', 'tok', '10')")
+            db.execSQL("INSERT INTO event $event VALUES " +
+                "('mine', 'local', NULL, NULL, 'My event', '', '', 0, 100, 200, 0, 0, 'UTC', '', 0, 100, 200, 1, 1, 'LOCAL', 0, 0, NULL, NULL)," +
+                "('theirs', 'g', 'r1', 'e', 'Synced event', '', '', 0, 100, 200, 0, 0, 'UTC', '', 0, 100, 200, 1, 1, 'SYNCED', 0, 0, NULL, NULL)")
+            db.execSQL("INSERT INTO reminder (id, ownerType, ownerId, minutesBefore) VALUES ('EVENT:mine:10', 'EVENT', 'mine', 10), ('EVENT:theirs:10', 'EVENT', 'theirs', 10)")
+            db.execSQL("INSERT INTO task_list (id, kind, remoteId, accountEmail, title, sortOrder, isSyncEnabled, lastPulledAt) VALUES " +
+                "('l1', 'LOCAL', NULL, NULL, 'My tasks', 0, 1, NULL), ('gl', 'GOOGLE', 'L1', 'me@example.com', 'Google list', 1, 1, 77)")
+            db.execSQL("INSERT INTO task $task VALUES " +
+                "('t-local', 'l1', NULL, NULL, 'Local task', '', 0, 0, 1, NULL, 1, 1, 'LOCAL', 0, 0)," +
+                "('t-synced', 'gl', 'z1', 'e', 'Synced task', 'n', 2, 0, 1, '0001', 1, 1, 'SYNCED', 0, 0)," +
+                "('t-pending', 'gl', NULL, NULL, 'Not pushed yet', '', 0, 0, 2, NULL, 1, 1, 'PENDING_CREATE', 0, 0)," +
+                "('t-conflict', 'gl', 'z2', 'e', 'Conflicted', '', 0, 1, 3, NULL, 1, 1, 'CONFLICT', 0, 0)," +
+                "('t-gone', 'gl', 'z3', 'e', 'Deleted by the user', '', 0, 0, 4, NULL, 1, 1, 'PENDING_DELETE', 1, 0)")
+            db.execSQL("INSERT INTO outbox (entityType, entityId, op, createdAt, attempts, permanentFailures) VALUES ('TASK', 't-pending', 'CREATE', 1, 0, 0)")
+            db.execSQL("INSERT INTO conflict_log (entityType, entityId, title, losingVersion, resolvedWith, at) VALUES ('TASK', 't-conflict', 'x', 'y', 'z', 1)")
+            db.execSQL("INSERT INTO sync_state (service, lastSuccessAt, needsReauth) VALUES ('CALENDAR', 1, 0)")
+        }
+        val room = openCurrent() // Room validates the migrated database against the v4 schema on open
+        try {
+            runBlocking {
+                // Events of the Google calendar are gone (the phone's calendar supplies them now); the app's own stay.
+                assertThat(room.calendars().all().map { it.id }).containsExactly("local")
+                assertThat(room.events().get("mine")!!.title).isEqualTo("My event")
+                assertThat(room.events().get("theirs")).isNull()
+                assertThat(room.reminders().all().map { it.ownerId }).containsExactly("mine")
+                // Every task survives, in an ordinary list, with no sync identity. Only the one already deleted is dropped.
+                assertThat(room.taskLists().all().map { it.id to it.kind }).containsExactly("l1" to SourceKind.LOCAL, "gl" to SourceKind.LOCAL)
+                assertThat(room.tasks().observeAll().first().map { it.id }).containsExactly("t-local", "t-synced", "t-pending", "t-conflict")
+                val synced = room.tasks().get("t-synced")!!
+                assertThat(synced.listId).isEqualTo("gl")
+                assertThat(synced.notes).isEqualTo("n")
+                assertThat(synced.priority).isEqualTo(2)
+                assertThat(synced.remoteId).isNull()
+                assertThat(synced.etag).isNull()
+                assertThat(synced.syncState).isEqualTo(SyncState.LOCAL)
+                assertThat(room.tasks().get("t-conflict")!!.isCompleted).isTrue()
+                assertThat(room.tasks().get("t-gone")).isNull()
+                assertThat(room.taskLists().get("gl")!!.accountEmail).isNull()
+                // Nothing of the sync machinery is left, and new work can be saved.
+                val tables = room.openHelper.readableDatabase.query("SELECT name FROM sqlite_master WHERE type = 'table'").use { c ->
+                    generateSequence { if (c.moveToNext()) c.getString(0) else null }.toList()
+                }
+                assertThat(tables).containsNoneOf("outbox", "conflict_log", "sync_state")
+                assertThat(room.calendars().get("local")!!.isPrimary).isTrue()
             }
         } finally {
             room.close()

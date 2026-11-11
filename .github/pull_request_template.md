@@ -4,7 +4,7 @@
 
 ## How it was tested
 
-<!-- Tests added or updated, and anything checked by hand (device, emulator, live Google). -->
+<!-- Tests added or updated, and anything checked by hand (device, emulator). -->
 
 ## Checklist
 

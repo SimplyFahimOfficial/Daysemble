@@ -51,6 +51,5 @@ Before the first upload, verify in Play Console **App integrity** that the **App
 ## F-Droid status
 
 Daysemble cannot be listed in the official public F-Droid repository while its source repository is
-private. It also depends on proprietary Google Play Services authentication. A public source
-release under a FOSS-compatible licence and a FOSS authentication alternative/build variant are
-prerequisites; no F-Droid upload workflow can bypass those requirements.
+private. It no longer depends on proprietary Google Play services. A public source release under a
+FOSS-compatible licence is the remaining prerequisite; no F-Droid upload workflow can bypass it.

@@ -4,13 +4,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.daysemble.core.time.FixedAppClock
 import app.daysemble.data.db.DaysembleDatabase
-import app.daysemble.data.db.OutboxOp
 import app.daysemble.data.db.OwnerType
-import app.daysemble.data.db.SourceKind
-import app.daysemble.data.db.SyncState
-import app.daysemble.data.db.TaskListEntity
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.Priority
 import app.daysemble.domain.model.TaskDraft
 import app.cash.turbine.test
@@ -36,7 +31,6 @@ class TaskRepositoryTest {
     private lateinit var repo: TaskRepository
     private val clock = FixedAppClock(Instant.parse("2026-10-22T10:00:00Z"), ZoneId.of("Europe/Berlin"))
     private val changed = mutableListOf<String>()
-    private var pendingSyncCalls = 0
     private lateinit var localList: String
 
     @Before
@@ -45,9 +39,8 @@ class TaskRepositoryTest {
             .allowMainThreadQueries().build()
         val listener = object : ChangeListener {
             override fun onTaskChanged(taskId: String) { changed += taskId }
-            override fun onPendingSync() { pendingSyncCalls++ }
         }
-        repo = TaskRepository(db, Outbox(db.sync()) { clock.now().toEpochMilli() }, clock, listener)
+        repo = TaskRepository(db, clock, listener)
         localList = repo.ensureDefaultList("My tasks")
     }
 
@@ -70,7 +63,6 @@ class TaskRepositoryTest {
         assertThat(t.title).isEqualTo("Book flights")
         assertThat(t.dueTime).isEqualTo(LocalTime.of(9, 30))
         assertThat(t.priority).isEqualTo(Priority.HIGH)
-        assertThat(t.syncState).isEqualTo(SyncState.LOCAL)
         assertThat(repo.reminders(id)).containsExactly(15, 60).inOrder()
 
         repo.update(id, TaskDraft(title = "Book train", dueDate = null))
@@ -86,8 +78,6 @@ class TaskRepositoryTest {
         assertThat(repo.get(id)!!.completedAt).isNull()
 
         assertThat(changed).contains(id)
-        assertThat(pendingSyncCalls).isEqualTo(0)
-        assertThat(db.sync().outbox()).isEmpty()
     }
 
     @Test
@@ -127,20 +117,17 @@ class TaskRepositoryTest {
         repo.setCompleted(completed, true)
         val deleted = repo.create(TaskDraft(title = "Deleted", dueDate = from), localList)
         repo.delete(deleted)
-        db.taskLists().upsert(TaskListEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "r1", accountEmail = "a@example.com", title = "G"))
-        repo.create(TaskDraft(title = "Google", dueDate = from), "g")
+        repo.create(TaskDraft(title = "Other list", dueDate = from), repo.createList("Work"))
 
-        for (enabled in listOf(true, false)) {
-            db.taskLists().setSyncEnabled("g", enabled)
-            val expected = repo.allTasks.first().filter {
-                it.parentId == null && !it.isCompleted && it.dueDate?.let { date -> date in from..to } == true
-            }
-            val actual = repo.openTasksInRange(from, to).first()
-            assertThat(actual).containsExactlyElementsIn(expected)
-            val parent = actual.single { it.id == first }
-            assertThat(parent.subtaskCount).isEqualTo(2)
-            assertThat(parent.subtasksDone).isEqualTo(1)
+        val expected = repo.allTasks.first().filter {
+            it.parentId == null && !it.isCompleted && it.dueDate?.let { date -> date in from..to } == true
         }
+        val actual = repo.openTasksInRange(from, to).first()
+        assertThat(actual).containsExactlyElementsIn(expected)
+        assertThat(actual.map { it.title }).contains("Other list")
+        val parent = actual.single { it.id == first }
+        assertThat(parent.subtaskCount).isEqualTo(2)
+        assertThat(parent.subtasksDone).isEqualTo(1)
         assertThat(repo.openTasksInRange(to.plusDays(2), to.plusDays(3)).first()).isEmpty()
     }
 
@@ -184,47 +171,4 @@ class TaskRepositoryTest {
         assertThat(db.reminders().forOwner(OwnerType.TASK, id)).isEmpty()
     }
 
-    @Test
-    fun `google-backed tasks are queued and coalesced in the outbox`() = runTest {
-        db.taskLists().upsert(TaskListEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "r1", accountEmail = "a@example.com", title = "G"))
-        val id = repo.create(TaskDraft(title = "Remote"), "g")
-        repo.update(id, TaskDraft(title = "Remote 2"))
-        repo.setCompleted(id, true)
-        val ops = db.sync().outbox()
-        assertThat(ops.map { it.op }).containsExactly(OutboxOp.CREATE)
-        assertThat(repo.get(id)!!.syncState).isEqualTo(SyncState.PENDING_CREATE)
-        assertThat(pendingSyncCalls).isAtLeast(1)
-
-        // Never pushed -> deleting needs no remote call.
-        repo.delete(id)
-        assertThat(db.sync().outbox()).isEmpty()
-    }
-
-    @Test
-    fun `deleting a synced google task queues a remote delete, undo re-queues an update`() = runTest {
-        db.taskLists().upsert(TaskListEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "r1", accountEmail = "a@example.com", title = "G"))
-        val id = repo.create(TaskDraft(title = "Remote"), "g")
-        // Simulate a successful push.
-        db.sync().clearFor(OwnerType.TASK, id)
-        db.tasks().upsert(db.tasks().get(id)!!.copy(remoteId = "t1", syncState = SyncState.SYNCED))
-
-        repo.delete(id)
-        assertThat(db.sync().outbox().map { it.op }).containsExactly(OutboxOp.DELETE)
-        assertThat(db.tasks().get(id)!!.syncState).isEqualTo(SyncState.PENDING_DELETE)
-
-        repo.restore(id)
-        assertThat(db.sync().outbox().map { it.op }).containsExactly(OutboxOp.UPDATE)
-        assertThat(repo.get(id)!!.syncState).isEqualTo(SyncState.PENDING_UPDATE)
-    }
-
-    @Test
-    fun `priority changes on google tasks stay local`() = runTest {
-        db.taskLists().upsert(TaskListEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "r1", accountEmail = "a@example.com", title = "G"))
-        val id = repo.create(TaskDraft(title = "Remote"), "g")
-        db.sync().clearFor(OwnerType.TASK, id)
-        db.tasks().upsert(db.tasks().get(id)!!.copy(remoteId = "t1", syncState = SyncState.SYNCED))
-        repo.setPriority(id, Priority.HIGH)
-        assertThat(db.sync().outbox()).isEmpty()
-        assertThat(repo.get(id)!!.priority).isEqualTo(Priority.HIGH)
-    }
 }

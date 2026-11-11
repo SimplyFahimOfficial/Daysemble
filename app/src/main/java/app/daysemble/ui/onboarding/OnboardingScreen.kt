@@ -38,7 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material3.Icon
@@ -99,8 +99,8 @@ import androidx.compose.runtime.setValue
 private const val STEPS = 3
 
 /**
- * First-use setup in three short steps: welcome, an optional display name, optional reminders and
- * Google. Nothing is required: "Skip setup" finishes straight away, and every later step can be
+ * First-use setup in three short steps: welcome, an optional display name, and optional reminders
+ * and calendar access. Nothing is required: "Skip setup" finishes straight away, and every later step can be
  * skipped too. Shown only until setup is finished (`onboarding_done`, persisted with the name in one
  * write by [app.daysemble.data.prefs.SettingsRepository.completeOnboarding]).
  *
@@ -112,16 +112,16 @@ private const val STEPS = 3
  * process death resume where the user was without replaying the entrance.
  */
 @Composable
-fun OnboardingScreen(initialName: String?, onDone: (name: String?, openGoogle: Boolean) -> Unit) {
+fun OnboardingScreen(initialName: String?, onDone: (name: String?) -> Unit) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     var page by rememberSaveable { mutableIntStateOf(0) }
     var name by rememberSaveable { mutableStateOf(initialName.orEmpty()) }
     var finished by remember { mutableStateOf(false) }
-    val finish: (Boolean) -> Unit = { google ->
+    val finish: () -> Unit = {
         // Guards against a double tap while the app fades in over this screen.
-        if (!finished) { finished = true; onDone(normalizeDisplayName(name), google) }
+        if (!finished) { finished = true; onDone(normalizeDisplayName(name)) }
     }
 
     // One entrance, played once (not on rotation, process recreation or resume), never with reduced motion.
@@ -164,7 +164,7 @@ fun OnboardingScreen(initialName: String?, onDone: (name: String?, openGoogle: B
                 when (p) {
                     0 -> Welcome(progress)
                     1 -> NameStep(name, { name = it.take(DISPLAY_NAME_MAX) }, onContinue = { page = 2 })
-                    else -> Extras(onGoogle = { finish(true) })
+                    else -> Extras()
                 }
             }
         }
@@ -182,14 +182,14 @@ fun OnboardingScreen(initialName: String?, onDone: (name: String?, openGoogle: B
             when (page) {
                 0 -> {
                     DsButton(stringResource(R.string.onboarding_get_started), { page = 1 }, primary)
-                    DsButton(stringResource(R.string.onboarding_skip_setup), { finish(false) }, Modifier.fillMaxWidth(), style = DsButtonStyle.Text)
+                    DsButton(stringResource(R.string.onboarding_skip_setup), finish, Modifier.fillMaxWidth(), style = DsButtonStyle.Text)
                 }
                 1 -> {
                     DsButton(stringResource(R.string.onboarding_continue), { page = 2 }, primary)
                     DsButton(stringResource(R.string.onboarding_skip), { name = ""; page = 2 }, Modifier.fillMaxWidth(), style = DsButtonStyle.Text)
                 }
                 else -> {
-                    DsButton(stringResource(R.string.onboarding_start), { finish(false) }, primary)
+                    DsButton(stringResource(R.string.onboarding_start), finish, primary)
                     // Same height as the text button on the other steps, so the layout doesn't jump.
                     Spacer(Modifier.heightIn(min = Sizes.touch))
                 }
@@ -405,13 +405,23 @@ private fun NameStep(name: String, onName: (String) -> Unit, onContinue: () -> U
 }
 
 @Composable
-private fun Extras(onGoogle: () -> Unit) {
+private fun Extras() {
     val c = DsTheme.colors
     val ctx = LocalContext.current
     var granted by rememberSaveable {
         mutableStateOf(Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
+    // Calendar access is asked for once, here, and only when the user taps Allow. After a "no" the
+    // button stays off (no second prompt); Settings > Lists & calendars is where to allow it later.
+    var calendarGranted by rememberSaveable {
+        mutableStateOf(ctx.checkSelfPermission(Manifest.permission.READ_CALENDAR) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+    }
+    var calendarDenied by rememberSaveable { mutableStateOf(false) }
+    val calendarPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        calendarGranted = it
+        calendarDenied = !it
+    }
     Spacer(Modifier.height(Space.l))
     Text(stringResource(R.string.onboarding_setup_title), style = DsTheme.type.headline, color = c.textPrimary, modifier = Modifier.semantics { heading() })
     Spacer(Modifier.height(Space.s))
@@ -432,9 +442,17 @@ private fun Extras(onGoogle: () -> Unit) {
         ) { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }
         Box(Modifier.padding(start = Space.l + 40.dp + Space.m).fillMaxWidth().height(Sizes.hairline).background(c.outline))
         SetupItem(
-            Icons.Rounded.AccountCircle, stringResource(R.string.onboarding_google_title), stringResource(R.string.onboarding_google_body),
-            action = stringResource(R.string.connect_google), enabled = true, onClick = onGoogle,
-        )
+            Icons.Rounded.CalendarMonth, stringResource(R.string.onboarding_calendar_title),
+            stringResource(if (calendarDenied) R.string.onboarding_calendar_denied else R.string.onboarding_calendar_body),
+            action = stringResource(
+                when {
+                    calendarGranted -> R.string.onboarding_allowed
+                    calendarDenied -> R.string.onboarding_not_allowed
+                    else -> R.string.action_allow
+                },
+            ),
+            enabled = !calendarGranted && !calendarDenied,
+        ) { calendarPermission.launch(Manifest.permission.READ_CALENDAR) }
     }
     Spacer(Modifier.height(Space.l))
 }

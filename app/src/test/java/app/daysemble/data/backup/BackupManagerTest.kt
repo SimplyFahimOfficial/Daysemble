@@ -6,15 +6,14 @@ import app.daysemble.core.recurrence.RRule
 import app.daysemble.core.time.FixedAppClock
 import app.daysemble.data.db.CalendarSourceEntity
 import app.daysemble.data.db.DaysembleDatabase
+import app.daysemble.data.db.EventEntity
 import app.daysemble.data.db.OwnerType
 import app.daysemble.data.db.SleepSessionEntity
 import app.daysemble.data.db.SourceKind
-import app.daysemble.data.db.SyncState
 import app.daysemble.data.db.TaskListEntity
 import app.daysemble.data.repo.EventRepository
 import app.daysemble.data.repo.TaskRepository
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.EventDraft
 import app.daysemble.domain.model.TaskDraft
 import app.daysemble.domain.model.SeriesScope
@@ -47,13 +46,13 @@ class BackupManagerTest {
         .allowMainThreadQueries().build().also { opened += it }
 
     private fun manager(d: DaysembleDatabase) = BackupManager(d, clock) { imported++ }
-    private fun events(d: DaysembleDatabase) = EventRepository(d, Outbox(d.sync()) { clock.now().toEpochMilli() }, clock, ChangeListener.None)
-    private fun tasks(d: DaysembleDatabase) = TaskRepository(d, Outbox(d.sync()) { clock.now().toEpochMilli() }, clock, ChangeListener.None)
+    private fun events(d: DaysembleDatabase) = EventRepository(d, clock, ChangeListener.None)
+    private fun tasks(d: DaysembleDatabase) = TaskRepository(d, clock, ChangeListener.None)
 
     @Before fun setUp() { db = newDb() }
     @After fun tearDown() = opened.forEach { it.close() }
 
-    /** On-device data of every kind, plus a Google calendar and list that must stay out of the file. */
+    /** On-device data of every kind, plus a mirrored phone calendar that must stay out of the file. */
     private suspend fun seed() {
         val ev = events(db)
         val cal = ev.ensureDefaultCalendar("Personal")
@@ -75,9 +74,16 @@ class BackupManagerTest {
 
         db.sleep().upsert(SleepSessionEntity(id = "s1", startUtc = 1, endUtc = 2, startZone = zone.id, endZone = zone.id, createdAt = 1, updatedAt = 2))
 
-        db.calendars().upsert(CalendarSourceEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "primary", accountEmail = "a@example.com", name = "G", colorArgb = 0))
-        ev.create(EventDraft(title = "From Google", startDate = day, startTime = LocalTime.of(12, 0), endDate = day, endTime = LocalTime.of(13, 0), zone = zone, calendarId = "g"), cal)
-        db.taskLists().upsert(TaskListEntity(id = "gl", kind = SourceKind.GOOGLE, remoteId = "L1", accountEmail = "a@example.com", title = "G"))
+        db.calendars().upsert(CalendarSourceEntity(id = "device:1", kind = SourceKind.DEVICE, remoteId = "primary", accountEmail = "a@example.com", name = "Phone", colorArgb = 0, accessRole = "reader"))
+        db.events().upsert(
+            EventRepository.withEnvelope(
+                EventEntity(
+                    id = "device:9:1", calendarId = "device:1", title = "From the phone", isAllDay = false, timeZone = zone.id,
+                    startUtc = Instant.parse("2026-10-22T10:00:00Z").toEpochMilli(), endUtc = Instant.parse("2026-10-22T11:00:00Z").toEpochMilli(),
+                    rangeStartUtc = 0, rangeEndUtc = 0, createdAt = 0, updatedAt = 0,
+                ),
+            ),
+        )
     }
 
     private suspend fun export(d: DaysembleDatabase): ByteArray = ByteArrayOutputStream().also { manager(d).export(it) }.toByteArray()
@@ -113,10 +119,10 @@ class BackupManagerTest {
         assertThat(after.events.single { it.title == "Standup" }.exdates).isEqualTo("2026-10-23T09:00")
     }
 
-    @Test fun `google calendars, lists and their items are not exported`() = runTest {
+    @Test fun `mirrored phone calendars and their events are not exported`() = runTest {
         seed()
         val text = export(db).decodeToString()
-        assertThat(text).doesNotContain("From Google")
+        assertThat(text).doesNotContain("From the phone")
         assertThat(text).doesNotContain("a@example.com")
         assertThat(text).doesNotContain("primary")
     }
@@ -142,7 +148,7 @@ class BackupManagerTest {
         assertThat(imported).isEqualTo(0)
     }
 
-    @Test fun `a hand-edited file can't create sync state, accounts or broken references`() = runTest {
+    @Test fun `a hand-edited file can't create device calendars, remote identity or broken references`() = runTest {
         val text = """
             {"format":"daysemble-backup","version":1,
              "calendars":[{"id":"c1","kind":"GOOGLE","remoteId":"x","accountEmail":"evil@example.com","name":"Mine","colorArgb":1,"syncToken":"t"}],
@@ -174,14 +180,11 @@ class BackupManagerTest {
         assertThat(cal.accountEmail).isNull()
         assertThat(cal.syncToken).isNull()
         val e = db.events().get("e1")!!
-        assertThat(e.syncState).isEqualTo(SyncState.LOCAL)
-        assertThat(e.remoteId).isNull()
+                assertThat(e.remoteId).isNull()
         assertThat(e.isDeleted).isFalse()
         val t = db.tasks().get("t1")!!
         assertThat(t.parentId).isNull()
-        assertThat(t.syncState).isEqualTo(SyncState.LOCAL)
-        assertThat(t.remoteId).isNull()
-        assertThat(db.sync().outbox()).isEmpty()
+                assertThat(t.remoteId).isNull()
         val reminders = db.reminders().all()
         assertThat(reminders.map { it.id }).containsExactly("EVENT:e1:10")
         assertThat(reminders.single().ownerType).isEqualTo(OwnerType.EVENT)
@@ -189,27 +192,39 @@ class BackupManagerTest {
 
     private suspend fun importText(text: String) = manager(db).import(ByteArrayInputStream(text.trimIndent().toByteArray()))
 
-    @Test fun `ids that match a google calendar, list or task don't bring imported rows into them`() = runTest {
-        db.calendars().upsert(CalendarSourceEntity(id = "g", kind = SourceKind.GOOGLE, remoteId = "primary", accountEmail = "a@example.com", name = "G", colorArgb = 0))
-        db.taskLists().upsert(TaskListEntity(id = "gl", kind = SourceKind.GOOGLE, remoteId = "L1", accountEmail = "a@example.com", title = "G"))
-        val gTask = tasks(db).create(TaskDraft(title = "Google task"), "gl")
+    @Test fun `an id that matches a mirrored phone calendar doesn't bring imported rows into it`() = runTest {
+        db.calendars().upsert(CalendarSourceEntity(id = "g", kind = SourceKind.DEVICE, remoteId = "primary", accountEmail = "a@example.com", name = "Phone", colorArgb = 0, accessRole = "reader"))
         val r = importText(
             """
             {"format":"daysemble-backup","version":1,
              "calendars":[{"id":"g","kind":"LOCAL","name":"Mine","colorArgb":1}],
-             "events":[{"id":"e1","calendarId":"g","title":"Into Google?","isAllDay":false,"timeZone":"UTC","rangeStartUtc":1,"rangeEndUtc":2,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"}],
-             "taskLists":[{"id":"gl","kind":"LOCAL","title":"Mine"},{"id":"l1","kind":"LOCAL","title":"L"}],
-             "tasks":[
-               {"id":"t1","listId":"gl","title":"Into Google?","sortKey":1,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"},
-               {"id":"t2","listId":"l1","parentId":"$gTask","title":"Under a Google task?","sortKey":2,"createdAt":1,"updatedAt":1,"syncState":"LOCAL"}
-             ]}
+             "events":[{"id":"e1","calendarId":"g","title":"Into the phone calendar?","isAllDay":false,"timeZone":"UTC","rangeStartUtc":1,"rangeEndUtc":2,"createdAt":1,"updatedAt":1}],
+             "taskLists":[{"id":"l1","kind":"LOCAL","title":"L"}],
+             "tasks":[{"id":"t1","listId":"l1","title":"Kept","sortKey":1,"createdAt":1,"updatedAt":1}]}
             """,
         )
         assertThat(db.events().get("e1")).isNull()
-        assertThat(db.tasks().get("t1")).isNull()
-        assertThat(db.tasks().get("t2")!!.parentId).isNull()
-        assertThat(db.calendars().get("g")!!.kind).isEqualTo(SourceKind.GOOGLE)
+        assertThat(db.calendars().get("g")!!.kind).isEqualTo(SourceKind.DEVICE)
         assertThat(r.added).isEqualTo(BackupCounts(events = 0, tasks = 1, sleep = 0))
+    }
+
+    @Test fun `a backup from before Google sync was removed still imports`() = runTest {
+        // Old files can hold the removed GOOGLE kind and SYNCED state; both become on-device defaults.
+        val r = importText(
+            """
+            {"format":"daysemble-backup","version":1,
+             "calendars":[{"id":"c1","kind":"GOOGLE","remoteId":"x","accountEmail":"me@example.com","name":"Old","colorArgb":1,"syncToken":"t"}],
+             "events":[{"id":"e1","calendarId":"c1","remoteId":"r","etag":"e","title":"Old event","isAllDay":false,"startUtc":1,"endUtc":2,"timeZone":"UTC","rangeStartUtc":1,"rangeEndUtc":2,"createdAt":1,"updatedAt":1,"syncState":"SYNCED"}],
+             "taskLists":[{"id":"l1","kind":"GOOGLE","remoteId":"L","accountEmail":"me@example.com","title":"Old list"}],
+             "tasks":[{"id":"t1","listId":"l1","remoteId":"z","title":"Old task","sortKey":1,"createdAt":1,"updatedAt":1,"syncState":"PENDING_UPDATE"}]}
+            """,
+        )
+        assertThat(r.added).isEqualTo(BackupCounts(events = 1, tasks = 1, sleep = 0))
+        assertThat(db.calendars().get("c1")!!.kind).isEqualTo(SourceKind.LOCAL)
+        assertThat(db.calendars().get("c1")!!.accountEmail).isNull()
+        assertThat(db.events().get("e1")!!.remoteId).isNull()
+        assertThat(db.taskLists().get("l1")!!.kind).isEqualTo(SourceKind.LOCAL)
+        assertThat(db.tasks().get("t1")!!.remoteId).isNull()
     }
 
     @Test fun `a file that only adds reminders re-plans reminders`() = runTest {

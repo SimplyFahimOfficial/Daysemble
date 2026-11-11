@@ -22,7 +22,6 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.swipeUp
-import app.daysemble.data.db.SyncState
 import app.daysemble.data.prefs.ClockFormat
 import app.daysemble.data.prefs.ThemeMode
 import app.daysemble.domain.model.EventOccurrence
@@ -65,13 +64,12 @@ class TapVersusLongPressTest {
     private fun task(id: String, title: String) = Task(
         id = id, listId = "l", parentId = null, title = title, notes = "", dueDate = LocalDate.parse("2026-10-27"), dueTime = null,
         priority = Priority.NONE, isCompleted = false, completedAt = null, createdAt = now, updatedAt = now, sortKey = 0,
-        isGoogle = false, syncState = SyncState.LOCAL,
     )
 
     private fun event(title: String) = EventOccurrence(
         eventId = "e1", occurrenceKey = "k", overrideId = null, calendarId = "c", title = title, description = "", location = "",
         isAllDay = false, start = now.plusSeconds(3600), end = now.plusSeconds(7200), startDate = LocalDate.parse("2026-10-27"),
-        endDate = LocalDate.parse("2026-10-27"), timeZone = zone, colorArgb = 0xFF4477FF.toInt(), isRecurring = false, isGoogle = false, isReadOnly = false,
+        endDate = LocalDate.parse("2026-10-27"), timeZone = zone, colorArgb = 0xFF4477FF.toInt(), isRecurring = false, isDevice = false, isReadOnly = false,
     )
 
     private fun show(content: @Composable () -> Unit) {

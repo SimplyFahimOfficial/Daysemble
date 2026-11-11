@@ -21,7 +21,6 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -76,7 +75,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 
-enum class SettingsPage { APPEARANCE, NOTIFICATIONS, ACCOUNTS, CONFLICTS, LISTS_CALENDARS, DATE_TIME, TASKS, DATA, ABOUT, SCHEDULE, HELP, SUPPORT }
+enum class SettingsPage { APPEARANCE, NOTIFICATIONS, LISTS_CALENDARS, DATE_TIME, TASKS, DATA, ABOUT, SCHEDULE, HELP, SUPPORT }
 
 @Composable
 internal fun SettingsScaffold(title: String, onBack: () -> Unit, loaded: Boolean = true, content: @Composable () -> Unit) {
@@ -132,14 +131,17 @@ fun SettingsHomeRoute(onBack: () -> Unit, onOpen: (SettingsPage) -> Unit) {
         val chevron: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = DsTheme.colors.textTertiary)
         }
+        // Help & Support leads the page.
+        AccentCard(Modifier.padding(horizontal = Space.l).padding(top = Space.s)) {
+            DsRow(
+                stringResource(R.string.settings_help), subtitle = stringResource(R.string.settings_help_sub),
+                icon = Icons.AutoMirrored.Rounded.HelpOutline, onClick = { onOpen(SettingsPage.HELP) }, trailing = chevron,
+            )
+        }
         // Shown once, until the name is set or the prompt is dismissed.
         val showNameHint = s != null && s.displayName == null && !s.nameHintDismissed
         androidx.compose.animation.AnimatedVisibility(showNameHint, enter = DsTheme.motion.expandIn(), exit = DsTheme.motion.collapseOut()) {
             NameHint(onAdd = { editName = true }, onDismiss = { scope.launch { container.settings.dismissNameHint() } })
-        }
-        SectionHeader(stringResource(R.string.settings_section_sync))
-        SettingsCard {
-            DsRow(stringResource(R.string.settings_accounts), subtitle = stringResource(R.string.settings_accounts_sub), icon = Icons.Rounded.Sync, onClick = { onOpen(SettingsPage.ACCOUNTS) }, trailing = chevron)
         }
         SectionHeader(stringResource(R.string.settings_section_general), Modifier.padding(top = Space.l))
         SettingsCard {
@@ -174,12 +176,6 @@ fun SettingsHomeRoute(onBack: () -> Unit, onOpen: (SettingsPage) -> Unit) {
             DsRow(stringResource(R.string.settings_data), subtitle = stringResource(R.string.settings_data_sub), icon = Icons.Rounded.Shield, onClick = { onOpen(SettingsPage.DATA) }, trailing = chevron)
             CardDivider()
             DsRow(stringResource(R.string.settings_about), subtitle = stringResource(R.string.version_label, BuildConfig.VERSION_NAME), icon = Icons.Rounded.Info, onClick = { onOpen(SettingsPage.ABOUT) }, trailing = chevron)
-        }
-        AccentCard(Modifier.padding(horizontal = Space.l).padding(top = Space.l)) {
-            DsRow(
-                stringResource(R.string.settings_help), subtitle = stringResource(R.string.settings_help_sub),
-                icon = Icons.AutoMirrored.Rounded.HelpOutline, onClick = { onOpen(SettingsPage.HELP) }, trailing = chevron,
-            )
         }
     }
 }
@@ -301,8 +297,8 @@ fun TaskSettingsRoute(onBack: () -> Unit) {
             SectionHeader(stringResource(R.string.setting_default_list), Modifier.padding(top = Space.l))
             SettingsCard(Modifier.selectableGroup()) {
                 lists.forEach { l ->
-                    val selected = settings.defaultTaskListId == l.id || (settings.defaultTaskListId == null && !l.isGoogle && l == lists.firstOrNull { !it.isGoogle })
-                    DsRadioRow(l.title, selected, { scope.launch { container.settings.setDefaultTaskList(l.id) } }, subtitle = l.accountEmail)
+                    val selected = settings.defaultTaskListId == l.id || (settings.defaultTaskListId == null && l == lists.firstOrNull())
+                    DsRadioRow(l.title, selected, { scope.launch { container.settings.setDefaultTaskList(l.id) } })
                 }
             }
         }

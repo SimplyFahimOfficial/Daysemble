@@ -15,8 +15,8 @@ query-filters:
   # java/android/backup-enabled (security-severity 7.5) fires on android:allowBackup="true" in
   # app/src/main/AndroidManifest.xml. Backups are deliberate and restricted: res/xml/backup_rules.xml
   # (Android 11 and lower) and res/xml/data_extraction_rules.xml (Android 12+) include only the
-  # settings DataStore (settings.preferences_pb), which holds no account data or tokens. The Room
-  # database, the sync outbox and account state are excluded; OAuth tokens are never stored on disk.
+  # settings DataStore (settings.preferences_pb), which holds no personal content. The Room database
+  # (events, tasks and the copy of the phone's calendars) is excluded.
   # Compensating control: scripts/ci/apk_audit.py fails the build if the APK enables backups without
   # both rule files. Revisit this exclusion whenever backup rules or stored data change.
   - exclude:

@@ -8,7 +8,6 @@ import app.daysemble.data.db.DaysembleDatabase
 import app.daysemble.data.db.OwnerType
 import app.daysemble.data.prefs.SettingsRepository
 import app.daysemble.data.sync.ChangeListener
-import app.daysemble.data.sync.Outbox
 import app.daysemble.domain.model.EventDraft
 import app.daysemble.domain.model.TaskDraft
 import app.daysemble.reminders.AlarmGateway
@@ -47,9 +46,8 @@ class ManagementTest {
 
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), DaysembleDatabase::class.java).allowMainThreadQueries().build()
-        val outbox = Outbox(db.sync()) { clock.now().toEpochMilli() }
-        tasks = TaskRepository(db, outbox, clock, ChangeListener.None)
-        events = EventRepository(db, outbox, clock, ChangeListener.None)
+        tasks = TaskRepository(db, clock, ChangeListener.None)
+        events = EventRepository(db, clock, ChangeListener.None)
     }
     @After fun tearDown() { db.close(); scope.cancel() }
 
@@ -64,7 +62,6 @@ class ManagementTest {
         tasks.moveToList(t, b)
         assertThat(db.tasks().get(t)!!.listId).isEqualTo(b)
         assertThat(db.tasks().get(sub)!!.listId).isEqualTo(b) // subtasks follow
-        assertThat(db.sync().outbox()).isEmpty() // local to local: nothing to sync
         assertThat(tasks.deleteList(b)).isTrue()
         assertThat(db.tasks().get(t)).isNull()
     }
