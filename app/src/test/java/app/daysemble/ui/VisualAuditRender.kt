@@ -20,6 +20,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onNodeWithTag
@@ -52,6 +53,7 @@ import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.format.rememberTimePrefs
 import app.daysemble.ui.settings.AppearanceRoute
 import app.daysemble.ui.settings.HelpRoute
+import app.daysemble.ui.settings.SettingsHomeRoute
 import app.daysemble.ui.settings.SupportRoute
 import app.daysemble.ui.tasks.TasksRoute
 import app.daysemble.ui.theme.DaysembleTheme
@@ -139,6 +141,18 @@ open class VisualAuditRender {
     private fun enabled() = assumeTrue(System.getProperty("daysemble.visualAudit") == "true")
 
     // The whole page in one tall, low-density frame (scrolling plus several full-size captures runs out of heap).
+    @Config(qualifiers = "w393dp-h1700dp-mdpi") @Test fun settingsLight() { enabled(); render("settings-light", ThemeMode.LIGHT) { SettingsHomeRoute(onBack = {}, onOpen = {}) } }
+    @Config(qualifiers = "w393dp-h1700dp-mdpi") @Test fun settingsDark() { enabled(); render("settings-dark", ThemeMode.DARK) { SettingsHomeRoute(onBack = {}, onOpen = {}) } }
+    @Test fun supportQrEnlargedLight() = enlargedQr("support-qr-enlarged-light", ThemeMode.LIGHT)
+    @Test fun supportQrEnlargedDark() = enlargedQr("support-qr-enlarged-dark", ThemeMode.DARK)
+
+    private fun enlargedQr(name: String, theme: ThemeMode) {
+        enabled(); render("$name-page", theme) { SupportRoute(onBack = {}) }
+        compose.onNodeWithContentDescription("UPI QR code for SimplyFahim@sbi, payee Md Fahim").performClick(); settle()
+        val bmp = compose.onNode(isDialog()).captureToImage().asAndroidBitmap()
+        File(out, "$prefix$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
     @Test fun helpLight() { enabled(); render("help-light", ThemeMode.LIGHT) { HelpRoute(onBack = {}, onOpenSupport = {}) } }
     @Test fun helpDark() { enabled(); render("help-dark", ThemeMode.DARK) { HelpRoute(onBack = {}, onOpenSupport = {}) } }
     @Config(qualifiers = "w393dp-h1700dp-mdpi") @Test fun supportLight() { enabled(); render("support-light", ThemeMode.LIGHT) { SupportRoute(onBack = {}) } }

@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import app.daysemble.R
 import app.daysemble.support.SupportConfig
 import app.daysemble.support.SupportIntents
+import app.daysemble.ui.components.AccentCard
 import app.daysemble.ui.components.DsRow
 import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.SettingsCard
@@ -60,7 +61,7 @@ internal fun HelpContent(onOpenUrl: (String) -> Unit, onOpenSupport: () -> Unit)
         )
     }
     SectionHeader(stringResource(R.string.help_section_support), Modifier.padding(top = Space.l))
-    SettingsCard {
+    AccentCard(Modifier.padding(horizontal = Space.l)) {
         DsRow(
             stringResource(R.string.support_my_work), subtitle = stringResource(R.string.support_my_work_sub),
             icon = Icons.Rounded.Favorite, onClick = onOpenSupport, trailing = chevron,

@@ -8,6 +8,18 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
+import app.daysemble.ui.components.DsDialogAction
+import app.daysemble.ui.components.DsDialogButtons
+import app.daysemble.ui.theme.Radii
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +72,7 @@ import app.daysemble.support.SupportConfig
 import app.daysemble.support.SupportIntents
 import app.daysemble.support.UpiQrCode
 import app.daysemble.ui.LocalSnackbar
+import app.daysemble.ui.components.AccentCard
 import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
 import app.daysemble.ui.components.DsCard
@@ -71,6 +84,7 @@ import kotlinx.coroutines.launch
 
 private const val COPIED_FEEDBACK_MS = 2_000L
 private val QrSize = 120.dp
+private val EnlargedQrMaxSize = 320.dp
 
 /** What the Support page can do. Plain lambdas keep [SupportContent] stateless and testable. */
 @Immutable
@@ -125,16 +139,18 @@ internal fun SupportContent(actions: SupportActions) {
         color = c.textPrimary,
         modifier = Modifier.padding(start = Space.gutter, end = Space.gutter, top = Space.s, bottom = Space.xs),
     )
-    DsCard(Modifier.padding(horizontal = Space.gutter, vertical = Space.xs).fillMaxWidth()) {
+    DsCard(Modifier.padding(start = Space.gutter, end = Space.gutter, top = Space.xs).fillMaxWidth()) {
         UpiSection(actions)
     }
-    DsRow(
-        stringResource(R.string.support_more_ways),
-        subtitle = stringResource(R.string.support_more_ways_sub),
-        icon = Icons.Rounded.Payments,
-        onClick = { actions.onOpenUrl(SupportConfig.PAY_OPTIONS_URL) },
-        trailing = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, tint = c.textTertiary, modifier = Modifier.size(18.dp)) },
-    )
+    AccentCard(Modifier.padding(start = Space.gutter, end = Space.gutter, top = Space.s)) {
+        DsRow(
+            stringResource(R.string.support_more_ways),
+            subtitle = stringResource(R.string.support_more_ways_sub),
+            icon = Icons.Rounded.Payments,
+            onClick = { actions.onOpenUrl(SupportConfig.PAY_OPTIONS_URL) },
+            trailing = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, tint = c.textTertiary, modifier = Modifier.size(18.dp)) },
+        )
+    }
     Text(
         stringResource(R.string.support_optional_note),
         style = DsTheme.type.bodySmall,
@@ -199,22 +215,54 @@ private fun UpiSection(actions: SupportActions) {
     }
 }
 
-/** Black on a white tile in both themes; one pixel per module, scaled without filtering. */
+/** The QR on its small tile. Tapping it opens [EnlargedQr]. */
 @Composable
 private fun UpiQr(modifier: Modifier = Modifier) {
     val bitmap = remember { UpiQrCode.toBitmap(UpiQrCode.encode(SupportConfig.upiPaymentUri())).asImageBitmap() }
     val description = stringResource(R.string.support_upi_qr_description, SupportConfig.UPI_ID, SupportConfig.UPI_PAYEE_NAME)
-    Box(
+    var enlarged by rememberSaveable { mutableStateOf(false) }
+    QrTile(
+        bitmap,
         modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
-            .padding(6.dp)
+            .clickable(onClickLabel = stringResource(R.string.support_enlarge_qr), role = Role.Button) { enlarged = true }
             .semantics(mergeDescendants = true) { contentDescription = description },
-    ) {
+        Modifier.size(QrSize),
+    )
+    if (enlarged) EnlargedQr(bitmap, description, onClose = { enlarged = false })
+}
+
+/** The QR as large as the dialog allows, easy to scan from another phone, with Close below it. */
+@Composable
+private fun EnlargedQr(bitmap: ImageBitmap, description: String, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        shape = Radii.dialog,
+        containerColor = DsTheme.colors.surfaceRaised,
+        text = {
+            // Scrolls in landscape, where the square QR plus Close is taller than the screen.
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+                QrTile(
+                    bitmap,
+                    Modifier.semantics(mergeDescendants = true) { contentDescription = description },
+                    Modifier.widthIn(max = EnlargedQrMaxSize).fillMaxWidth().aspectRatio(1f),
+                    padding = Space.m,
+                )
+            }
+        },
+        confirmButton = {
+            DsDialogButtons(listOf(DsDialogAction(stringResource(R.string.action_close), onClose, DsDialogAction.Kind.Confirm)), stacked = true)
+        },
+    )
+}
+
+/** Black on a white tile in both themes; one pixel per module, scaled without filtering. */
+@Composable
+private fun QrTile(bitmap: ImageBitmap, modifier: Modifier, imageModifier: Modifier, padding: Dp = 6.dp) {
+    Box(modifier.clip(RoundedCornerShape(12.dp)).background(Color.White).padding(padding)) {
         Image(
             bitmap = bitmap,
             contentDescription = null,
-            modifier = Modifier.size(QrSize),
+            modifier = imageModifier,
             contentScale = ContentScale.FillBounds,
             filterQuality = FilterQuality.None,
         )

@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -104,6 +107,22 @@ class SupportScreenTest {
         val screen = compose.onRoot().fetchSemanticsNode().size.height
         val last = compose.onNodeWithText("Contributions are optional", substring = true).fetchSemanticsNode()
         assertThat(last.positionInRoot.y + last.size.height).isAtMost(screen.toFloat())
+    }
+
+    @Test fun tappingTheQrEnlargesIt_andCloseBringsBackThePage() {
+        show(ThemeMode.LIGHT)
+        val qr = "UPI QR code for ${SupportConfig.UPI_ID}, payee ${SupportConfig.UPI_PAYEE_NAME}"
+        compose.onAllNodesWithContentDescription(qr).assertCountEquals(1)
+        compose.onNodeWithText("Close").assertDoesNotExist()
+
+        compose.onNodeWithContentDescription(qr).performClick()
+        compose.onAllNodesWithContentDescription(qr).assertCountEquals(2) // the small tile and the enlarged one
+        compose.onNodeWithText("Close").assertExists()
+
+        compose.onNodeWithText("Close").performClick()
+        compose.onAllNodesWithContentDescription(qr).assertCountEquals(1)
+        compose.onNodeWithText("Close").assertDoesNotExist()
+        assertThat(calls).isEmpty() // viewing the QR is not a payment action
     }
 
     @Test fun showsThePayeeAndTheOptionalNoteButNoKofi() {
