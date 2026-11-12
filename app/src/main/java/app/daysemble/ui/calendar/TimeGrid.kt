@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -31,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -53,8 +55,27 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 
-private val HourHeight = 56.dp
+internal val HourHeight = 56.dp
+
+/** Test tags of the Calendar views (UI tests and the macrobenchmarks, which read them as resource ids). */
+object CalendarTags {
+    const val TIME_GRID = "calendar_time_grid"
+    const val DAY_LIST = "calendar_day_list"
+    const val AGENDA = "calendar_agenda"
+}
 private val GutterWidth = 52.dp
+
+/**
+ * The vertical scroll shared by the Week and Day time grids and all their pages. It starts near
+ * [now] when [nowVisible] (today is on screen), otherwise at 08:00, and is created with that
+ * offset, so the first frame is already there instead of at midnight and then jumping.
+ */
+@Composable
+internal fun rememberTimeScroll(now: Instant, nowVisible: Boolean): ScrollState {
+    val zone = LocalTimePrefs.current.zone
+    val hourPx = with(LocalDensity.current) { HourHeight.toPx() }
+    return rememberScrollState(initial = ((if (nowVisible) (now.atZone(zone).hour - 1).coerceIn(0, 18) else 8) * hourPx).toInt())
+}
 
 /**
  * Day/week time grid. Each column lays out its timed events with [DayLayout]; segments of
@@ -66,22 +87,14 @@ fun TimeGrid(
     byDate: Map<LocalDate, List<EventOccurrence>>,
     today: LocalDate,
     now: Instant,
+    scroll: ScrollState,
     onEvent: (EventOccurrence) -> Unit,
     onEmptySlot: (LocalDate, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = DsTheme.colors
     val p = LocalTimePrefs.current
-    val density = LocalDensity.current
-    val scroll = rememberScrollState()
-    val hourPx = with(density) { HourHeight.toPx() }
-    LaunchedEffect(Unit) {
-        // Start near "now" on today, otherwise at 08:00.
-        val startHour = if (today in days) (now.atZone(p.zone).hour - 1).coerceIn(0, 18) else 8
-        scroll.scrollTo((startHour * hourPx).toInt())
-    }
-
-    Column(modifier) {
+    Column(modifier.testTag(CalendarTags.TIME_GRID)) {
         // All-day lane
         val allDayByDay = days.map { d -> byDate[d].orEmpty().filter { it.isAllDay } }
         // More than 3 all-day events: "+N" expands the lane, so every event can be opened.
