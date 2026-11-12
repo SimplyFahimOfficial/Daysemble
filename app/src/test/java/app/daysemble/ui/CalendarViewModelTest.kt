@@ -12,6 +12,7 @@ import app.daysemble.data.repo.TaskRepository
 import app.daysemble.data.sync.ChangeListener
 import app.daysemble.domain.model.EventDraft
 import app.daysemble.domain.model.TaskDraft
+import app.daysemble.ui.calendar.CalendarMode
 import app.daysemble.ui.calendar.CalendarUiState
 import app.daysemble.ui.calendar.CalendarViewModel
 import com.google.common.truth.Truth.assertThat
@@ -132,6 +133,73 @@ class CalendarViewModelTest {
             assertThat(moved.loadedFrom).isGreaterThan(initial.loadedTo)
             assertThat(moved.tasksByDate[day]).isNull()
             assertThat(moved.byDate).isEmpty()
+        } finally {
+            collector.cancel()
+        }
+    }
+
+    /**
+     * Switching the mode used to move the load window (Month 3 grids, Week 3 weeks, Day 3 days,
+     * Agenda 60 days), which restarted the queries: the new mode only reached the screen after the
+     * database and the recurrence expansion had run again, and the control and the content moved late.
+     * Now the data stays and only the mode changes, whatever the two modes are.
+     */
+    @Test fun switchingBetweenAnyTwoModes_changesTheModeWithoutReloading() = runBlocking {
+        val collector = launch(Dispatchers.Unconfined) { vm.state.collect() }
+        try {
+            val initial = awaitState()
+            for (from in CalendarMode.entries) for (to in CalendarMode.entries) {
+                if (from == to) continue
+                vm.setMode(from); awaitState { it.mode == from }
+                vm.setMode(to)
+                val s = awaitState { it.mode == to }
+                assertThat(s.byDate).isSameInstanceAs(initial.byDate)
+                assertThat(s.tasksByDate).isSameInstanceAs(initial.tasksByDate)
+                assertThat(s.loadedFrom).isEqualTo(initial.loadedFrom)
+                assertThat(s.loadedTo).isEqualTo(initial.loadedTo)
+            }
+        } finally {
+            collector.cancel()
+        }
+    }
+
+    @Test fun steppingDaysAndWeeks_withinTheMonth_doesNotReload() = runBlocking {
+        val collector = launch(Dispatchers.Unconfined) { vm.state.collect() }
+        try {
+            val initial = awaitState()
+            vm.setMode(CalendarMode.DAY)
+            repeat(3) { vm.step(1); awaitState { it.selected == day.plusDays(it.selected.toEpochDay() - day.toEpochDay()) } }
+            vm.setMode(CalendarMode.WEEK)
+            vm.step(-1)
+            val s = awaitState { it.mode == CalendarMode.WEEK && it.selected.isBefore(day) }
+            assertThat(s.byDate).isSameInstanceAs(initial.byDate)
+        } finally {
+            collector.cancel()
+        }
+    }
+
+    /** Every mode's data is inside the window, for months of 4, 5 and 6 weeks and at both ends of a month. */
+    @Test fun theWindow_coversEveryModeForAnySelection() = runBlocking {
+        val collector = launch(Dispatchers.Unconfined) { vm.state.collect() }
+        try {
+            for (sel in listOf(
+                LocalDate.of(2026, 2, 1), LocalDate.of(2026, 2, 28), LocalDate.of(2026, 1, 31), LocalDate.of(2026, 3, 1),
+                LocalDate.of(2026, 8, 31), LocalDate.of(2026, 10, 22), LocalDate.of(2026, 12, 31), LocalDate.of(2027, 1, 1),
+            )) {
+                vm.select(sel)
+                val s = awaitState { it.selected == sel && it.loadedFrom <= sel && it.loadedTo >= sel }
+                val ym = java.time.YearMonth.from(sel)
+                val week = vm.weekStart(sel)
+                fun covered(from: LocalDate, to: LocalDate, what: String) {
+                    assertThat(s.loadedFrom).isAtMost(from)
+                    assertThat(s.loadedTo).isAtLeast(to)
+                    assertThat(what).isNotEmpty()
+                }
+                covered(vm.gridStart(ym.minusMonths(1)), vm.gridStart(ym.plusMonths(1)).plusDays(41), "month pager, previous to next grid")
+                covered(week.minusWeeks(1), week.plusWeeks(2).minusDays(1), "week pager")
+                covered(sel.minusDays(1), sel.plusDays(1), "day pager")
+                covered(sel, sel.plusDays(CalendarViewModel.AGENDA_DAYS - 1L), "agenda")
+            }
         } finally {
             collector.cancel()
         }

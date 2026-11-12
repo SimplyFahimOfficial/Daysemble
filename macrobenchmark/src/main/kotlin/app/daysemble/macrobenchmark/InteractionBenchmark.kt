@@ -41,6 +41,16 @@ class InteractionBenchmark {
     /** The arrows step through months quickly; the grid pages each time. */
     @Test fun calendarFastNavigation() = run(tab = "calendar") { repeat(8) { device.findObject(By.desc("Next"))?.click() } }
 
+    /** Every Calendar view in turn, then quick back-and-forth taps that interrupt the transition before it ends. */
+    @Test fun calendarModeSwitching() = run(tab = "calendar") {
+        listOf("Week", "Day", "Agenda", "Month", "Agenda", "Week", "Month", "Day", "Month").forEach { name ->
+            device.findObject(By.text(name))?.click()
+            device.waitForIdle()
+        }
+        repeat(3) { listOf("Week", "Month").forEach { name -> device.findObject(By.text(name))?.click() } }
+        device.waitForIdle()
+    }
+
     /** Month to Week and back by dragging the grid vertically. */
     @Test fun monthWeekDrag() = run(tab = "calendar") {
         val w = device.displayWidth

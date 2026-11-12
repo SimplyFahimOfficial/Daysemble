@@ -61,8 +61,13 @@ class CalendarViewModel(
     private val mode = MutableStateFlow(handle.get<String>("mode")?.let { runCatching { CalendarMode.valueOf(it) }.getOrNull() } ?: CalendarMode.MONTH)
     private val selected = MutableStateFlow(handle.get<Long>("sel")?.let(LocalDate::ofEpochDay) ?: clock.today())
 
-    /** Load window derived from mode + selection; changes only when the visible span does. */
-    private val window = combine(mode, selected, time) { m, s, t -> Triple(windowFor(m, s), t.zone, t.firstDayOfWeek) }.distinctUntilChanged()
+    /**
+     * Load window derived from the selected month and the time settings; changes only when the month
+     * does. It does not depend on the mode: switching between Month, Week, Day and Agenda (or
+     * stepping through days and weeks) keeps the data that is loaded, so the mode changes in the same
+     * emission instead of after a new database query and recurrence expansion.
+     */
+    private val window = combine(selected, time) { s, t -> Triple(windowFor(s), t.zone, t.firstDayOfWeek) }.distinctUntilChanged()
 
     // Grouping, sorting and recurrence expansion run off the main thread, so a month change or a tab
     // switch never waits for them; the result is collected on the main thread as before.
@@ -103,15 +108,14 @@ class CalendarViewModel(
 
     fun setTaskCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -> Unit = {}) = viewModelScope.launch { tasks.setCompleted(id, done)?.let(onResult) }
 
-    private fun windowFor(m: CalendarMode, s: LocalDate): Pair<LocalDate, LocalDate> = when (m) {
-        // Previous..next month grids so swiping never shows empty cells.
-        CalendarMode.MONTH -> {
-            val ym = YearMonth.from(s)
-            gridStart(ym.minusMonths(1)) to gridStart(ym.plusMonths(1)).plusDays(41)
-        }
-        CalendarMode.WEEK -> weekStart(s).minusWeeks(1) to weekStart(s).plusWeeks(2).minusDays(1)
-        CalendarMode.DAY -> s.minusDays(1) to s.plusDays(1)
-        CalendarMode.AGENDA -> s to s.plusDays(AGENDA_DAYS - 1L)
+    /**
+     * From the previous month's grid (so swiping back never shows empty cells) to the end of the
+     * agenda range of the month's last day, which also covers the next month's grid, any week
+     * around the selection, and the days either side of it.
+     */
+    private fun windowFor(s: LocalDate): Pair<LocalDate, LocalDate> {
+        val ym = YearMonth.from(s)
+        return gridStart(ym.minusMonths(1)) to ym.atEndOfMonth().plusDays(AGENDA_DAYS - 1L)
     }
 
     fun weekStart(d: LocalDate): LocalDate = d.minusDays((((d.dayOfWeek.value - firstDayOfWeek().value) + 7) % 7).toLong())

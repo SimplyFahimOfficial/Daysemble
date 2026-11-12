@@ -116,6 +116,27 @@ class MotionStateTest {
         assertThat(morph.value).isEqualTo(1f)
     }
 
+    @Test fun morph_snapTo_stopsASettleAndJumpsToTheTarget() = runTest {
+        val clock = TestMonotonicFrameClock(this)
+        val morph = MorphState(1f)
+        val settle = launch(clock) { morph.settle(0f, 0f, tween(1_000)) }
+        advanceTimeBy(200); runCurrent()
+        launch(clock) { morph.snapTo(0f) }
+        advanceTimeBy(50); runCurrent()
+        assertThat(settle.isCompleted).isTrue()
+        // TestMonotonicFrameClock still runs the frame callback of an interrupted animation (the
+        // Android clock removes it), which can land after the jump; jump again once it has.
+        launch(clock) { morph.snapTo(0f) }
+        advanceTimeBy(50); runCurrent()
+        assertThat(morph.value).isEqualTo(0f)
+        advanceTimeBy(1_000); runCurrent()
+        assertThat(morph.value).isEqualTo(0f)
+        // And a later settle to the other end is not mistaken for the one that was interrupted.
+        launch(clock) { morph.settle(1f, 0f, tween(100)) }
+        advanceTimeBy(500); runCurrent()
+        assertThat(morph.value).isEqualTo(1f)
+    }
+
     // ---- Today day swipe --------------------------------------------------------------------
 
     @Test fun daySwipe_aCommittedSwipe_entersFromTheFarSideAndSettlesAtRest() = runTest {
