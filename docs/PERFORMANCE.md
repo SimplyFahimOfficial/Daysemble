@@ -12,6 +12,10 @@ per frame instead (see the rules at the top of `ui/theme/Motion.kt`).
   - `BaselineProfileGenerator`: start-up, the three tabs, scrolling, Settings and Quick Add.
   - `TabSwitchBenchmark`: frame timing while switching Today / Calendar / Tasks.
   - `ScrollBenchmark`: frame timing while scrolling the Today agenda and the Tasks list.
+  - `InteractionBenchmark`: frame timing for rapid tab taps, task check and uncheck, fast calendar
+    navigation, the Month/Week drag, the Today day swipe, Quick Add with the keyboard, search typing,
+    page navigation, a cancelled and a completed back gesture, and backgrounding. Run any of them with
+    `adb shell settings put global animator_duration_scale 0` for the reduced-motion floor.
 - The app's `benchmark` build type: the release build (R8, not debuggable) signed with the debug key.
   It seeds sample data and 150 extra tasks on first start (`BenchmarkSeed`, guarded by
   `BuildConfig.BENCHMARK_DATA`, which is `false` in debug and release) so lists have content. It is
@@ -37,5 +41,10 @@ benchmarks to compare `...WithBaselineProfile` against `...WithoutProfile`.
 
 ## Not measured yet
 
-No timings have been recorded for this module: the pass that added it had no device. The profile in
-the repo is the starter version, and the benchmark numbers are still to be taken.
+No timings have been recorded for this module: the passes that touched it had no device. The profile in
+the repo is the starter version, and the benchmark numbers are still to be taken. Two open questions
+for the first device run: the cost of the cross-fade between tabs (`TabSwitchBenchmark`), and whether
+precomposing the other tabs in `TabHost` shortens the first switch more than it delays the frames
+around start-up (run `TabSwitchBenchmark` with `startupMode = COLD` and a first switch to each tab,
+with and without the preload). Use a Perfetto trace of `InteractionBenchmark.monthWeekDrag` and
+`todayDaySwipe` to confirm that the Calendar and Today screens are not recomposed per frame.

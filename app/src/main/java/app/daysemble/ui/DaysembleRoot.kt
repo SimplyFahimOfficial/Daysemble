@@ -33,7 +33,8 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.rounded.Close
@@ -176,7 +177,8 @@ import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 import app.daysemble.ui.today.TodayRoute as TodayScreenRoute
-import kotlinx.coroutines.coroutineScope
+import androidx.compose.runtime.Stable
+import app.daysemble.ui.theme.DsMotion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -814,7 +816,9 @@ private fun MainScreen(
                 // The results cover the tabs, which stay composed (and keep their state) underneath.
                 val m = DsTheme.motion
                 val reveal by animateFloatAsState(if (searching) 1f else 0f, m.spring(), label = "searchReveal")
-                if (reveal > 0.001f || searching) {
+                // Composition only sees whether the results are on screen, not every frame of the fade.
+                val resultsShown by remember { derivedStateOf { reveal > 0.001f } }
+                if (resultsShown || searching) {
                     val shift = with(LocalDensity.current) { m.contentShift.toPx() }
                     Box(
                         Modifier
@@ -856,6 +860,7 @@ internal fun MainHeader(
     val m = DsTheme.motion
     // 0 = the search icon, 1 = the open field: the field grows out of the icon toward the start.
     val open by animateFloatAsState(if (searching) 1f else 0f, m.spring(), label = "searchOpen")
+    val fieldShown by remember { derivedStateOf { open > 0.001f } }
     val focus = remember { FocusRequester() }
     LaunchedEffect(searching) { if (searching) runCatching { focus.requestFocus() } }
     BoxWithConstraints(
@@ -886,13 +891,19 @@ internal fun MainHeader(
             )
             DsIconButton(Icons.Rounded.Settings, stringResource(R.string.cd_settings), onSettings)
         }
-        if (open > 0.001f || searching) {
+        if (fieldShown || searching) {
             HeaderSearchField(
                 query, onQuery, onCloseSearch, focus,
                 Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = settingsSlot)
-                    .requiredWidth(androidx.compose.ui.unit.lerp(Sizes.touch, fullWidth, open.coerceIn(0f, 1f)))
+                    // The width follows the animation in the layout phase: the header and the field
+                    // are not recomposed per frame, only the field is measured again.
+                    .layout { measurable, constraints ->
+                        val w = androidx.compose.ui.unit.lerp(Sizes.touch, fullWidth, open.coerceIn(0f, 1f)).roundToPx()
+                        val p = measurable.measure(Constraints(w, w, constraints.minHeight, constraints.maxHeight))
+                        layout(w, p.height) { p.place(0, 0) }
+                    }
                     .graphicsLayer { alpha = (open * 3f).coerceIn(0f, 1f) },
             )
         }
@@ -936,12 +947,12 @@ private fun HeaderSearchField(query: String, onQuery: (String) -> Unit, onClose:
  * Hosts the three tabs. Each tab is composed once and then kept (with its ViewModel, scroll
  * position and in-progress UI state); switching only changes which one is drawn on top. Tabs not
  * opened yet are composed in the background, one at a time, when the main thread is idle (never
- * during a scroll, a transition or the splash), so even the first switch has nothing to build.
+ * during the splash), so even the first switch has nothing to build.
  *
- * Switching is a Material fade-through, the same for every pair of tabs: the tab you leave fades
- * out, then the new one fades in from 92 % to full size (see [DsMotion.fadeThrough]). Alpha and
- * scale are read only in the draw phase, so nothing recomposes per frame, and a switch that
- * interrupts another continues from the current values. With motion off the new tab appears at once.
+ * Switching is a cross-fade: the new tab fades in over the old one, which stays fully drawn
+ * underneath, so no frame ever shows less content than the screens have at rest (see [TabFade]).
+ * The fade is read only in the draw phase, so nothing recomposes per frame. With motion off the
+ * new tab appears at once.
  */
 @Composable
 private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab) -> Unit) {
@@ -953,9 +964,9 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
     LaunchedEffect(Unit) {
         Tab.entries.forEach { t ->
             if (t.name in visited) return@forEach
-            // Wait for a moment with nothing else to do (no frame, input or animation queued).
-            delay(300)
-            awaitMainThreadIdle(timeoutMs = 3_000)
+            // Compose it only in a gap between frames, after the start-up work has settled.
+            delay(PRELOAD_DELAY_MS)
+            awaitMainThreadIdle()
             if (t.name !in visited) visited = visited + t.name
         }
     }
@@ -965,32 +976,8 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
     var seen by rememberSaveable { mutableStateOf(listOf(current.name)) }
     androidx.compose.runtime.SideEffect { if (current.name !in seen) seen = seen + current.name }
 
-    val alpha = remember { Tab.entries.associateWith { Animatable(if (it == current) 1f else 0f) } }
-    val scale = remember { Tab.entries.associateWith { Animatable(1f) } }
-    // Tabs being drawn, bottom to top. Usually just the current one; during a switch the ones
-    // fading out are under it.
-    var stack by remember { mutableStateOf(listOf(current)) }
-    LaunchedEffect(current) {
-        if (stack.last() == current) return@LaunchedEffect
-        val leaving = stack.filter { it != current }
-        stack = leaving + current
-        val incoming = alpha.getValue(current)
-        val grow = scale.getValue(current)
-        if (!m.enabled) {
-            incoming.snapTo(1f)
-        } else {
-            coroutineScope {
-                // Out first, then in: the tabs being left fade out while the new one waits.
-                leaving.forEach { t -> launch { alpha.getValue(t).animateTo(0f, m.fadeThroughOut()) } }
-                if (incoming.value == 0f) grow.snapTo(m.fadeThroughScale)
-                launch { grow.animateTo(1f, m.fadeThroughIn()) }
-                incoming.animateTo(1f, m.fadeThroughIn())
-            }
-        }
-        // Covered or faded completely: the others are hidden (and unplaced) until they are shown again.
-        Tab.entries.forEach { t -> if (t != current) { alpha.getValue(t).snapTo(0f); scale.getValue(t).snapTo(1f) } }
-        stack = listOf(current)
-    }
+    val fade = remember { TabFade(current) }
+    LaunchedEffect(current) { fade.show(current, m) }
     val currentTab by rememberUpdatedState(current)
     // A hidden tab stays composed, so it must not keep keyboard focus (typing would go on editing
     // it, e.g. the Tasks search) or take focus while hidden. Focus held by the tab you leave is
@@ -1009,11 +996,7 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                     Box(
                         Modifier
                             .layoutId(t)
-                            .graphicsLayer {
-                                this.alpha = alpha.getValue(t).value
-                                val sc = scale.getValue(t).value
-                                scaleX = sc; scaleY = sc
-                            }
+                            .graphicsLayer { this.alpha = fade.alphaOf(t, currentTab) }
                             // Opaque, so the tab being covered never shows through the finished one.
                             .background(c.background)
                             .then(if (t != current) Modifier.clearAndSetSemantics { } else Modifier)
@@ -1021,7 +1004,7 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                             .focusProperties { onEnter = { if (t != currentTab) cancelFocusChange() } }
                             .focusGroup(),
                     ) {
-                        app.daysemble.ui.components.VisibilityLifecycle(visible = t == current || t in stack || t.name !in seen) {
+                        app.daysemble.ui.components.VisibilityLifecycle(visible = t == current || t == fade.base || t == fade.top || t.name !in seen) {
                             holder.SaveableStateProvider(t.name) {
                                 CompositionLocalProvider(app.daysemble.ui.components.LocalTabVisible provides (t == current)) { content(t) }
                             }
@@ -1037,25 +1020,59 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
         // Every composed tab is measured (so a hidden tab is laid out and ready), only drawn ones are placed.
         val placeables = measurables.associate { (it.layoutId as Tab) to it.measure(child) }
         layout(w, h) {
-            // The current tab is always drawn, on top (also in the frame before its switch starts).
-            val order = stack.filter { it != currentTab } + currentTab
-            order.forEachIndexed { z, t -> placeables[t]?.place(0, 0, zIndex = z.toFloat()) }
+            // The current tab is always placed, on top (it is still transparent in the frame before its fade starts).
+            listOf(fade.base, fade.top, currentTab).distinct().forEachIndexed { z, t -> placeables[t]?.place(0, 0, zIndex = z.toFloat()) }
         }
     }
 }
 
+/** Wait before composing the tabs that aren't open yet, so the start-up frames are not delayed. */
+private const val PRELOAD_DELAY_MS = 300L
+
 /**
- * Suspends until the main thread has nothing queued (no frame, input or animation pending), or
- * [timeoutMs] passes. Used to do deferrable composition work where it can't delay a frame.
+ * Suspends until the main thread has nothing queued right now (an idle gap between frames). It
+ * waits as long as that takes: composing a whole tab when the thread is still busy would only
+ * delay the frame in progress, and a tab that isn't preloaded simply composes when it is opened.
  */
-private suspend fun awaitMainThreadIdle(timeoutMs: Long) {
-    kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
-        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-            val queue = android.os.Looper.getMainLooper().queue
-            val handler = android.os.MessageQueue.IdleHandler { if (cont.isActive) cont.resumeWith(Result.success(Unit)); false }
-            queue.addIdleHandler(handler)
-            cont.invokeOnCancellation { queue.removeIdleHandler(handler) }
+private suspend fun awaitMainThreadIdle() {
+    kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        val queue = android.os.Looper.getMainLooper().queue
+        val handler = android.os.MessageQueue.IdleHandler { if (cont.isActive) cont.resumeWith(Result.success(Unit)); false }
+        queue.addIdleHandler(handler)
+        cont.invokeOnCancellation { queue.removeIdleHandler(handler) }
+    }
+}
+
+/**
+ * The cross-fade between tabs: [top] fades in over [base], which is opaque underneath, so the picture
+ * is always `top * reveal + base * (1 - reveal)`. Tapping the tab underneath mid-fade swaps the two
+ * roles and mirrors [reveal] (the picture stays the same, and it now fades the other way); a third
+ * tab starts from the one that was arriving (a mid-fade blend jumps to it, at most one short fade).
+ * One animatable and one writer, so any sequence of taps ends on the last tab shown in full.
+ */
+@Stable
+internal class TabFade(first: Tab) {
+    var base by mutableStateOf(first)
+        private set
+    var top by mutableStateOf(first)
+        private set
+    private val reveal = Animatable(1f)
+
+    /** Alpha of [tab] now: [top] is revealed, [current] (switched to but not started yet) is not, the rest is opaque. */
+    fun alphaOf(tab: Tab, current: Tab): Float = when {
+        tab == top -> reveal.value
+        tab == current -> 0f
+        else -> 1f
+    }
+
+    suspend fun show(tab: Tab, m: DsMotion) {
+        if (tab != top) {
+            if (tab == base) reveal.snapTo(1f - reveal.value) else reveal.snapTo(0f)
+            base = top
+            top = tab
         }
+        if (m.enabled) reveal.animateTo(1f, m.tabFade()) else reveal.snapTo(1f)
+        base = tab
     }
 }
 
@@ -1104,13 +1121,6 @@ private fun BottomBar(
         // label's own colour instead turned the target white on the white bar before the pill got
         // there, and left the tab the pill passed over dark on black.) Read in the draw phase only.
         val index by animateFloatAsState(current.ordinal.toFloat(), m.indicator(), label = "tabIndicator")
-        // The tab you land on gives its icon a small bounce; the labels of the other tabs sit back.
-        val bounce = remember { Tab.entries.associateWith { Animatable(1f) } }
-        var lastTab by remember { mutableStateOf(current) }
-        LaunchedEffect(current) {
-            if (lastTab != current) with(m) { bounce.getValue(current).pop(peak = TAB_BOUNCE) }
-            lastTab = current
-        }
         val pill = c.inverse
         val presses = remember { Tab.entries.associateWith { MutableInteractionSource() } }
         val pillPath = remember { Path() }
@@ -1142,7 +1152,6 @@ private fun BottomBar(
                 Tab.entries.forEach { t ->
                     TabItem(
                         t, t == current, { onSelect(t) }, c.textSecondary, presses.getValue(t), Modifier.weight(1f),
-                        iconScale = { bounce.getValue(t).value },
                         labelAlpha = { TAB_REST_ALPHA + (1f - TAB_REST_ALPHA) * (1f - kotlin.math.abs(index - t.ordinal)).coerceIn(0f, 1f) },
                     )
                 }
@@ -1157,7 +1166,7 @@ private fun BottomBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Tab.entries.forEach { t ->
-                    TabLabel(t, c.onInverse, Modifier.weight(1f).pressScale(presses.getValue(t)), iconScale = { bounce.getValue(t).value })
+                    TabLabel(t, c.onInverse, Modifier.weight(1f).pressScale(presses.getValue(t)))
                 }
             }
         }
@@ -1191,7 +1200,7 @@ private fun AddFab(open: Boolean, sheet: app.daysemble.ui.add.AddSheetState, fab
 @Composable
 private fun TabItem(
     tab: Tab, selected: Boolean, onClick: () -> Unit, color: Color, press: MutableInteractionSource, modifier: Modifier = Modifier,
-    iconScale: () -> Float = { 1f }, labelAlpha: () -> Float = { 1f },
+    labelAlpha: () -> Float = { 1f },
 ) {
     TabLabel(
         tab, color,
@@ -1200,20 +1209,19 @@ private fun TabItem(
             .clip(Radii.pill)
             .testTag("tab_" + tab.name.lowercase())
             .selectable(selected = selected, interactionSource = press, indication = LocalIndication.current, role = Role.Tab, onClick = onClick),
-        iconScale, labelAlpha,
+        labelAlpha,
     )
 }
 
 /** The scroll distance (px) that hides or shows the FAB. */
 private const val FAB_SCROLL_SLOP = 2f
 
-/** Peak scale of a tab icon's bounce, and the opacity of a tab label that is not selected. */
-private const val TAB_BOUNCE = 1.18f
+/** The opacity of a tab label that is not selected. */
 private const val TAB_REST_ALPHA = 0.72f
 
 /** Icon and label of a tab; they never move or resize. */
 @Composable
-private fun TabLabel(tab: Tab, color: Color, modifier: Modifier = Modifier, iconScale: () -> Float = { 1f }, labelAlpha: () -> Float = { 1f }) {
+private fun TabLabel(tab: Tab, color: Color, modifier: Modifier = Modifier, labelAlpha: () -> Float = { 1f }) {
     Column(
         modifier
             .heightIn(min = Sizes.bottomBar - 16.dp)
@@ -1222,7 +1230,7 @@ private fun TabLabel(tab: Tab, color: Color, modifier: Modifier = Modifier, icon
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(tab.icon, null, tint = color, modifier = Modifier.size(20.dp).graphicsLayer { iconScale().let { scaleX = it; scaleY = it } })
+        Icon(tab.icon, null, tint = color, modifier = Modifier.size(20.dp))
         Text(
             stringResource(tab.label), style = DsTheme.type.caps, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.graphicsLayer { alpha = labelAlpha() },

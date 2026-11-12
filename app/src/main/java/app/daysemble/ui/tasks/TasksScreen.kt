@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectable
@@ -24,10 +23,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.semantics.Role
 import app.daysemble.ui.components.DsButton
 import app.daysemble.ui.components.DsButtonStyle
-import app.daysemble.ui.components.emptyActionEntrance
-import app.daysemble.ui.components.staggeredEntrance
 import app.daysemble.ui.theme.Radii
-import kotlinx.coroutines.delay
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -211,33 +207,6 @@ fun TasksScreen(
             }
         }
     }
-    // Completing: the row shows the strike sweeping across first, then the task is really completed
-    // and the row leaves the list (with an Undo from the app root). Ids in [completing] show as done.
-    val completing = remember { androidx.compose.runtime.mutableStateMapOf<String, Job>() }
-    val complete: (String, Boolean) -> Unit = { id, done ->
-        val pending = completing[id]
-        when {
-            // Tapped again before the sweep finished: nothing was completed yet, so just cancel.
-            pending != null -> { pending.cancel(); completing.remove(id) }
-            done && state.filter != TaskFilter.COMPLETED && m.enabled -> {
-                completing[id] = dragScope.launch {
-                    delay((m.medium + m.short).toLong())
-                    onToggle(id, true)
-                    completing.remove(id)
-                }
-            }
-            else -> onToggle(id, done)
-        }
-    }
-    // The first rows enter one after another, once, when the tab is first on screen with its data.
-    val visible = app.daysemble.ui.components.LocalTabVisible.current
-    var entrance by remember { mutableStateOf(true) }
-    LaunchedEffect(visible, state.isLoading) {
-        if (visible && !state.isLoading && entrance) {
-            delay((m.stagger * m.staggerMax + m.medium).toLong())
-            entrance = false
-        }
-    }
     val settleScroll = rememberUpdatedState(listState)
     LaunchedEffect(state.filter) { settleScroll.value.scrollToItem(0) }
     var showSort by rememberSaveable { mutableStateOf(false) }
@@ -289,7 +258,7 @@ fun TasksScreen(
                 StateMessage(
                     Icons.Rounded.TaskAlt, stringResource(title), Modifier.padding(top = Space.x3), body = stringResource(body),
                     action = if (state.filter == TaskFilter.OVERDUE || state.filter == TaskFilter.COMPLETED) null else ({
-                        DsButton(stringResource(R.string.add_task), onAdd, style = DsButtonStyle.Tint, modifier = Modifier.emptyActionEntrance(0))
+                        DsButton(stringResource(R.string.add_task), onAdd, style = DsButtonStyle.Tint)
                     }),
                 )
             }
@@ -373,7 +342,6 @@ fun TasksScreen(
         }
 
         if (!state.canReorder) {
-            val firstIndex = state.sections.runningFold(0) { acc, sec -> acc + sec.tasks.size }
             state.sections.forEachIndexed { si, section ->
                 if (section.bucket != null) {
                     item(key = "h:" + section.bucket.name) {
@@ -382,14 +350,12 @@ fun TasksScreen(
                 } else {
                     item(key = "h:flat") { Spacer(Modifier.size(Space.s)) }
                 }
-                itemsIndexed(section.tasks, key = { _, t -> t.id }) { i, task ->
+                items(section.tasks, key = { t -> t.id }) { task ->
                     SwipeableTaskRow(
                         task, now,
-                        completing = completing.containsKey(task.id), dimmed = dimmed,
-                        onToggle = { complete(task.id, it) }, onOpen = { onOpen(task.id) },
-                        modifier = Modifier
-                            .staggeredEntrance(firstIndex[si] + i, play = entrance, gate = visible)
-                            .then(itemMotion()),
+                        dimmed = dimmed,
+                        onToggle = { onToggle(task.id, it) }, onOpen = { onOpen(task.id) },
+                        modifier = itemMotion(),
                     )
                 }
             }
@@ -408,7 +374,6 @@ private val AutoScrollMaxSpeed = 900.dp // per second
 private fun SwipeableTaskRow(
     task: Task,
     now: Instant,
-    completing: Boolean,
     dimmed: Boolean,
     onToggle: (Boolean) -> Unit,
     onOpen: () -> Unit,
@@ -444,7 +409,6 @@ private fun SwipeableTaskRow(
         Box(Modifier.background(c.background)) {
             TaskRow(
                 task, now, onToggle = onToggle, onClick = onOpen,
-                forceCompleted = completing,
                 modifier = if (dimmed) Modifier.graphicsLayer { alpha = COMPLETED_ALPHA } else Modifier,
                 onLongClick = itemActions?.let { a -> { a.onTaskLongPress(task) } },
                 actions = listOf(

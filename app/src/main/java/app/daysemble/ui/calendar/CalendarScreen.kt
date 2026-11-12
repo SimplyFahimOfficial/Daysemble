@@ -3,8 +3,14 @@ package app.daysemble.ui.calendar
 import app.daysemble.ui.components.itemMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.animate
+import androidx.compose.foundation.MutatePriority
+import androidx.compose.foundation.MutatorMutex
+import androidx.compose.foundation.gestures.DragScope
+import androidx.compose.foundation.gestures.DraggableState
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -15,9 +21,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -34,14 +38,12 @@ import app.daysemble.ui.components.ContentSwap
 import app.daysemble.ui.components.DayMarks
 import app.daysemble.ui.components.DayPeek
 import app.daysemble.ui.components.DiscMap
-import app.daysemble.ui.components.LocalContentFresh
 import app.daysemble.ui.components.TASK_MARK
 import app.daysemble.ui.components.animateStateColor
 import app.daysemble.ui.components.discCell
 import app.daysemble.ui.components.discContainer
 import app.daysemble.ui.components.rememberHaptics
 import app.daysemble.ui.components.rememberSlidingDisc
-import app.daysemble.ui.components.staggeredEntrance
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.compose.foundation.background
@@ -133,11 +135,11 @@ fun CalendarRoute(
     val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     // 0 = Month, 1 = Week: one value for the control and for the vertical drag on the grid. The
     // grid's rows collapse to the selected week as it grows (see MonthWeekMode).
-    val morph = remember { Animatable(if (state.mode == CalendarMode.WEEK) 1f else 0f) }
+    val morph = remember { MorphState(if (state.mode == CalendarMode.WEEK) 1f else 0f) }
     LaunchedEffect(state.mode) {
         when (state.mode) {
-            CalendarMode.WEEK -> morph.animateTo(1f, m.spring())
-            CalendarMode.MONTH -> morph.animateTo(0f, m.spring())
+            CalendarMode.WEEK -> morph.settle(1f, 0f, m.spring())
+            CalendarMode.MONTH -> morph.settle(0f, 0f, m.spring())
             else -> Unit
         }
     }
@@ -239,7 +241,7 @@ private fun MonthWeekMode(
     state: CalendarUiState,
     now: Instant,
     vm: CalendarViewModel,
-    morph: Animatable<Float, AnimationVector1D>,
+    morph: MorphState,
     contentPadding: PaddingValues,
     onOpenEvent: (String, String) -> Unit,
     onOpenTask: (String) -> Unit,
@@ -259,26 +261,28 @@ private fun MonthWeekMode(
     }
     val showList by remember { derivedStateOf { morph.value < 0.999f } }
     val showWeek by remember { derivedStateOf { morph.value > 0.001f } }
+    // Only the crossing of the middle matters here, so the pager is not recomposed on every frame of the morph.
+    val monthSwipes by remember { derivedStateOf { morph.value < 0.5f } }
     var peek by remember { mutableStateOf<Pair<LocalDate, Rect?>?>(null) }
     // The drag covers the five rows that collapse.
     val travel = with(density) { (MONTH_ROW_HEIGHT * (MONTH_ROWS - 1)).toPx() }
-    var armed by remember { mutableStateOf(false) }
-    val drag = rememberDraggableState { dy ->
-        val next = (morph.value - dy / travel).coerceIn(0f, 1f)
-        scope.launch { morph.snapTo(next) }
-        val past = next > 0.5f
-        if (past != armed) { armed = past; haptics.tick() }
-    }
+    morph.travel = travel
+    // The finger and the settle share one owner (MorphState): grabbing the grid mid-settle stops it
+    // and continues from the live value.
+    val past by remember { derivedStateOf { morph.value > 0.5f } }
+    LaunchedEffect(past) { if (morph.dragging) haptics.tick() }
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.draggable(
-                drag, Orientation.Vertical,
+                morph, Orientation.Vertical,
                 onDragStopped = { velocity ->
-                    // Past halfway, or flung toward the other state: settle there.
+                    // Past halfway, or flung toward the other state: settle there, carrying the release velocity.
                     val toWeek = if (kotlin.math.abs(velocity) > 600f) velocity < 0f else morph.value > 0.5f
-                    armed = false
+                    // Started now, before the mode change below can ask for the same settle without the velocity.
+                    scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                        morph.settle(if (toWeek) 1f else 0f, -velocity / travel, m.spring())
+                    }
                     vm.setMode(if (toWeek) CalendarMode.WEEK else CalendarMode.MONTH)
-                    scope.launch { morph.animateTo(if (toWeek) 1f else 0f, m.spring()) }
                 },
             ),
         ) {
@@ -292,7 +296,7 @@ private fun MonthWeekMode(
                     )
                 }
             }
-            HorizontalPager(pager, beyondViewportPageCount = 1, userScrollEnabled = morph.value < 0.5f) { pg ->
+            HorizontalPager(pager, beyondViewportPageCount = 1, userScrollEnabled = monthSwipes) { pg ->
                 val ym = base.plusMonths((pg - CENTER).toLong())
                 MonthGrid(
                     ym, vm.gridStart(ym), state, collapse = { morph.value },
@@ -316,6 +320,52 @@ private fun MonthWeekMode(
     peek?.let { (d, r) -> DayPeek(d, r, onDismiss = { peek = null }, onAddEvent = { onCreateAt(it, null) }) }
 }
 
+/**
+ * The Month (0) to Week (1) morph, with one owner. The finger drives it as a [DraggableState] and
+ * [settle] animates it; both go through one mutex, so grabbing the grid stops a running settle and
+ * a new settle replaces the last, always from the live value. (Before, every drag delta launched its
+ * own coroutine that read a value its predecessor had not written yet, and the release started two
+ * animations of the same value, neither with the finger's velocity.)
+ */
+@Stable
+internal class MorphState(initial: Float) : DraggableState {
+    var value by mutableFloatStateOf(initial)
+        private set
+    /** Pixels of vertical drag for the whole morph; set by the screen. */
+    var travel = 1f
+    /** True while a finger holds the grid. */
+    var dragging by mutableStateOf(false)
+        private set
+    private var settlingTo: Float? = null
+    private val mutex = MutatorMutex()
+    private val scope = object : DragScope {
+        override fun dragBy(pixels: Float) = dispatchRawDelta(pixels)
+    }
+
+    override fun dispatchRawDelta(delta: Float) { value = (value - delta / travel).coerceIn(0f, 1f) }
+
+    override suspend fun drag(dragPriority: MutatePriority, block: suspend DragScope.() -> Unit) {
+        mutex.mutateWith(scope, dragPriority) {
+            dragging = true
+            settlingTo = null
+            try { block() } finally { dragging = false }
+        }
+    }
+
+    /** Animates to [to] (0 or 1) from the live value; a request for the target already under way is ignored. */
+    suspend fun settle(to: Float, velocity: Float, spec: AnimationSpec<Float>) {
+        if (settlingTo == to) return
+        mutex.mutate {
+            settlingTo = to
+            try {
+                animate(value, to, velocity, spec) { v, _ -> value = v.coerceIn(0f, 1f) }
+            } finally {
+                if (settlingTo == to) settlingTo = null
+            }
+        }
+    }
+}
+
 /** Height of one month row at normal font size; also how far a vertical drag travels per collapsed row. */
 private val MONTH_ROW_HEIGHT = 52.dp
 
@@ -331,7 +381,7 @@ private fun Modifier.morphInset(p: () -> Float): Modifier = layout { measurable,
 /** The width of the hour labels at the start of the time grid. */
 private val TIME_GUTTER = 52.dp
 
-/** The selected day's events and tasks under the month grid, entering in a stagger when the day changes. */
+/** The selected day's events and tasks under the month grid; another day replaces the list in one piece. */
 @Composable
 private fun DayList(
     state: CalendarUiState,
@@ -345,13 +395,10 @@ private fun DayList(
     val onCompleted = app.daysemble.ui.LocalTaskCompleted.current
     val p = LocalTimePrefs.current
     val itemActions = app.daysemble.ui.actions.LocalItemActions.current
-    // Another day replaces the list as a whole; its first rows then enter one after the other.
-    ContentSwap(state.selected, fade = false) {
-        val fresh = LocalContentFresh.current
-        val entering = remember { fresh }
+    ContentSwap(state.selected) {
         LazyColumn(contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + Space.xxl)) {
             item(key = "dayHeader") {
-                SectionHeader(dayLabel(state.selected, state.today, p), Modifier.padding(top = Space.l).staggeredEntrance(0, entering)) {
+                SectionHeader(dayLabel(state.selected, state.today, p), Modifier.padding(top = Space.l)) {
                     DsChip(stringResource(R.string.add_event), false, { onCreateAt(state.selected, null) }, role = Role.Button)
                 }
             }
@@ -361,23 +408,23 @@ private fun DayList(
                 item(key = "empty") {
                     Text(
                         stringResource(R.string.day_empty), style = DsTheme.type.bodySmall, color = DsTheme.colors.textSecondary,
-                        modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m).staggeredEntrance(1, entering),
+                        modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
                     )
                 }
             }
             val day = state.selected
-            itemsIndexed(evs, key = { _, e -> "e$day" + e.stableKey }) { i, e ->
+            items(evs, key = { e -> "e$day" + e.stableKey }) { e ->
                 AgendaEventCard(
                     e, now, onClick = { onOpenEvent(e.eventId, e.occurrenceKey) },
                     onLongClick = itemActions?.let { a -> { a.onEventLongPress(e) } },
                     showCountdown = state.selected == state.today,
-                    modifier = Modifier.staggeredEntrance(i + 1, entering).then(itemMotion(fadeOut = false)),
+                    modifier = itemMotion(fadeOut = false),
                 )
             }
-            itemsIndexed(tasks, key = { _, t -> "t$day" + t.id }) { i, t ->
+            items(tasks, key = { t -> "t$day" + t.id }) { t ->
                 AgendaTaskCard(
                     t, now, onToggle = { done -> vm.setTaskCompleted(t.id, done) { r -> if (done) onCompleted(t.id, r) } }, onClick = { onOpenTask(t.id) },
-                    modifier = Modifier.staggeredEntrance(evs.size + i + 1, entering).then(itemMotion(fadeOut = false)),
+                    modifier = itemMotion(fadeOut = false),
                     onLongClick = itemActions?.let { a -> { a.onTaskLongPress(t) } },
                 )
             }
@@ -400,7 +447,7 @@ private fun MonthGrid(
     // grid start, so they have their events.
     val haptics = rememberHaptics()
     val selectedIndex = ChronoUnit.DAYS.between(gridStart, state.selected).toInt().takeIf { it in 0 until MONTH_ROWS * 7 }
-    val disc = rememberSlidingDisc(selectedIndex?.let { it % 7 to it / 7 }, pop = true)
+    val disc = rememberSlidingDisc(selectedIndex?.let { it % 7 to it / 7 })
     val map = remember { DiscMap(7, MONTH_ROWS) }
     val ink = DsTheme.colors.inverse
     // The selected week stays when the rest collapses; a page without the selection keeps the first row.
@@ -418,7 +465,7 @@ private fun MonthGrid(
                     MonthCell(
                         d, inMonth = YearMonth.from(d) == ym, selected = d == state.selected, isToday = d == state.today,
                         events = state.byDate[d].orEmpty(), taskCount = state.tasksByDate[d]?.size ?: 0,
-                        index = w * 7 + i, map = map, column = i,
+                        index = w * 7 + i, map = map,
                         onClick = {
                             if (d != state.selected) haptics.tick()
                             onSelect(d)
@@ -454,7 +501,6 @@ private fun MonthCell(
     taskCount: Int,
     index: Int,
     map: DiscMap,
-    column: Int,
     onClick: () -> Unit,
     onLongClick: (Rect?) -> Unit,
     modifier: Modifier,
@@ -497,7 +543,7 @@ private fun MonthCell(
             Text(d.dayOfMonth.toString(), style = DsTheme.type.bodyStrong, color = number)
         }
         DayMarks(
-            marks, delayMs = column * m.markStagger, modifier = Modifier.padding(top = 3.dp), dim = !inMonth,
+            marks, modifier = Modifier.padding(top = 3.dp), dim = !inMonth,
             overflow = events.size + (if (taskCount > 0) 1 else 0) > 3,
         )
     }

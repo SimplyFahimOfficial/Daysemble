@@ -49,9 +49,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.daysemble.ui.components.rememberHaptics
-import app.daysemble.ui.components.staggeredEntrance
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -212,10 +213,13 @@ fun QuickAddSheet(
         }
     }
 
-    val focusDelay = DsTheme.motion.medium.toLong()
     AddSheetFrame(sheetState, open, onDismiss) {
-        // After the container has mostly grown, so the keyboard doesn't fight the transition.
-        LaunchedEffect(Unit) { delay(focusDelay); runCatching { focus.requestFocus() } }
+        // Once the container has mostly grown (at once with motion off), so the keyboard doesn't
+        // fight the transition.
+        LaunchedEffect(Unit) {
+            snapshotFlow { sheetState.progress.value }.first { it >= FOCUS_FROM }
+            runCatching { focus.requestFocus() }
+        }
         Column(
             Modifier
                 .fillMaxWidth()
@@ -228,7 +232,6 @@ fun QuickAddSheet(
                 options = AddKind.entries, selected = kind,
                 label = { stringResource(if (it == AddKind.TASK) R.string.kind_task else R.string.kind_event) },
                 onSelect = { kind = it },
-                modifier = Modifier.staggeredEntrance(0, baseDelay = ENTRANCE_DELAY),
             )
             Spacer(Modifier.height(Space.l))
             DsTextField(
@@ -236,7 +239,6 @@ fun QuickAddSheet(
                 placeholder = stringResource(if (kind == AddKind.TASK) R.string.quick_add_task_hint else R.string.quick_add_event_hint),
                 error = if (showError) stringResource(R.string.error_title_required) else null,
                 large = true, imeAction = ImeAction.Done, onImeAction = ::submit, focusRequester = focus,
-                modifier = Modifier.staggeredEntrance(1, baseDelay = ENTRANCE_DELAY),
             )
             Spacer(Modifier.height(Space.m))
             val motion = DsTheme.motion
@@ -245,7 +247,6 @@ fun QuickAddSheet(
                 // The options for the other kind fade through; the sheet's height follows smoothly.
                 transitionSpec = { motion.fadeThrough(size = motion.contentSize()) },
                 label = "addKind",
-                modifier = Modifier.staggeredEntrance(2, baseDelay = ENTRANCE_DELAY),
             ) { k ->
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     if (k == AddKind.TASK) {
@@ -278,7 +279,7 @@ fun QuickAddSheet(
             }
             Spacer(Modifier.height(Space.xl))
             FlowRow(
-                Modifier.fillMaxWidth().staggeredEntrance(3, baseDelay = ENTRANCE_DELAY),
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Space.s, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(Space.s),
             ) {
@@ -343,8 +344,8 @@ internal fun nextSlot(t: LocalTime): Pair<Long, Int> {
     return if (next >= 24 * 60) 1L to 0 else 0L to next
 }
 
-/** Frames in which the form starts to appear: after the container has begun to grow out of the FAB. */
-private const val ENTRANCE_DELAY = 60
+/** The open progress after which the title field takes focus (and the keyboard opens). */
+private const val FOCUS_FROM = 0.8f
 
 /**
  * The container of [QuickAddSheet]: a scrim, and a sheet at the bottom whose background is one
@@ -361,6 +362,7 @@ private fun AddSheetFrame(state: AddSheetState, open: Boolean, onDismiss: () -> 
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     var pull by remember { mutableFloatStateOf(0f) }
+    var pullSettle by remember { mutableStateOf<Job?>(null) }
     var back by remember { mutableFloatStateOf(0f) }
     var host by remember { mutableStateOf(IntSize.Zero) }
     var hostPos by remember { mutableStateOf(Offset.Zero) }
@@ -455,9 +457,11 @@ private fun AddSheetFrame(state: AddSheetState, open: Boolean, onDismiss: () -> 
                     .draggable(
                         rememberDraggableState { pull = (pull + it).coerceAtLeast(0f) },
                         Orientation.Vertical,
+                        // Caught mid-return: the finger takes over from where the sheet is.
+                        onDragStarted = { pullSettle?.cancel() },
                         onDragStopped = { velocity ->
                             if (pull > pullClosePx || velocity > pullVelocityPx) dismiss()
-                            else scope.launch { animate(pull, 0f, animationSpec = m.spring()) { v, _ -> pull = v } }
+                            else pullSettle = scope.launch { animate(pull, 0f, initialVelocity = velocity, animationSpec = m.spring()) { v, _ -> pull = v } }
                         },
                     ),
                 contentAlignment = Alignment.Center,

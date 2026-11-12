@@ -5,7 +5,12 @@ import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.MutatePriority
+import androidx.compose.foundation.MutatorMutex
+import androidx.compose.foundation.gestures.DragScope
+import androidx.compose.foundation.gestures.DraggableState
+import androidx.compose.runtime.derivedStateOf
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.layout.onSizeChanged
@@ -115,7 +120,6 @@ import app.daysemble.ui.components.SectionHeader
 import app.daysemble.ui.components.StateMessage
 import app.daysemble.ui.components.TaskRow
 import app.daysemble.ui.components.WeekStrip
-import app.daysemble.ui.components.emptyActionEntrance
 import app.daysemble.ui.components.itemMotion
 import app.daysemble.ui.daysembleViewModel
 import app.daysemble.ui.format.Fmt
@@ -637,14 +641,8 @@ private fun AgendaPanel(
                         modifier = Modifier.padding(top = Space.l).then(itemMotion()),
                         action = {
                             Row(horizontalArrangement = Arrangement.spacedBy(Space.s)) {
-                                DsButton(
-                                    stringResource(R.string.add_event), { onAddEvent(state.date) },
-                                    Modifier.emptyActionEntrance(0), style = DsButtonStyle.Tint,
-                                )
-                                DsButton(
-                                    stringResource(R.string.add_task), { onAddTask(state.date) },
-                                    Modifier.emptyActionEntrance(1), style = DsButtonStyle.Tint,
-                                )
+                                DsButton(stringResource(R.string.add_event), { onAddEvent(state.date) }, style = DsButtonStyle.Tint)
+                                DsButton(stringResource(R.string.add_task), { onAddTask(state.date) }, style = DsButtonStyle.Tint)
                             }
                         },
                     )
@@ -861,10 +859,43 @@ private class AgendaScroll(private val panel: OverviewPanel, private val started
 
 // ---- Swiping the day ----------------------------------------------------------------------------
 
-/** How far the agenda has been dragged sideways (px), shared with the header so it can trail behind it. */
+/**
+ * How far the agenda has been dragged sideways (px), shared with the header so it can trail behind
+ * it. The finger and the glide that follows it write [offset] through one mutex, so grabbing the
+ * content mid-glide stops the glide and carries on from where the content is.
+ */
 @Stable
-class DaySwipeState {
+class DaySwipeState : DraggableState {
     var offset by mutableFloatStateOf(0f)
+        private set
+    /** True while a finger holds the content. */
+    var dragging by mutableStateOf(false)
+        private set
+    private val mutex = MutatorMutex()
+    private val scope = object : DragScope {
+        override fun dragBy(pixels: Float) = dispatchRawDelta(pixels)
+    }
+
+    override fun dispatchRawDelta(delta: Float) { offset += delta * RESISTANCE }
+
+    override suspend fun drag(dragPriority: MutatePriority, block: suspend DragScope.() -> Unit) {
+        mutex.mutateWith(scope, dragPriority) {
+            dragging = true
+            try { block() } finally { dragging = false }
+        }
+    }
+
+    /**
+     * Lets go. First [arrived] runs (for a committed swipe: wait until the new day is on screen, true
+     * if it came); if it did, the content restarts on the far side at [enterFrom] (the new day arrives
+     * in the direction of the swipe), then it glides to rest with [velocity] (px/s of the finger).
+     */
+    suspend fun glide(spec: AnimationSpec<Float>, velocity: Float = 0f, enterFrom: Float = 0f, arrived: suspend () -> Boolean = { false }) {
+        mutex.mutate {
+            if (arrived() && enterFrom != 0f) offset = enterFrom
+            animate(offset, 0f, initialVelocity = velocity * RESISTANCE, animationSpec = spec) { v, _ -> offset = v }
+        }
+    }
 
     companion object {
         /** The header moves this share of the content's drag: a slight parallax. */
@@ -874,14 +905,20 @@ class DaySwipeState {
         const val COMMIT_VELOCITY = 900
         /** Resistance while dragging: the content follows the finger by this share. */
         const val RESISTANCE = 0.85f
+        /** The new day starts this share of the width away, on the side the swipe was heading to, and glides in. */
+        const val ENTER_SHARE = 0.12f
+        /** How long a committed swipe waits for the new day to arrive before the old one springs back. */
+        const val ARRIVAL_TIMEOUT_MS = 300L
     }
 }
 
 /**
  * A horizontal swipe on the agenda changes the day: the content follows the finger (with a little
- * resistance) and the header trails it at [DaySwipeState.PARALLAX]; past the threshold (one tick) it
- * slides off and the next or previous day fades in, otherwise it springs back. The week strip
- * follows the selected date by itself. Vertical scrolling and the panel drag are untouched.
+ * resistance) and the header trails it at [DaySwipeState.PARALLAX]. Past the threshold (one tick) or
+ * with enough speed the new date is selected at once, on release; the old content waits where the
+ * finger left it until the new day arrives, which then glides in from the side the swipe was heading
+ * to. Otherwise it springs back with the release velocity. The week strip follows the selected date
+ * by itself. Vertical scrolling and the panel drag are untouched.
  */
 @Composable
 private fun DaySwipe(state: DaySwipeState, date: LocalDate, onSelect: (LocalDate) -> Unit, content: @Composable () -> Unit) {
@@ -891,32 +928,34 @@ private fun DaySwipe(state: DaySwipeState, date: LocalDate, onSelect: (LocalDate
     val density = LocalDensity.current
     val velocityPx = with(density) { DaySwipeState.COMMIT_VELOCITY.dp.toPx() }
     var width by remember { mutableIntStateOf(0) }
-    var armed by remember { mutableStateOf(false) }
     val select by androidx.compose.runtime.rememberUpdatedState(onSelect)
     val shown by androidx.compose.runtime.rememberUpdatedState(date)
+    val past by remember { derivedStateOf { abs(state.offset) > width * DaySwipeState.COMMIT_SHARE } }
+    LaunchedEffect(past) { if (past && state.dragging) haptics.tick() }
     Box(
         Modifier
             .fillMaxSize()
             .onSizeChanged { width = it.width }
             .draggable(
-                rememberDraggableState { delta ->
-                    state.offset += delta * DaySwipeState.RESISTANCE
-                    val past = abs(state.offset) > width * DaySwipeState.COMMIT_SHARE
-                    if (past != armed) { armed = past; if (past) haptics.tick() }
-                },
-                Orientation.Horizontal,
+                state, Orientation.Horizontal,
                 onDragStopped = { velocity ->
-                    armed = false
-                    // Dragging toward the start edge (left in LTR) goes to the next day.
-                    val toward = if (state.offset != 0f) -sign(state.offset) else -sign(velocity)
-                    val next = if (rtl) -toward else toward
-                    val commit = abs(state.offset) > width * DaySwipeState.COMMIT_SHARE || abs(velocity) > velocityPx
-                    if (commit && abs(state.offset) > 0f) {
-                        animate(state.offset, sign(state.offset) * width * 0.5f, animationSpec = m.snappy()) { v, _ -> state.offset = v }
-                        select(shown.plusDays(next.toLong()))
-                        state.offset = 0f
+                    val released = state.offset
+                    val commit = released != 0f && (abs(released) > width * DaySwipeState.COMMIT_SHARE || abs(velocity) > velocityPx)
+                    if (commit) {
+                        // Dragging toward the start edge (left in LTR) goes to the next day.
+                        val toward = -sign(released)
+                        val before = shown
+                        select(before.plusDays((if (rtl) -toward else toward).toLong()))
+                        state.glide(
+                            m.snappy(), enterFrom = -released.sign * width * DaySwipeState.ENTER_SHARE,
+                            arrived = {
+                                kotlinx.coroutines.withTimeoutOrNull(DaySwipeState.ARRIVAL_TIMEOUT_MS) {
+                                    snapshotFlow { shown }.first { it != before }
+                                } != null
+                            },
+                        )
                     } else {
-                        animate(state.offset, 0f, animationSpec = m.spring()) { v, _ -> state.offset = v }
+                        state.glide(m.spring(), velocity)
                     }
                 },
             )

@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -73,11 +74,14 @@ class SearchViewModel(
     private val clock: AppClock,
     private val time: kotlinx.coroutines.flow.StateFlow<app.daysemble.core.time.TimeContext>,
     private val handle: SavedStateHandle,
+    private val compute: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
 ) : ViewModel() {
     private fun zone(): ZoneId = time.value.zone
     private val query = MutableStateFlow(handle["q"] ?: "")
     private val scope = MutableStateFlow(handle.get<String>("s")?.let { runCatching { SearchScope.valueOf(it) }.getOrNull() } ?: SearchScope.ALL)
 
+    // The recurrence expansion of the matching events and the filtering and sorting of all tasks run
+    // on [compute]; a newer query cancels the one still being computed (flatMapLatest / mapLatest).
     val state: StateFlow<SearchUiState> = combine(query.debounce(150), scope, time) { q, s, _ -> q to s }.flatMapLatest { (q, s) ->
         if (q.isBlank()) flowOf(SearchUiState(q, s))
         else combine(events.search(q, clock.now(), zone()), tasks.allTasks) { evs, all ->
@@ -102,7 +106,7 @@ class SearchViewModel(
                 }.sortedWith(TaskRules.comparator(app.daysemble.data.prefs.TaskSort.DUE, z)).take(200),
             )
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState(query.value, scope.value))
+    }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState(query.value, scope.value))
 
     val rawQuery: StateFlow<String> = query
 

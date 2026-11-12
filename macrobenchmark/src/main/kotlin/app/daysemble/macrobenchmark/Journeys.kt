@@ -6,7 +6,7 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.Until
 
 const val PACKAGE = "app.daysemble"
-private const val WAIT_MS = 10_000L
+internal const val WAIT_MS = 10_000L
 
 /** Starts the app and waits until Today is showing its agenda (the benchmark build seeds sample data). */
 fun MacrobenchmarkScope.launchToToday() {

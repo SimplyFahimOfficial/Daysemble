@@ -49,8 +49,8 @@ import app.daysemble.ui.theme.Radii
 import app.daysemble.ui.theme.Sizes
 import app.daysemble.ui.theme.Space
 
-/** Peak scale of the check circle's pop. */
-private const val CHECK_POP = 1.2f
+/** How much larger the check circle is, at most, halfway through filling or emptying. */
+private const val CHECK_POP = 0.12f
 
 /** Filter / choice chip. Selected = inverted (ink on cream / cream on ink). */
 @Composable
@@ -221,8 +221,12 @@ private fun Modifier.hapticCheckbox(checked: Boolean, onCheckedChange: (Boolean)
     })
 }
 
+/** The check circle's scale for a fill [progress]: 1 when empty or full, largest halfway; always 1 without motion. */
+internal fun checkScale(progress: Float, motion: Boolean): Float =
+    if (motion) 1f + CHECK_POP * kotlin.math.sin(Math.PI * progress).toFloat() else 1f
+
 /**
- * Round task checkbox. Completion fills the circle and draws the tick in 120 ms.
+ * Round task checkbox. Completion fills the circle and draws the tick in 100 ms.
  * [dashed] renders the "optional / habit" style seen in the references (used for subtasks).
  */
 @Composable
@@ -236,14 +240,9 @@ fun DsCheck(
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
-    val progress by animateFloatAsState(if (checked) 1f else 0f, m.standard(m.short), label = "check")
-    // A small pop when it becomes checked (not for a row that is already checked when it appears).
-    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
-    val wasChecked = remember { booleanArrayOf(checked) }
-    androidx.compose.runtime.LaunchedEffect(checked) {
-        if (checked && !wasChecked[0]) with(m) { pop.pop(peak = CHECK_POP) }
-        wasChecked[0] = checked
-    }
+    val progress by animateFloatAsState(if (checked) 1f else 0f, m.feedback(), label = "check")
+    // The small pop follows the fill (zero when it is empty or full), so it is always back to 1 where
+    // the fill rests, however quickly the box is toggled; there is no separate animation to cancel.
     Box(
         modifier
             .size(Sizes.touch)
@@ -254,7 +253,12 @@ fun DsCheck(
         contentAlignment = Alignment.Center,
     ) {
         val ringColor = if (checked) tint else c.outlineStrong
-        Canvas(Modifier.size(Sizes.checkbox).graphicsLayer { scaleX = pop.value; scaleY = pop.value }) {
+        Canvas(
+            Modifier.size(Sizes.checkbox).graphicsLayer {
+                val k = checkScale(progress, m.enabled)
+                scaleX = k; scaleY = k
+            },
+        ) {
             val stroke = 1.75.dp.toPx()
             val r = size.minDimension / 2 - stroke / 2
             drawCircle(

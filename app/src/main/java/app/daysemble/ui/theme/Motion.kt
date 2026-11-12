@@ -4,8 +4,6 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
@@ -29,29 +27,27 @@ import androidx.compose.ui.unit.dp
  * Daysemble's motion language. Every animation in the app picks one of these roles instead of its
  * own duration and curve.
  *
- * Tokens: durations [short] 150 / [medium] 250 / [long] 350 ms, [stagger] 40 ms (dots: [markStagger]
- * 20 ms), the [spring] (damping 0.8, medium-low stiffness) and the [snappy] spring (damping 0.8,
- * medium stiffness) for pills, thumbs and markers. [enabled] is the one flag every animation checks.
+ * Tokens: durations [short] 150 / [medium] 250 / [long] 350 ms, the [spring] (damping 0.8,
+ * medium-low stiffness) and the [snappy] spring (damping 0.8, medium stiffness) for pills, thumbs
+ * and markers. [enabled] is the one flag every animation checks.
  *
  * | Role                      | Spec                                   | Where                                    |
  * |---------------------------|----------------------------------------|------------------------------------------|
  * | Feedback                  | [feedback] 100 ms, [snappy]            | press, selection pills, toggles, chips   |
- * | Primary tabs              | [fadeThroughIn] / [fadeThroughOut]     | Today / Calendar / Tasks (TabHost)       |
+ * | Primary tabs              | [tabFade] cross-fade, old tab stays    | Today / Calendar / Tasks (TabHost)       |
  * | Open / close a page       | [sharedAxisEnter]/[sharedAxisExit]     | Settings and its pages, editors, details |
  * | Quick Add                 | one container, [spring]                | + button grows into the sheet and back   |
  * | Theme change              | snapshot cross-fade, draw phase only   | DaysembleTheme                           |
  * | Content change in place   | [fadeThrough], [titleSlide]            | day summary, calendar title and view     |
  * | List for another day      | ContentSwap: at once, fade + [contentShift] | Today agenda, month day list, Tasks filters |
- * | Items entering            | staggeredEntrance ([stagger])          | Tasks rows, day list, Quick Add form     |
  * | Rows changing in a list   | itemMotion (animateItem)               | completion, add, reorder, sort           |
- * | Selected date             | sliding disc on [snappy], pop [popScale] | week strip, month grid                 |
+ * | Selected date             | sliding disc on [snappy]               | week strip, month grid                   |
  * | Month and Week            | one [spring] value, control and drag   | Calendar grid rows collapse to the week  |
  * | Expand / collapse         | [expandIn]/[collapseOut]               | free-time card, subtasks, field errors   |
  * | Overview panel drag       | finger, then [settle] with its velocity| Today (moved in placement, not measured) |
  * | Day swipe                 | finger, then [snappy] / [spring]       | Today agenda, header trails by 20 %      |
  * | Reordered row drop        | [settle] from where it was let go      | Tasks › List order (lift [liftScale])    |
  * | Swipe actions             | finger; colour and icon follow the drag| Tasks rows (complete / reschedule)       |
- * | Breathing                 | [breatheScale] over [breathePeriod]    | empty-state icons                        |
  * | Bottom scroll edge        | static fade, no motion                 | content under the floating bottom bar    |
  *
  * Haptics (the system haptic setting applies, see Haptics.kt): a tick for day, chip and segment
@@ -71,7 +67,11 @@ import androidx.compose.ui.unit.dp
  * - One container animates a given screen: the NavHost for pages, TabHost for tabs. Content inside
  *   them never adds its own screen-sized enter/exit on top.
  * - A list whose content is replaced (another day, another filter) is swapped in one piece; per-row
- *   motion is only for rows that change within the same list.
+ *   motion is only for rows that change within the same list. Nothing is staggered, and nothing
+ *   loops while a screen is at rest.
+ * - Every animated property has one writer and converges to the latest state: transient effects
+ *   (a pop, a bounce) are derived from a target-driven value, not run as a separate coroutine that
+ *   a new input can cancel half way and leave scaled.
  *
  * [enabled] is false when the Appearance "Motion" setting is Reduced, or Android's animator
  * duration scale is 0 ("Remove animations"); then only short fades remain: no movement, scaling or
@@ -93,14 +93,6 @@ data class DsMotion(val reduced: Boolean = false) {
     /** Screen transitions. */
     val long: Int get() = if (reduced) 150 else 350
 
-    /** Delay between neighbouring items of a staggered entrance. */
-    val stagger: Int get() = if (reduced) 0 else 40
-    /** At most this many items take part in a staggered entrance; the rest appear with the last one. */
-    val staggerMax: Int get() = 8
-    /** Stagger of the small day dots under dates. */
-    val markStagger: Int get() = if (reduced) 0 else 20
-    fun staggerDelay(index: Int): Int = index.coerceIn(0, staggerMax) * stagger
-
     /** Distance of shared-axis screen transitions. */
     val axisDistance get() = 30.dp
 
@@ -109,12 +101,8 @@ data class DsMotion(val reduced: Boolean = false) {
     /** The same for a list whose filter changed. */
     val listShift get() = 8.dp
 
-    /** Resting size of a pop (selected day) at its peak, and the lift of a held row. */
-    val popScale: Float get() = 1.15f
+    /** The lift of a held row. */
     val liftScale: Float get() = 1.03f
-    /** Icons and empty-state artwork breathe between 1.0 and this, once per [breathePeriod]. */
-    val breatheScale: Float get() = 1.04f
-    val breathePeriod: Int get() = 3_000
 
     /**
      * Standard spring: layout-ish movement (cards, sheets, chips sliding). Damping 0.8, medium-low
@@ -127,13 +115,6 @@ data class DsMotion(val reduced: Boolean = false) {
     /** Snappy spring for pills, thumbs and small markers: same damping, faster (response about 0.16 s). */
     fun <T> snappy(): FiniteAnimationSpec<T> =
         if (reduced) snap() else spring(dampingRatio = DAMPING, stiffness = Spring.StiffnessMedium)
-
-    /** Scales the button-ish things in and out; a pop is [peak] then back to 1 (see [pop]). */
-    suspend fun Animatable<Float, AnimationVector1D>.pop(peak: Float = popScale) {
-        if (reduced) return
-        animateTo(peak, snappy())
-        animateTo(1f, snappy())
-    }
 
     fun <T> enter(duration: Int = medium, delay: Int = 0): FiniteAnimationSpec<T> = tween(duration, delay, EmphasizedDecelerate)
     fun <T> exit(duration: Int = short, delay: Int = 0): FiniteAnimationSpec<T> = tween(duration, delay, EmphasizedAccelerate)
@@ -174,14 +155,8 @@ data class DsMotion(val reduced: Boolean = false) {
 
     // ---- Primary tabs (see TabHost in DaysembleRoot) --------------------------------------------
 
-    /**
-     * Material fade-through: the outgoing tab fades out in [fadeThroughOutMillis], the incoming one
-     * then fades in over [medium] ms while growing from [fadeThroughScale] to full size.
-     */
-    val fadeThroughOutMillis: Int get() = (short * 0.6f).toInt()
-    val fadeThroughScale: Float get() = 0.92f
-    fun fadeThroughOut(): FiniteAnimationSpec<Float> = tween(fadeThroughOutMillis, easing = Standard)
-    fun fadeThroughIn(): FiniteAnimationSpec<Float> = tween(medium, delayMillis = fadeThroughOutMillis, easing = EmphasizedDecelerate)
+    /** The incoming tab fades in over the outgoing one, which stays fully drawn underneath: no frame is emptier than the screens at rest. */
+    fun tabFade(): FiniteAnimationSpec<Float> = tween(short, easing = Standard)
 
     // ---- Content replaced inside a screen -------------------------------------------------------
 
@@ -228,35 +203,32 @@ data class DsMotion(val reduced: Boolean = false) {
     fun collapseOut(): ExitTransition =
         if (reduced) fadeOut(standard(short)) else fadeOut(tween(90, easing = EmphasizedAccelerate)) + shrinkVertically(standard(medium))
 
-    // ---- Screen transitions (NavMotion) ---------------------------------------------------------
+    // ---- Pages (NavMotion) -------------------------------------------------------------------------
     //
-    // Shared axis X: the page being left fades out and drifts [axisDistance] one way while the new
-    // page fades in (after the old one is gone) and drifts in from the other. Going back mirrors it.
-    // The slide is a spring, so a tap during the transition reverses it from where it is. Offsets
-    // flip in right-to-left layouts. Reduced motion: the new page fades in over the old one, which
-    // stays drawn underneath until it is covered.
+    // A page opens as a push over a still page: the new page slides in [axisDistance] from the end edge
+    // while it fades in, and the page under it doesn't move or fade, so no frame is emptier than the
+    // screens at rest. Back mirrors it: the closing page slides out and fades over the page beneath,
+    // which was complete all along. The slide is a spring, so a tap during the transition reverses it
+    // from where it is. Offsets flip in right-to-left layouts. Reduced motion: a short fade in, and
+    // the page leaves at once.
 
-    /** A page arriving: [forward] from the end edge, or back (the page being revealed) from the start edge. */
+    /** A page arriving [forward]; going back, the page being revealed is already complete and still. */
     fun sharedAxisEnter(forward: Boolean, rtl: Boolean, density: Density): EnterTransition {
-        if (reduced) return fadeIn(tween(short, easing = Standard))
-        val d = axisPx(forward, rtl, density, leaving = false)
-        return fadeIn(fadeThroughIn()) + slideInHorizontally(spring()) { d }
+        if (reduced) return if (forward) fadeIn(tween(short, easing = Standard)) else EnterTransition.None
+        if (!forward) return EnterTransition.None
+        return fadeIn(tween(short, easing = Standard)) + slideInHorizontally(spring()) { axisPx(rtl, density) }
     }
 
-    /** A page leaving: covered by a new page ([forward]), or closed by Back. */
+    /** A page leaving: covered by a new page ([forward]), which it waits for unchanged, or closed by Back. */
     fun sharedAxisExit(forward: Boolean, rtl: Boolean, density: Density): ExitTransition {
-        // An alpha that stays 1 keeps the page composed and drawn until the new one has covered it.
-        if (reduced) return fadeOut(tween(short), targetAlpha = 1f)
-        val d = axisPx(forward, rtl, density, leaving = true)
-        return fadeOut(fadeThroughOut()) + slideOutHorizontally(spring()) { d }
+        // An alpha that stays 1 keeps the page composed and drawn until the new one has faded in over it.
+        if (forward || reduced) return fadeOut(tween(short), targetAlpha = 1f)
+        return fadeOut(tween(short, easing = Standard)) + slideOutHorizontally(spring()) { axisPx(rtl, density) }
     }
 
-    private fun axisPx(forward: Boolean, rtl: Boolean, density: Density, leaving: Boolean): Int {
-        val dist = with(density) { axisDistance.roundToPx() }
-        // Forward: arrives from +x, the old page leaves toward -x. Back: the revealed page arrives from -x, the closing one leaves toward +x.
-        val sign = if (forward == leaving) -1 else 1
-        return sign * dist * if (rtl) -1 else 1
-    }
+    /** The end edge: where a page arrives from and leaves toward. */
+    private fun axisPx(rtl: Boolean, density: Density): Int =
+        with(density) { axisDistance.roundToPx() } * if (rtl) -1 else 1
 
     /**
      * The page under the back gesture: shrinks to [backScale] and drifts away from the edge the
