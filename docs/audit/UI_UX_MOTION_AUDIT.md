@@ -155,3 +155,53 @@ Findings are from the code path plus a Robolectric reproduction where noted.
 | N2 | The bottom-bar pill used `indicator()` with `StiffnessMediumLow` (response ≈ 0.31 s, 83 % of the way when the 160 ms tab fade ends). The tab had arrived while the pill was still gliding. | `indicator()` uses `StiffnessMedium` (response ≈ 0.16 s, about 98 % at 160 ms). Shared with the segmented control and step dots, so all selection indicators keep one speed. | Spring maths; not measured on a device | Done |
 | N3 | Tab items had a ripple only; every other control in the app also scales slightly on press. | `pressScale` on each tab, shared by the dark and light label copies so both shrink together. Off with reduced motion. | Code path | Done |
 | N4 | The snackbar's lift above the bar was an animated `padding`, read in composition, so the content around it recomposed on every frame of each page open and close. | Same animation applied as an `offset { }`, read in placement. | Code path | Done |
+
+## 5. Interruption, navigation and performance pass (November 2026)
+
+Branch `main` at `5aac787`. No device or emulator was available (no KVM), so there are still no frame timings from hardware.
+Evidence levels: **Confirmed** is a code path read, or a test that fails on the old code and passes now. **Render** is a Robolectric native-graphics frame series, which shows what each frame contains, not how smooth it is in real time.
+
+### Confirmed problems and fixes
+
+| # | Problem (root cause) | Fix | Evidence |
+|---|---|---|---|
+| P1 | Every tab switch and page open/close drew **one fully blank frame**. The tab you left faded out (90 ms) before the new one faded in, and a page did the same. | Tabs cross-fade: the new tab fades in over the old one, which stays drawn (`TabFade`, 150 ms). Pages push in over a still page and fade in; Back slides out and fades over the revealed page. | Render: `FrameSeriesProbe` (below). `TransitionFramesTest` now allows no dipping frame |
+| P2 | Rapid taps left the bottom-bar icon scaled. The icon bounce was a separate coroutine per tab; switching again cancelled it half way and nothing restored it. | Bounce removed. | Code path |
+| P3 | Same bug in the check circle (pop cancelled by the next toggle) and the selected-date disc (pop cancelled by the next tap). | The check circle's pop is derived from the fill progress (`checkScale`: 1 where the fill rests). The date disc's pop is removed. | `MotionStateTest.checkScale_…` |
+| P4 | Completing a task in Tasks waited 400 ms (`delay(medium + short)`) before saving, with a `Job` map to cancel it on a second tap. | The tap commits at once; the row's strike and check animate toward the saved state. Undo is unchanged. | `TaskCompletionTimingTest`: 25 frames on the old code, 12 allowed, passes now |
+| P5 | The Calendar's Month/Week morph had several writers. Every drag delta launched its own coroutine (`snapTo`) that read a value its predecessor had not written yet, so deltas were lost. On release the drag and the mode change each started an animation of the same value, neither with the finger's velocity. `userScrollEnabled = morph.value < 0.5f` recomposed the whole mode on every frame. | `MorphState` is the `DraggableState` and the settle in one object behind one `MutatorMutex`: grabbing the grid stops a settle, a settle starts from the live value with the release velocity, a repeated request for the same target is ignored. The pager flag is a `derivedStateOf`. | `MotionStateTest.morph_…` |
+| P6 | The Today day swipe slid the old day off, *then* selected the new date (about 200 ms later), then snapped the offset to 0. A new drag during that animation fought it. | `DaySwipeState` has one mutex like the morph. The date is selected on release; the old content waits where the finger left it until the new day arrives (300 ms limit, then it springs back), then the new day glides in from the side the swipe was heading to. | `MotionStateTest.daySwipe_…` |
+| P7 | Search ran the recurrence expansion of matching events (±365 days) and the filtering and sorting of all tasks on the main thread (`viewModelScope` collects on Main). | `flowOn(compute)` like the other view models; `flatMapLatest` / `mapLatest` still cancel a superseded query. | Code path; the existing search UI tests pass |
+| P8 | Tab preloading: `awaitMainThreadIdle(3 s)` returned on timeout and the tab was composed anyway, defeating the idle check. | It waits as long as needed; a tab that is never preloaded composes when opened. Whether preloading helps is still unmeasured: compare `TabSwitchBenchmark` with and without it on a device. | Code path |
+| P9 | Quick Add focused its field after a fixed `delay(250)`. | Focus is requested once the open progress reaches 0.8 (immediately with motion off). The pull-down handle's return animation is cancelled when the finger takes the sheet again, and starts with the release velocity. | Code path |
+| P10 | The search reveal and the header field read their animated value in composition (`if (open > 0.001f)`, `requiredWidth(lerp(...))`), recomposing the header and the results container on every frame. | `derivedStateOf` for the visibility test; the width is applied in a `layout` block. | Code path |
+| P11 | Decorative motion competing with the main movement: staggered row, dot and form entrances (Tasks, month day list, Quick Add, empty-state buttons, day dots), and the looping "breathing" empty-state icon. | Removed. A list for another day or filter still swaps in one piece (`ContentSwap`). | Code path |
+| P12 | The date disc waited for its own fade before sliding to a newer cell; a second Quick Add while a row's highlight was fading left that row tinted. | Fade and slide run together; the highlight is reset whenever the newest id changes. | Code path |
+
+### Render comparison (Robolectric, 30 frames of 16 ms after each action; share of non-background pixels, rest = the emptier of the two screens)
+
+| Transition | Old: emptiest frame | Old: frames under 60 % of rest | New: emptiest frame | New: frames under 60 % |
+|---|---|---|---|---|
+| Today → Tasks | 0 % (blank) | 2 | 100 % | 0 |
+| Tasks → Calendar | 0 % | 5 | 100 % | 0 |
+| Calendar → Today | 0 % | 4 | 100 % | 0 |
+| Open Settings | 0 % | 5 | 100 % | 0 |
+| Open Appearance | 0 % | 3 | 100 % | 0 |
+| Back to Settings | 0 % | 3 | 100 % | 0 |
+| Back to Today | 0 % | 5 | 100 % | 0 |
+
+100 % means no frame had less content than the emptier of the two screens. This is the layout and draw order, not a timing measurement.
+
+### Verification
+
+- `assembleDebug assembleRelease testDebugUnitTest lintDebug`: BUILD SUCCESSFUL. 456 tests, 54 skipped (the opt-in render suites), 0 failures. Lint: no errors.
+- detekt 1.23.8 with the CI arguments: no new findings. `scripts/ci/apk_audit.py` on the release APK: PASS.
+- New tests: `MotionStateTest` (10), `TaskCompletionTimingTest` (1). `TransitionFramesTest` is stricter (no dipping frame at all).
+- `:macrobenchmark:compileBenchmarkKotlin` compiles the new `InteractionBenchmark` journeys (not run).
+
+### Not verified
+
+- Anything on hardware: frame timing and jank, 60/90/120 Hz behaviour, thermal behaviour, the feel of the cross-fade length (150 ms) and of the page push, the day swipe's glide, and predictive back (both completed and cancelled). Predictive back was only reasoned from the code: the revealed page is complete and still, and the library seeks the closing page back when the gesture is cancelled.
+- Whether tab preloading pays for itself.
+- JankStats is not added (it would be a shipped dependency); the macrobenchmarks report frame timing instead.
+

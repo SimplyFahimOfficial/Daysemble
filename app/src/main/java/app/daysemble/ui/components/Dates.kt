@@ -15,8 +15,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onPlaced
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -67,7 +65,9 @@ import app.daysemble.ui.format.Fmt
 import app.daysemble.ui.format.LocalTimePrefs
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Space
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
@@ -123,12 +123,12 @@ private const val CENTER = WEEKS / 2
 /** Stand-in colour in a day's marks for "has an open task" (drawn neutral, events use their own colour). */
 const val TASK_MARK = 0
 
-/** Up to three small dots in the colours of what is on a day, fading in [delayMs] after they first appear. */
+/** Up to three small dots in the colours of what is on a day. */
 @Composable
-fun DayMarks(colors: List<Int>, delayMs: Int, modifier: Modifier = Modifier, dim: Boolean = false, overflow: Boolean = false) {
+fun DayMarks(colors: List<Int>, modifier: Modifier = Modifier, dim: Boolean = false, overflow: Boolean = false) {
     val c = DsTheme.colors
     Row(
-        modifier.height(MARK_SIZE).then(if (colors.isEmpty()) Modifier else Modifier.staggeredEntrance(0, baseDelay = delayMs, shift = 0.dp)),
+        modifier.height(MARK_SIZE),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -271,31 +271,28 @@ fun Modifier.discCell(map: DiscMap, index: Int): Modifier = onPlaced { map.repor
 
 /**
  * The selected-date circle of one page. Moving to another cell of the same page slides it there on
- * the snappy spring with a small pop (1 to [pop] and back); entering the page fades it in already in
- * place, leaving fades it out. Everything is read in the draw phase ([draw]), so a moving circle
- * recomposes nothing.
+ * the snappy spring; entering the page fades it in already in place, leaving fades it out.
+ * Everything is read in the draw phase ([draw]), so a moving circle recomposes nothing.
  */
 @Stable
 class SlidingDisc internal constructor(
     private val cell: Animatable<Offset, androidx.compose.animation.core.AnimationVector2D>,
     private val alpha: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>,
-    private val scale: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>,
 ) {
     fun draw(scope: DrawScope, map: DiscMap, color: Color) = with(scope) {
         val a = alpha.value
         if (a <= 0f) return@with
         val (center, radius) = map.place(cell.value.x, cell.value.y) ?: return@with
-        drawCircle(color.copy(alpha = a), radius * scale.value, center)
+        drawCircle(color.copy(alpha = a), radius, center)
     }
 }
 
 @Composable
-fun rememberSlidingDisc(cell: Pair<Int, Int>?, pop: Boolean = false): SlidingDisc {
+fun rememberSlidingDisc(cell: Pair<Int, Int>?): SlidingDisc {
     val m = DsTheme.motion
     fun Pair<Int, Int>.offset() = Offset(first.toFloat(), second.toFloat())
     val position = remember { Animatable((cell ?: (0 to 0)).offset(), Offset.VectorConverter) }
     val alpha = remember { Animatable(if (cell != null) 1f else 0f) }
-    val scale = remember { Animatable(1f) }
     LaunchedEffect(cell) {
         if (cell == null) {
             alpha.animateTo(0f, if (m.enabled) tween(m.short) else snap())
@@ -303,14 +300,14 @@ fun rememberSlidingDisc(cell: Pair<Int, Int>?, pop: Boolean = false): SlidingDis
             position.snapTo(cell.offset())
             alpha.animateTo(1f, if (m.enabled) tween(m.short) else snap())
         } else {
-            alpha.animateTo(1f, m.snappy())
+            // Together, so a disc that is still fading in doesn't hold up its slide to the newest cell.
             coroutineScope {
-                if (pop) launch { with(m) { scale.pop() } }
+                launch { alpha.animateTo(1f, m.snappy()) }
                 position.animateTo(cell.offset(), m.snappy())
             }
         }
     }
-    return remember { SlidingDisc(position, alpha, scale) }
+    return remember { SlidingDisc(position, alpha) }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -358,6 +355,6 @@ private fun DateCell(
         // Pinned to today, whatever day is selected.
         TodayDot(visible = isToday)
         Spacer(Modifier.height(3.dp))
-        DayMarks(marks, delayMs = column * m.markStagger)
+        DayMarks(marks)
     }
 }

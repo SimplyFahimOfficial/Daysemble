@@ -221,13 +221,11 @@ fun TaskRow(
     isSubtask: Boolean = false,
     actions: List<androidx.compose.ui.semantics.CustomAccessibilityAction> = emptyList(),
     onLongClick: (() -> Unit)? = null,
-    /** Shows the task as completed before the completion is saved (the strike sweeps, then the row leaves). */
-    forceCompleted: Boolean = false,
 ) {
     val c = DsTheme.colors
     val m = DsTheme.motion
     val p = LocalTimePrefs.current
-    val completed = task.isCompleted || forceCompleted
+    val completed = task.isCompleted
     val today = now.atZone(p.zone).toLocalDate()
     val overdue = TaskRules.isOverdue(task, now, p.zone)
     val textColor = app.daysemble.ui.components.animateStateColor(if (completed) c.textTertiary else c.textPrimary, m.standard(m.medium), label = "taskText")

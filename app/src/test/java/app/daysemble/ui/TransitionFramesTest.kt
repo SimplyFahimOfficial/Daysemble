@@ -40,15 +40,14 @@ import kotlin.math.abs
 
 /**
  * Frame-by-frame renders of the real app root (Robolectric native graphics, the test clock stepped
- * one frame at a time) during a tab switch and while Settings opens and closes. Every frame must
- * not stay empty: the share of pixels that aren't the plain background may dip for a few frames,
- * but must be back at what the screens show at rest.
+ * one frame at a time) during a tab switch and while Settings opens and closes. No frame may show
+ * noticeably less content than the screens have at rest: the share of pixels that aren't the plain
+ * background stays above 60 % of the emptier of the two screens in every frame.
+ *
+ * Tabs cross-fade (the new tab fades in over the old one, which stays drawn), and pages push in
+ * over a still page, so there is nothing to dip: the test allows no dipping frame at all.
  *
  * It proves what is drawn in each frame, not how smooth it is on a device.
- *
- * Tabs and pages use Material's fade-through / shared axis, where the old content fades out before
- * the new one fades in, so the content dips briefly by design. These tests bound that dip (a few
- * frames, not a stuck or blank screen) and check that the content is back at rest.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -93,10 +92,10 @@ class TransitionFramesTest {
     }
 
     /**
-     * Fade-through: the content may dip while one side fades out and the other in, for at most
-     * [maxDipFrames] frames, and must be back at rest at the end (nothing stuck transparent).
+     * No blank frames: no frame of the transition may drop below the floor, and the content must be
+     * back at rest at the end (nothing stuck transparent).
      */
-    private fun assertFadesThrough(what: String, frames: Int = 30, maxDipFrames: Int = 14, action: () -> Unit) {
+    private fun assertNoBlankFrames(what: String, frames: Int = 30, maxDipFrames: Int = 0, action: () -> Unit) {
         val before = ink()
         action()
         val during = (0 until frames).map { frame(); ink() }
@@ -113,10 +112,10 @@ class TransitionFramesTest {
             SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected) and hasParent(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup)),
     )
 
-    @Test fun tabSwitch_fadesThroughAndComesBack() {
-        assertFadesThrough("Today → Tasks") { tab("Tasks").performClick() }
-        assertFadesThrough("Tasks → Calendar") { tab("Calendar").performClick() }
-        assertFadesThrough("Calendar → Today") { tab("Today").performClick() }
+    @Test fun tabSwitch_neverShowsABlankFrame() {
+        assertNoBlankFrames("Today → Tasks") { tab("Tasks").performClick() }
+        assertNoBlankFrames("Tasks → Calendar") { tab("Calendar").performClick() }
+        assertNoBlankFrames("Calendar → Today") { tab("Today").performClick() }
     }
 
     private fun meanLuminance(): Double {
@@ -142,13 +141,13 @@ class TransitionFramesTest {
         assertThat(during.count { it > dark + 0.1 * (light - dark) && it < light - 0.1 * (light - dark) }).isAtLeast(3)
     }
 
-    @Test fun openingAndClosingSettings_fadesThroughAndComesBack() {
-        assertFadesThrough("open Settings") { compose.onNodeWithContentDescription("Settings").performClick() }
-        assertFadesThrough("open Appearance") { compose.onAllNodesWithText("Appearance").onFirst().performClick() }
-        assertFadesThrough("back to Settings") {
+    @Test fun openingAndClosingSettings_neverShowsABlankFrame() {
+        assertNoBlankFrames("open Settings") { compose.onNodeWithContentDescription("Settings").performClick() }
+        assertNoBlankFrames("open Appearance") { compose.onAllNodesWithText("Appearance").onFirst().performClick() }
+        assertNoBlankFrames("back to Settings") {
             compose.onNode(hasContentDescription("Back") and hasClickAction()).performClick()
         }
-        assertFadesThrough("back to Today") {
+        assertNoBlankFrames("back to Today") {
             compose.onNode(hasContentDescription("Back") and hasClickAction()).performClick()
         }
         assertThat(compose.onAllNodesWithText("Your name").fetchSemanticsNodes()).isEmpty()
