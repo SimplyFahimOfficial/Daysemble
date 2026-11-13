@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
@@ -65,6 +66,7 @@ import androidx.compose.ui.platform.LocalDensity
 import app.daysemble.ui.components.rememberHaptics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -135,8 +137,10 @@ fun TasksScreen(
 ) {
     val c = DsTheme.colors
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-    // Local copy of the manual order while dragging; resynced whenever the data changes.
-    val manual = remember(state.sections) {
+    // Local copy of the manual order, which the held row reorders. It follows the data, but never while
+    // a row is held or settling: a database update then (a sync, a tick) used to rebuild it under the
+    // finger and the row jumped back to its old slot. The update is applied when the row is let go.
+    val manual = remember {
         androidx.compose.runtime.mutableStateListOf<Task>().apply { if (state.canReorder) addAll(state.sections.flatMap { it.tasks }) }
     }
     var dragging by remember { mutableStateOf<String?>(null) }
@@ -146,6 +150,14 @@ fun TasksScreen(
     var settling by remember { mutableStateOf(false) }
     var settleJob by remember { mutableStateOf<Job?>(null) }
     val dragScope = rememberCoroutineScope()
+    val held = dragging != null || settling
+    LaunchedEffect(state.sections, state.canReorder, held) {
+        if (held) return@LaunchedEffect
+        val data = if (state.canReorder) state.sections.flatMap { it.tasks } else emptyList()
+        if (manual.toList() != data) { manual.clear(); manual.addAll(data) }
+    }
+    // Ids of the reorderable rows, for telling them from the list's other items by key.
+    val manualIds by remember { derivedStateOf { manual.mapTo(HashSet()) { it.id } } }
     val haptics = rememberHaptics()
     val density = LocalDensity.current
     val liftPx = with(density) { Elevation.lifted.toPx() }
@@ -157,7 +169,7 @@ fun TasksScreen(
         val infos = listState.layoutInfo.visibleItemsInfo
         val cur = infos.firstOrNull { it.key == id } ?: return
         val center = (cur.offset + cur.size / 2 + dragOffset).toInt()
-        val rows = infos.filter { info -> manual.any { it.id == info.key } }
+        val rows = infos.filter { it.key in manualIds }
         val target = rows.firstOrNull { it.key != id && center in it.offset..(it.offset + it.size) }
             ?: rows.lastOrNull()?.takeIf { it.key != id && center > it.offset + it.size }
             ?: rows.firstOrNull()?.takeIf { it.key != id && center < it.offset }
@@ -171,26 +183,32 @@ fun TasksScreen(
     // (the scroll is added to its offset) and keeps taking the places it passes.
     val edgePx = with(density) { AutoScrollEdge.toPx() }
     val maxSpeedPx = with(density) { AutoScrollMaxSpeed.toPx() }
+    // -1..1: how far into the top (negative) or bottom edge zone the held row is; 0 outside both.
+    fun edgePull(id: String): Float {
+        val info = listState.layoutInfo
+        val cur = info.visibleItemsInfo.firstOrNull { it.key == id } ?: return 0f
+        val top = cur.offset + dragOffset
+        val end = info.viewportEndOffset - info.afterContentPadding
+        return when {
+            top < edgePx -> -((edgePx - top) / edgePx).coerceAtMost(1f)
+            top + cur.size > end - edgePx -> ((top + cur.size - (end - edgePx)) / edgePx).coerceAtMost(1f)
+            else -> 0f
+        }
+    }
+    // Nothing runs per frame while the row is away from the edges: the frame loop below starts when
+    // it enters a zone (watched through the state it reads) and ends when it leaves.
     LaunchedEffect(dragging, settling) {
         val id = dragging ?: return@LaunchedEffect
         if (settling) return@LaunchedEffect
-        var last = withFrameNanos { it }
-        while (true) {
-            val now = withFrameNanos { it }
-            val dt = (now - last) / 1_000_000_000f
-            last = now
-            val info = listState.layoutInfo
-            val cur = info.visibleItemsInfo.firstOrNull { it.key == id }
-            val top = cur?.let { it.offset + dragOffset } ?: 0f
-            val end = info.viewportEndOffset - info.afterContentPadding
-            // -1..1: how far into the top (negative) or bottom edge zone the row is; 0 outside both.
-            val pull = when {
-                cur == null -> 0f
-                top < edgePx -> -((edgePx - top) / edgePx).coerceAtMost(1f)
-                top + cur.size > end - edgePx -> ((top + cur.size - (end - edgePx)) / edgePx).coerceAtMost(1f)
-                else -> 0f
-            }
-            if (pull != 0f) {
+        snapshotFlow { edgePull(id) != 0f }.distinctUntilChanged().collectLatest { inZone ->
+            if (!inZone) return@collectLatest
+            var last = withFrameNanos { it }
+            while (true) {
+                val now = withFrameNanos { it }
+                val dt = (now - last) / 1_000_000_000f
+                last = now
+                val pull = edgePull(id)
+                if (pull == 0f) break
                 dragOffset += listState.scrollBy(pull * kotlin.math.abs(pull) * maxSpeedPx * dt)
                 swapUnderFinger(id)
             }
@@ -244,9 +262,9 @@ fun TasksScreen(
         contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + Space.xxl),
     ) {
         if (state.isLoading) {
-            item(key = "loading") { SkeletonRows(Modifier.padding(top = Space.xl)) }
+            item(key = "loading", contentType = "state") { SkeletonRows(Modifier.padding(top = Space.xl)) }
         } else if (state.sections.isEmpty()) {
-            item(key = "empty") {
+            item(key = "empty", contentType = "state") {
                 // The copy says what this filter is for, not just that it is empty.
                 val (title, body) = when (state.filter) {
                     TaskFilter.ALL -> R.string.tasks_empty_title to R.string.tasks_empty_body
@@ -265,14 +283,13 @@ fun TasksScreen(
         }
 
         if (state.canReorder && manual.isNotEmpty()) {
-            item(key = "reorderHint") {
+            item(key = "reorderHint", contentType = "hint") {
                 Text(
                     stringResource(R.string.reorder_hint), style = DsTheme.type.label, color = c.textSecondary,
                     modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.s),
                 )
             }
-            items(manual, key = { it.id }) { task ->
-                val index = manual.indexOf(task)
+            itemsIndexed(manual, key = { _, t -> t.id }, contentType = { _, _ -> ROW }) { index, task ->
                 val isDragged = dragging == task.id
                 // Lifted while held; set down (shadow and scale back) as it settles.
                 val lift by animateFloatAsState(if (isDragged && !settling) 1f else 0f, m.snappy(), label = "lift")
@@ -344,13 +361,13 @@ fun TasksScreen(
         if (!state.canReorder) {
             state.sections.forEachIndexed { si, section ->
                 if (section.bucket != null) {
-                    item(key = "h:" + section.bucket.name) {
+                    item(key = "h:" + section.bucket.name, contentType = "header") {
                         SectionHeader(stringResource(bucketLabel(section.bucket)), Modifier.padding(top = Space.l).then(itemMotion()))
                     }
                 } else {
-                    item(key = "h:flat") { Spacer(Modifier.size(Space.s)) }
+                    item(key = "h:flat", contentType = "spacer") { Spacer(Modifier.size(Space.s)) }
                 }
-                items(section.tasks, key = { t -> t.id }) { task ->
+                items(section.tasks, key = { t -> t.id }, contentType = { ROW }) { task ->
                     SwipeableTaskRow(
                         task, now,
                         dimmed = dimmed,
@@ -365,6 +382,9 @@ fun TasksScreen(
         }
     }
 }
+
+/** The content type of a task row (reorder list and sections alike), so rows reuse each other's compositions. */
+private const val ROW = "task"
 
 /** Distance from the list's edge where a dragged row starts scrolling it, and the top speed. */
 private val AutoScrollEdge = 64.dp

@@ -151,7 +151,6 @@ data class DsMotion(val reduced: Boolean = false) {
 
     /** Loops of the loading placeholders. They stop with reduced motion. */
     val skeletonPulse: Int get() = 900
-    val spinnerTurn: Int get() = 1100
 
     // ---- Primary tabs (see TabHost in DaysembleRoot) --------------------------------------------
 

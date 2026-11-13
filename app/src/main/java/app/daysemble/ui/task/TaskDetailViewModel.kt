@@ -43,9 +43,7 @@ data class TaskDetailUiState(
     val isLoading: Boolean = true,
     /** The task was deleted (or never existed): the screen closes. */
     val isMissing: Boolean = false,
-) {
-    val isSeries: Boolean get() = task?.seriesId != null && series != null
-}
+)
 
 /**
  * A task's detail view. It follows its series: after the shown occurrence of a repeating task is
@@ -67,8 +65,6 @@ class TaskDetailViewModel(
     private val tick = MutableStateFlow(clock.now())
     /** Moving to another occurrence: the old one being gone doesn't close the screen meanwhile. */
     private val following = MutableStateFlow(false)
-
-    val focusedId: String get() = focus.value
 
     val state: StateFlow<TaskDetailUiState> = focus.flatMapLatest { id ->
         repo.observeTask(id).flatMapLatest { task ->

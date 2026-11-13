@@ -29,8 +29,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -128,39 +130,77 @@ class TodayViewModel(
     /** Bumped by the screen once a minute so "today", overdue and focus stay current. */
     private val tick = MutableStateFlow(clock.now())
 
+    /**
+     * Events are loaded once for the weeks of the selected month (the week strip's dots included), and
+     * the task table, task series, settings and sleep log are each observed once. Choosing another
+     * day inside the month only changes `selected`, so the day is built from data already in memory:
+     * it arrives at once instead of after new database queries and recurrence expansion (which also
+     * made a day swipe wait for them). Another month, zone or first weekday loads a new window; until
+     * it has arrived the previous day stays on screen (see [Loaded.covers]).
+     */
+    private val loaded = combine(selected, time) { d, t -> windowFor(d, t) }.distinctUntilChanged().flatMapLatest { w ->
+        events.occurrences(w.from, w.to, w.zone).map { Loaded(w, it) }
+    }.flowOn(compute).shareIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), replay = 1)
+
+    private val taskData = combine(tasks.allTasks, seriesReader?.timedSeries ?: flowOf(emptyList())) { a, b -> a to b }
+        .flowOn(compute).shareIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), replay = 1)
+
     // Grouping, sorting, recurrence expansion and the free-time sums run off the main thread, so a
     // date change or a tab switch never waits for them; the result is collected on the main thread.
-    // Events are loaded for the date and the next one: a waking window can run past midnight.
-    val state: StateFlow<TodayUiState> = combine(selected, time) { d, t -> d to t.zone }.flatMapLatest { (date, z) ->
+    val state: StateFlow<TodayUiState> = combine(
+        combine(selected, time) { d, t -> d to t },
+        loaded, taskData,
         combine(
-            events.occurrences(date, date.plusDays(1), z),
-            combine(tasks.allTasks, seriesReader?.timedSeries ?: flowOf(emptyList())) { a, b -> a to b },
             settings.settings.map { it.showCompletedOnToday to it.schedule }.distinctUntilChanged(),
-            tick,
             sleepRepo?.recent ?: flowOf(emptyList()),
-        ) { occ, (allTasks, series), prefs, now, sleep ->
-            build(DayInputs(date, z, now, occ, allTasks, series, prefs.first, prefs.second, sleep))
-        }
-    }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState(selected.value, clock.today()))
+        ) { p, sl -> p to sl },
+        tick,
+    ) { (date, t), l, (allTasks, series), (prefs, sleep), now ->
+        if (l.covers(date, t)) build(DayInputs(date, l.window.zone, now, l.occurrences, allTasks, series, prefs.first, prefs.second, sleep)) else null
+    }.filterNotNull().flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), TodayUiState(selected.value, clock.today()))
 
     /**
      * Colours of what is on each day of the weeks around the selected one (event colours, then a
-     * neutral mark for open tasks), for the dots in the week strip. Read-only.
+     * neutral mark for open tasks), for the dots in the week strip. Read-only. Built from the same
+     * loaded data as [state].
      */
-    val marks: StateFlow<Map<LocalDate, List<Int>>> = combine(selected, time) { d, t -> d to t }.flatMapLatest { (date, t) ->
-        val start = date.minusDays(
-            ((date.dayOfWeek.value - t.firstDayOfWeek.value + DAYS_IN_WEEK) % DAYS_IN_WEEK).toLong(),
-        ).minusWeeks(WEEKS_BEFORE_SELECTED)
+    val marks: StateFlow<Map<LocalDate, List<Int>>> = combine(selected, time, loaded, taskData) { date, t, l, (allTasks, _) ->
+        if (l.covers(date, t)) marksFor(date, t, l.occurrences, allTasks) else null
+    }.filterNotNull().distinctUntilChanged().flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyMap())
+
+    private fun marksFor(date: LocalDate, t: app.daysemble.core.time.TimeContext, occ: List<EventOccurrence>, all: List<Task>): Map<LocalDate, List<Int>> {
+        val start = weekStart(date, t).minusWeeks(WEEKS_BEFORE_SELECTED)
         val end = start.plusWeeks(WEEKS_IN_MARKS_RANGE).minusDays(LAST_DAY_OFFSET)
-        combine(events.occurrences(start, end, t.zone), tasks.openTasksInRange(start, end)) { occ, all ->
-            val byEvents = app.daysemble.ui.calendar.CalendarViewModel.groupByDate(occ, start, end)
-            val byTasks = all.groupBy { it.dueDate!! }
-            (byEvents.keys + byTasks.keys).associateWith { d ->
-                val colors = byEvents[d].orEmpty().map { it.colorArgb }.distinct().take(MAX_MARKS)
-                if (colors.size < MAX_MARKS && byTasks[d].orEmpty().isNotEmpty()) colors + app.daysemble.ui.components.TASK_MARK else colors
-            }
+        val byEvents = app.daysemble.ui.calendar.CalendarViewModel.groupByDate(occ, start, end)
+        val byTasks = all.filter { it.parentId == null && !it.isCompleted && it.dueDate != null && it.dueDate in start..end }.groupBy { it.dueDate!! }
+        return (byEvents.keys + byTasks.keys).associateWith { d ->
+            val colors = byEvents[d].orEmpty().map { it.colorArgb }.distinct().take(MAX_MARKS)
+            if (colors.size < MAX_MARKS && byTasks[d].orEmpty().isNotEmpty()) colors + app.daysemble.ui.components.TASK_MARK else colors
         }
-    }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    }
+
+    /** The weeks of [Window.from]..[Window.to] contain every week the selected month's days and marks need. */
+    private data class Window(val from: LocalDate, val to: LocalDate, val zone: ZoneId, val firstDay: java.time.DayOfWeek)
+
+    private class Loaded(val window: Window, val occurrences: List<EventOccurrence>) {
+        /** Whether this data can build [date] (and the day after it) for time settings [t]. */
+        fun covers(date: LocalDate, t: app.daysemble.core.time.TimeContext) =
+            window.zone == t.zone && window.firstDay == t.firstDayOfWeek && !date.isBefore(window.from) && !date.plusDays(1).isAfter(window.to)
+    }
+
+    private fun windowFor(date: LocalDate, t: app.daysemble.core.time.TimeContext): Window {
+        val first = date.withDayOfMonth(1)
+        val last = date.withDayOfMonth(date.lengthOfMonth())
+        // The marks reach a week before the selected week and two after it.
+        return Window(
+            weekStart(first, t).minusWeeks(WEEKS_BEFORE_SELECTED),
+            weekStart(last, t).plusWeeks(WEEKS_IN_MARKS_RANGE - WEEKS_BEFORE_SELECTED).minusDays(LAST_DAY_OFFSET),
+            t.zone, t.firstDayOfWeek,
+        )
+    }
+
+    private fun weekStart(d: LocalDate, t: app.daysemble.core.time.TimeContext): LocalDate =
+        d.minusDays(((d.dayOfWeek.value - t.firstDayOfWeek.value + DAYS_IN_WEEK) % DAYS_IN_WEEK).toLong())
 
     fun select(date: LocalDate) {
         selected.value = date
@@ -336,6 +376,7 @@ class TodayViewModel(
 
     private companion object {
         const val KEY_DATE = "today_selected"
+        const val STOP_TIMEOUT_MS = 5_000L
         const val MAX_MARKS = 3
         const val DAYS_IN_WEEK = 7
         const val WEEKS_BEFORE_SELECTED = 1L

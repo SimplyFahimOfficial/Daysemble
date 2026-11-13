@@ -80,7 +80,6 @@ class TasksViewModel(
 
     fun setCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -> Unit = {}) = viewModelScope.launch { repo.setCompleted(id, done)?.let(onResult) }
     fun restore(id: String) = viewModelScope.launch { repo.restore(id) }
-    fun purgeTombstones() = viewModelScope.launch { repo.purgeExpiredTombstones() }
     fun reorder(ids: List<String>) = viewModelScope.launch { repo.reorder(ids) }
 
     private fun update(f: (TaskQuery) -> TaskQuery) { query.value = f(query.value) }

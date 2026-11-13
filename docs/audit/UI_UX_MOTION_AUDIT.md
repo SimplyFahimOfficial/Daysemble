@@ -224,3 +224,24 @@ Verification: `assembleDebug assembleRelease testDebugUnitTest lintDebug` and `:
 
 Not verified: frame timing and recomposition counts on a device (use `calendarModeSwitching` and `monthWeekDrag` with a Perfetto trace), and how the shared time-grid scroll feels when paging.
 
+## 7. Performance pass: data pipelines, Tasks drag, resources (November 2026, uncommitted)
+
+No device, so no frame timings. What was measured is stated per row; the rest is read from the code.
+
+| # | Cause | Change | Evidence |
+|---|---|---|---|
+| D1 | **Today restarted every query on every day selection** (`flatMapLatest` on the date): events, the whole task table, task series, settings, the sleep log and the week-strip query, and the day (and the day swipe) arrived only after all of them. | Events load once for the weeks of the selected month and everything else is observed once (`shareIn`); a day inside the month is built from memory. The week strip's dots come from the same data. Another month, zone or first weekday loads a new window and the previous day stays until it arrives. | `TodayWindowTest` counts Room SELECT statements: four day selections added 46 on the old view model (31 to 77, about 11 each) and 0 now. The test fails on the old view model |
+| D2 | The Tasks auto-scroll loop asked for a frame on every vsync for the whole drag (`while (true) withFrameNanos`), so Compose never went idle and it walked the visible items 60-120 times a second, even far from the edges. | The loop runs only while the held row is in an edge zone (found through a `snapshotFlow` on the state it reads). | The reorder test hung ("Compose did not get idle") on the old screen and passes now |
+| D3 | A data update while a row was held rebuilt the manual order (`remember(state.sections)`), putting the row back. | The order follows the data only when no row is held or settling; the update is applied on release. | `TaskReorderTest` |
+| D4 | Reorder rows: `manual.indexOf(task)` per row, `manual.any { }` per visible row on every swap, no content types. | `itemsIndexed`, a set of ids, content types for rows, headers and states. | Code path |
+| D5 | `animateStateColor` created an `Animatable` and launched a coroutine for every state colour at composition (about 130 for the month grid). | Nothing is created until the target first changes; the theme still switches colours at once. | `StateColorTest` (rest, change, fast flips, theme change). Counts from the code, not timed |
+| D6 | `observeTask` also observed every list and every series (and `lists` was unused). | It follows its own row and its own series. | Existing detail and editor tests |
+| D7 | Two copies of the QR encoder and PNG writer (`UpiQr`, `UpiQrCode`, `SupportIntents.writeQrPng`). | One (`UpiQr`); `UpiQrCode` deleted. | `UpiQrTest` |
+| D8 | New subtasks in the editor expanded while the column that holds them animated its size to follow. | The column keeps the one size animation; a new row fades in. | Code path |
+| D9 | Benchmarks skipped a missing element (`?.click()`, ignored `wait`) and timed an idle screen. | `require` / `click` fail the run; added start-up, theme, Support, task drag and Calendar-mode journeys. | `:macrobenchmark:compileBenchmarkKotlin` (not run) |
+| D10 | Dead code: `ItemsAppearInstantly`, `ErrorState`, `OfflineState`, `DsCheckRow`, `SearchViewModel.rawQuery`, `DsMotion.spinnerTurn`, `TasksViewModel.purgeTombstones`, `TaskRules.isHighPriority` and `relativeDayLabel`, `ReminderScheduler.cancelOwnerAlarms` and `scheduledFor`, `TaskRepository.localTaskCount`, `TaskDetailViewModel.focusedId` and `isSeries`, `Countdown.totalIsZero`. | Deleted (nothing referenced them, tests included). | Build and tests |
+
+Looked at and left alone: the theme cross-fade (`GraphicsLayer.record` plus one `toImageBitmap()` per theme change: the alternatives, per-colour animation and a window-level snapshot, were what it replaced or cost more; the capture is released after the fade; two quick theme taps still pop once), the page layers and `pagesLeaving` (balanced by `DisposableEffect`), date formatting in the grids (measured on the JVM: `fullDate` about 4 us and `hourShort` about 1 us per call, warm), the 512 px logos and 1152 px splash (decoded 1 and 5.3 MB, at the sizes they are shown), the QR bitmap (41 modules, encoded once per visit).
+
+Not verified: frame timing and jank (Perfetto: `InteractionBenchmark`), the per-frame remeasure of three month pages by `morphInset` while Month/Week morphs, the cost of the always-composed hidden overview on Today, whole-table task observation by Tasks, Today and Search, and a device-recorded Baseline Profile (the file is still the starter).
+

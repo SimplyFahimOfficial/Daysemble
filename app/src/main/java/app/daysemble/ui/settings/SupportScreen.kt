@@ -71,7 +71,7 @@ import androidx.compose.ui.unit.dp
 import app.daysemble.R
 import app.daysemble.support.SupportConfig
 import app.daysemble.support.SupportIntents
-import app.daysemble.support.UpiQrCode
+import app.daysemble.support.UpiQr
 import app.daysemble.ui.LocalSnackbar
 import app.daysemble.ui.components.AccentCard
 import app.daysemble.ui.components.DsButton
@@ -174,7 +174,7 @@ private fun UpiSection(actions: SupportActions) {
         Spacer(Modifier.height(Space.s))
         // QR beside the payee details, so the whole page fits on one phone screen.
         Row(horizontalArrangement = Arrangement.spacedBy(Space.m), verticalAlignment = Alignment.CenterVertically) {
-            UpiQr()
+            UpiQrImage()
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.support_upi_id_label).uppercase(), style = DsTheme.type.caps, color = c.textSecondary)
                 SelectionContainer {
@@ -218,8 +218,8 @@ private fun UpiSection(actions: SupportActions) {
 
 /** The QR on its small tile. Tapping it opens [EnlargedQr]. */
 @Composable
-private fun UpiQr(modifier: Modifier = Modifier) {
-    val bitmap = remember { UpiQrCode.toBitmap(UpiQrCode.encode(SupportConfig.upiPaymentUri())).asImageBitmap() }
+private fun UpiQrImage(modifier: Modifier = Modifier) {
+    val bitmap = remember { UpiQr.bitmap(scale = 1).asImageBitmap() }
     val description = stringResource(R.string.support_upi_qr_description, SupportConfig.UPI_ID, SupportConfig.UPI_PAYEE_NAME)
     var enlarged by rememberSaveable { mutableStateOf(false) }
     QrTile(

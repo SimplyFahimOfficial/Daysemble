@@ -9,7 +9,6 @@ import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Direction
-import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,22 +31,21 @@ class InteractionBenchmark {
     /** Three taps on the tabs in under a second: each interrupts the cross-fade before it ends. */
     @Test fun rapidTabTaps() = run { repeat(4) { listOf("tasks", "calendar", "today").forEach { tab -> tap("tab_$tab") } } }
 
-    /** The check circle of the first task, checked and unchecked again quickly. */
-    @Test fun taskCheckUncheck() = run(tab = "tasks") {
-        repeat(4) { device.findObject(By.descContains("complete"))?.click() }
-        device.waitForIdle()
+    /** Completes four tasks of the Tasks tab one after the other; each leaves the list as the next is tapped. */
+    @Test fun taskCompleting() = run(tab = "tasks") {
+        repeat(4) { click(By.descContains("complete")) }
     }
 
     /** The arrows step through months quickly; the grid pages each time. */
-    @Test fun calendarFastNavigation() = run(tab = "calendar") { repeat(8) { device.findObject(By.desc("Next"))?.click() } }
+    @Test fun calendarFastNavigation() = run(tab = "calendar") { repeat(8) { click(By.desc("Next"), idle = false) }
+        device.waitForIdle() }
 
     /** Every Calendar view in turn, then quick back-and-forth taps that interrupt the transition before it ends. */
     @Test fun calendarModeSwitching() = run(tab = "calendar") {
         listOf("Week", "Day", "Agenda", "Month", "Agenda", "Week", "Month", "Day", "Month").forEach { name ->
-            device.findObject(By.text(name))?.click()
-            device.waitForIdle()
+            click(By.text(name))
         }
-        repeat(3) { listOf("Week", "Month").forEach { name -> device.findObject(By.text(name))?.click() } }
+        repeat(3) { listOf("Week", "Month").forEach { name -> click(By.text(name), idle = false) } }
         device.waitForIdle()
     }
 
@@ -65,18 +63,16 @@ class InteractionBenchmark {
 
     /** Swipe the Today agenda to the next and previous day. */
     @Test fun todayDaySwipe() = run {
-        val agenda = device.wait(Until.findObject(By.res("today_agenda")), WAIT_MS) ?: return@run
-        repeat(3) { agenda.swipe(Direction.LEFT, 0.8f, 3000); device.waitForIdle() }
-        repeat(3) { agenda.swipe(Direction.RIGHT, 0.8f, 3000); device.waitForIdle() }
+        // Found again for each swipe: another day replaces the list, so an earlier handle goes stale.
+        repeat(3) { require(By.res("today_agenda")).swipe(Direction.LEFT, 0.8f, 3000); device.waitForIdle() }
+        repeat(3) { require(By.res("today_agenda")).swipe(Direction.RIGHT, 0.8f, 3000); device.waitForIdle() }
     }
 
     /** Quick Add opens (container growth, keyboard), a title is typed and the sheet is closed with Back. */
     @Test fun quickAddAndKeyboard() = run {
         repeat(2) {
-            device.findObject(By.desc("Add task or event"))?.click()
-            device.wait(Until.hasObject(By.clazz("android.widget.EditText")), WAIT_MS)
-            device.findObject(By.clazz("android.widget.EditText"))?.text = "Benchmark"
-            device.waitForIdle()
+            click(By.desc("Add task or event"))
+            type("Benchmark")
             // The first Back hides the keyboard, the second closes the sheet (only if it is still there).
             device.pressBack()
             if (device.hasObject(By.clazz("android.widget.EditText"))) device.pressBack()
@@ -86,21 +82,16 @@ class InteractionBenchmark {
 
     /** The header search opens, a query is typed in one go and the results update, then the search closes. */
     @Test fun searchTyping() = run {
-        device.findObject(By.desc("Search"))?.click()
-        device.wait(Until.hasObject(By.clazz("android.widget.EditText")), WAIT_MS)
-        device.findObject(By.clazz("android.widget.EditText"))?.text = "task"
-        device.waitForIdle()
-        device.findObject(By.desc("Close search"))?.click()
-        device.waitForIdle()
+        click(By.desc("Search"))
+        type("task")
+        click(By.desc("Close search"))
     }
 
     /** Settings and one of its pages open over the main screen and close again (the page transition). */
     @Test fun pageNavigation() = run {
         repeat(2) {
-            device.findObject(By.desc("Settings"))?.click()
-            device.wait(Until.hasObject(By.text("Appearance")), WAIT_MS)
-            device.findObject(By.text("Appearance"))?.click()
-            device.waitForIdle()
+            click(By.desc("Settings"))
+            click(By.text("Appearance"))
             device.pressBack()
             device.waitForIdle()
             device.pressBack()
@@ -108,10 +99,47 @@ class InteractionBenchmark {
         }
     }
 
+    /** Light to Dark and back (Settings, Appearance): the theme cross-fade and the recomposition under it. */
+    @Test fun themeSwitching() = run {
+        click(By.desc("Settings"))
+        click(By.text("Appearance"))
+        repeat(2) {
+            click(By.text("Dark"))
+            // The cross-fade runs for about 250 ms; wait it out so each switch is measured whole.
+            device.waitForIdle()
+            click(By.text("Light"))
+        }
+        device.pressBack()
+        device.pressBack()
+        device.waitForIdle()
+    }
+
+    /** Settings, Help & Support (the QR page) and back: the entry frames of the Support screen. */
+    @Test fun settingsAndSupportNavigation() = run {
+        repeat(2) {
+            click(By.desc("Settings"))
+            click(By.text("Help & Support"))
+            click(By.text("Support My Work"))
+            // Back out of Support, Help and Settings.
+            repeat(3) { device.pressBack(); device.waitForIdle() }
+        }
+    }
+
+    /** Long-presses a row's handle in List order and drags it down two rows, then lets go (needs the benchmark build's 150 tasks). */
+    @Test fun taskDragging() = run(tab = "tasks") {
+        click(By.desc("Sort tasks"))
+        click(By.text("List order"))
+        val handle = require(By.desc("Reorder"))
+        val c = handle.visibleCenter
+        // A long press, then the drag: UiAutomator has no long-press-drag, so hold with a slow swipe.
+        device.drag(c.x, c.y, c.x, c.y + device.displayHeight / 5, 120)
+        device.waitForIdle()
+    }
+
     /** A back swipe from the left edge that is released half way (cancelled), then one that completes. */
     @Test fun canceledAndCompletedBackGesture() = run {
-        device.findObject(By.desc("Settings"))?.click()
-        device.wait(Until.hasObject(By.text("Appearance")), WAIT_MS)
+        click(By.desc("Settings"))
+        require(By.text("Appearance"))
         val h = device.displayHeight / 2
         // 40 steps over ~0.4 s: slow enough for the system to treat it as a gesture, then back to the edge.
         device.swipe(0, h, device.displayWidth / 3, h, 40)
@@ -129,7 +157,7 @@ class InteractionBenchmark {
         }
     }
 
-    private fun MacrobenchmarkScope.tap(tag: String) { device.findObject(By.res(tag))?.click() }
+    private fun MacrobenchmarkScope.tap(tag: String) = click(By.res(tag), idle = false)
 
     private fun run(tab: String? = null, block: MacrobenchmarkScope.() -> Unit) = rule.measureRepeated(
         packageName = PACKAGE,

@@ -24,9 +24,7 @@ data class CountdownParts(
     val hours: Long,
     val minutes: Long,
     val seconds: Long,
-) {
-    val totalIsZero: Boolean get() = years == 0L && months == 0L && days == 0L && hours == 0L && minutes == 0L && seconds == 0L
-}
+)
 
 /** What a task's countdown shows. */
 sealed interface CountdownState {

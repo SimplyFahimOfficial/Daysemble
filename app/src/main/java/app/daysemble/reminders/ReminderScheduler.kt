@@ -186,13 +186,6 @@ class ReminderScheduler(
         schedule(listOf(PlannedAlarm(reminderId, type, ownerId, "$occurrenceKey#snooze${at.epochSecond}", at)))
     }
 
-    suspend fun cancelOwnerAlarms(ownerId: String) = mutex.withLock {
-        dao.forOwner(ownerId).forEach { alarms.cancel(it.requestCode); dao.delete(it.requestCode) }
-    }
-
-    /** Scheduled alarms for an owner, for "next reminder at …" UI. */
-    suspend fun scheduledFor(ownerId: String): List<ScheduledAlarmEntity> = dao.forOwner(ownerId)
-
     private suspend fun plan(type: OwnerType, ownerId: String, defaultMinute: Int): List<PlannedAlarm> {
         val now = clock.now()
         val zone: ZoneId = clock.zone()

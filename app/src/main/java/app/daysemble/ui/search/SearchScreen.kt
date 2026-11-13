@@ -108,8 +108,6 @@ class SearchViewModel(
         }
     }.flowOn(compute).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SearchUiState(query.value, scope.value))
 
-    val rawQuery: StateFlow<String> = query
-
     fun setQuery(q: String) { query.value = q; handle["q"] = q }
     fun setScope(s: SearchScope) { scope.value = s; handle["s"] = s.name }
     fun setCompleted(id: String, done: Boolean, onResult: (app.daysemble.data.repo.TaskRepository.Completion) -> Unit = {}) = viewModelScope.launch { tasks.setCompleted(id, done)?.let(onResult) }
