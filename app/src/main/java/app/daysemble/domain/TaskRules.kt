@@ -69,16 +69,4 @@ object TaskRules {
             .then(primary)
             .then(compareBy { it.id })
     }
-
-    /** Human label for a due date relative to [today] ("Today", "Tomorrow", "Yesterday", or null to format). */
-    fun relativeDayLabel(date: LocalDate, today: LocalDate): RelativeDay? = when (date) {
-        today -> RelativeDay.TODAY
-        today.plusDays(1) -> RelativeDay.TOMORROW
-        today.minusDays(1) -> RelativeDay.YESTERDAY
-        else -> null
-    }
-
-    enum class RelativeDay { TODAY, TOMORROW, YESTERDAY }
-
-    fun isHighPriority(task: Task) = task.priority == Priority.HIGH
 }

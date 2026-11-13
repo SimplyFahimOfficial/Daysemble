@@ -217,29 +217,6 @@ fun DsRadioRow(
     }
 }
 
-/** Multi-choice row with a real checkbox state for screen readers. */
-@Composable
-fun DsCheckRow(
-    title: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    leading: (@Composable () -> Unit)? = null,
-) {
-    val c = DsTheme.colors
-    DsRow(
-        title = title, subtitle = subtitle,
-        modifier = modifier.toggleable(value = checked, role = Role.Checkbox, onValueChange = onCheckedChange),
-    ) {
-        leading?.invoke()
-        androidx.compose.material3.Checkbox(
-            checked, null,
-            colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = c.inverse, checkmarkColor = c.onInverse, uncheckedColor = c.outlineStrong),
-        )
-    }
-}
-
 @Composable
 fun DsSwitchRow(
     title: String,

@@ -79,18 +79,15 @@ fun <K> ContentSwap(key: K, fade: Boolean = true, shift: Dp = DsTheme.motion.con
     }
 }
 
-/** Runs [content] with row appearance animations off (see [ContentSwap]); for a list's first frames. */
-@Composable
-fun ItemsAppearInstantly(instant: Boolean, content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalItemsAppear provides !instant, content = content)
-}
-
 /**
  * A component's colour that animates when its own state changes (selected, completed, focused…)
  * and follows a theme change at once. The theme change itself is one cross-fade of the whole app
  * (see DaysembleTheme). With plain animateColorAsState every themed colour also ran its own
  * 220–400 ms animation to the new theme, so cards, date cells and chips lagged behind the rest of
  * the screen and recomposed on every frame of it.
+ *
+ * A colour that has never changed holds no animation and launches no coroutine (the month grid
+ * composes about 130 of these at once); the animation is created when the target first changes.
  */
 @Composable
 fun animateStateColor(
@@ -99,18 +96,29 @@ fun animateStateColor(
     @Suppress("UNUSED_PARAMETER") label: String = "stateColor",
 ): androidx.compose.ui.graphics.Color {
     val dark = DsTheme.colors.isDark
-    val anim = remember { androidx.compose.animation.Animatable(targetValue) }
-    // The theme the animated value belongs to.
-    val valueTheme = remember { androidx.compose.runtime.mutableStateOf(dark) }
-    LaunchedEffect(targetValue, dark) {
-        if (valueTheme.value != dark) {
-            anim.snapTo(targetValue)
-            valueTheme.value = dark
-        } else if (anim.targetValue != targetValue || anim.value != targetValue) {
-            anim.animateTo(targetValue, animationSpec)
+    val h = remember { StateColor(targetValue, dark) }
+    if (h.dark != dark) {
+        // Another theme: the new colour at once; an animation still running is dropped (it no longer writes).
+        h.dark = dark
+        h.settled = targetValue
+        h.anim = null
+    }
+    if (h.anim != null || targetValue != h.settled) {
+        LaunchedEffect(targetValue) {
+            // The same animation continues from where it is when the target changes again.
+            val a = h.anim ?: androidx.compose.animation.Animatable(h.settled).also { h.anim = it }
+            a.animateTo(targetValue, animationSpec)
+            if (h.anim === a) h.settled = targetValue
         }
     }
-    return if (valueTheme.value != dark) targetValue else anim.value
+    return h.anim?.value ?: h.settled
+}
+
+private typealias ColorAnim = androidx.compose.animation.core.Animatable<androidx.compose.ui.graphics.Color, androidx.compose.animation.core.AnimationVector4D>
+
+private class StateColor(var settled: androidx.compose.ui.graphics.Color, var dark: Boolean) {
+    /** State, so that creating the animation recomposes the reader, which then follows its value. */
+    var anim by mutableStateOf<ColorAnim?>(null)
 }
 
 /**

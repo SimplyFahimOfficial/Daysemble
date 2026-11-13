@@ -12,9 +12,13 @@ per frame instead (see the rules at the top of `ui/theme/Motion.kt`).
   - `BaselineProfileGenerator`: start-up, the three tabs, scrolling, Settings and Quick Add.
   - `TabSwitchBenchmark`: frame timing while switching Today / Calendar / Tasks.
   - `ScrollBenchmark`: frame timing while scrolling the Today agenda and the Tasks list.
-  - `InteractionBenchmark`: frame timing for rapid tab taps, task check and uncheck, fast calendar
-    navigation, the Month/Week drag, the Today day swipe, Quick Add with the keyboard, search typing,
-    page navigation, a cancelled and a completed back gesture, and backgrounding. Run any of them with
+  - `StartupBenchmark`: cold start to the first Today frame (start-up time and frames), with and without the profile.
+  - `InteractionBenchmark`: frame timing for rapid tab taps, completing tasks, fast calendar
+    navigation, every Calendar view in turn, the Month/Week drag, the Today day swipe, Quick Add with
+    the keyboard, search typing, page navigation, Settings to Support, the theme switch, dragging a
+    task in List order, a cancelled and a completed back gesture, and backgrounding. A step whose
+    element is not on screen fails the run (`require` / `click` in `Journeys.kt`); before, it was
+    skipped and an idle screen was timed. Run any of them with
     `adb shell settings put global animator_duration_scale 0` for the reduced-motion floor.
 - The app's `benchmark` build type: the release build (R8, not debuggable) signed with the debug key.
   It seeds sample data and 150 extra tasks on first start (`BenchmarkSeed`, guarded by

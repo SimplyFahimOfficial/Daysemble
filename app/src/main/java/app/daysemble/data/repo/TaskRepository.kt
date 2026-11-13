@@ -18,6 +18,8 @@ import app.daysemble.domain.model.TaskList
 import app.daysemble.domain.model.SeriesScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.time.Instant
 import java.time.LocalDate
@@ -56,8 +58,11 @@ class TaskRepository(
             }
         }
 
-    fun observeTask(id: String): Flow<Task?> = combine(tasks.observe(id), lists.observeAll(), series.observeAll()) { row, listRows, seriesRows ->
-        row?.takeIf { !it.isDeleted }?.let { r -> r.toDomain(repeat = seriesRows.firstOrNull { it.id == r.seriesId }?.activeRule()) }
+    /** One task, following only its own row and its own series (not every list and series in the database). */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun observeTask(id: String): Flow<Task?> = tasks.observe(id).flatMapLatest { row ->
+        if (row == null || row.isDeleted) flowOf(null)
+        else (row.seriesId?.let(series::observe) ?: flowOf(null)).map { s -> row.toDomain(repeat = s?.activeRule()) }
     }
 
     fun observeSubtasks(parentId: String): Flow<List<Task>> = tasks.observeSubtasks(parentId).map { rows -> rows.map { it.toDomain() } }
@@ -100,8 +105,6 @@ class TaskRepository(
         ids.forEach(listener::onTaskChanged) // cancels their alarms
         return true
     }
-
-    suspend fun localTaskCount(listId: String) = tasks.allIn(listId).count { !it.isDeleted }
 
     /** Creates the "My tasks" list on first run. Returns its id. */
     suspend fun ensureDefaultList(title: String): String = db.withTransaction {

@@ -5,7 +5,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
@@ -26,7 +25,6 @@ object SupportIntents {
     /** Must match the FileProvider in the manifest and res/xml/support_share_paths.xml. */
     private const val AUTHORITY_SUFFIX = ".supportshare"
     private const val SHARE_DIR = "support_share"
-    private const val PNG_QUALITY = 100
 
     internal fun createShareQrFile(cacheDir: File): File {
         val directory = File(cacheDir, SHARE_DIR).apply { mkdirs() }
@@ -77,14 +75,7 @@ object SupportIntents {
         }
     }
 
-    private fun writeQrPng(out: OutputStream) {
-        val bitmap = UpiQrCode.toBitmap(UpiQrCode.encode(SupportConfig.upiPaymentUri()), UpiQrCode.EXPORT_PIXELS_PER_MODULE)
-        try {
-            check(bitmap.compress(Bitmap.CompressFormat.PNG, PNG_QUALITY, out)) { "PNG encoding failed" }
-        } finally {
-            bitmap.recycle()
-        }
-    }
+    private fun writeQrPng(out: OutputStream) = UpiQr.writePng(out)
 
     /** Writes the QR PNG to [uri] (from ACTION_CREATE_DOCUMENT, so no storage permission). */
     fun saveQr(context: Context, uri: Uri): Boolean = try {

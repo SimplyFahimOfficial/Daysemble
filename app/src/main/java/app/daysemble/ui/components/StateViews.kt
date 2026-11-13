@@ -16,8 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,17 +70,6 @@ fun StateMessage(
         }
     }
 }
-
-@Composable
-fun ErrorState(title: String, body: String?, onRetry: (() -> Unit)?, retryLabel: String, modifier: Modifier = Modifier) =
-    StateMessage(
-        Icons.Rounded.ErrorOutline, title, modifier, body, tint = DsTheme.colors.error,
-        action = onRetry?.let { { DsButton(retryLabel, it, style = DsButtonStyle.Secondary) } },
-    )
-
-@Composable
-fun OfflineState(title: String, body: String?, modifier: Modifier = Modifier) =
-    StateMessage(Icons.Rounded.CloudOff, title, modifier, body)
 
 /** Skeleton row placeholder with a gentle pulse (static when reduced motion is on). */
 @Composable

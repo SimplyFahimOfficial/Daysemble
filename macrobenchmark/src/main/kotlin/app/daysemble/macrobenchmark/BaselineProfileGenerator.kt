@@ -3,7 +3,6 @@ package app.daysemble.macrobenchmark
 import androidx.benchmark.macro.junit4.BaselineProfileRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.uiautomator.By
-import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,13 +22,12 @@ class BaselineProfileGenerator {
         openTab("tasks")
         scrollList("tasks_list")
         // Settings and back.
-        device.findObject(By.desc("Settings"))?.click()
-        device.wait(Until.hasObject(By.text("Appearance")), 5_000)
+        click(By.desc("Settings"))
+        require(By.text("Appearance"))
         device.pressBack()
         device.waitForIdle()
         // Quick Add opening and closing.
-        device.findObject(By.desc("Add task or event"))?.click()
-        device.waitForIdle()
+        click(By.desc("Add task or event"))
         device.pressBack()
         device.waitForIdle()
         openTab("today")

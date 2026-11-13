@@ -279,15 +279,16 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
 
             if (!state.isNew && state.task?.parentId == null) {
                 SectionHeader(stringResource(R.string.field_subtasks), Modifier.padding(top = Space.l))
-                // New subtasks fade in and the list grows/shrinks smoothly instead of jumping.
-                // Subtasks already there when the task loads (same emission as the task) appear without motion.
+                // The list grows/shrinks smoothly (one size animation, on the column) and a new subtask
+                // fades in. Each row used to expand as well, so the column chased an animation that was
+                // itself animating. Subtasks already there when the task loads appear without motion.
                 val loadedIds = remember(state.task?.id) { state.subtasks.map { it.id }.toSet() }
                 Column(if (m.reduced) Modifier else Modifier.animateContentSize(m.standard(m.medium))) {
                     state.subtasks.forEach { s ->
                         androidx.compose.runtime.key(s.id) {
                             val shown = remember { androidx.compose.animation.core.MutableTransitionState(s.id in loadedIds) }
                             androidx.compose.runtime.LaunchedEffect(Unit) { shown.targetState = true }
-                            androidx.compose.animation.AnimatedVisibility(shown, enter = m.expandIn()) {
+                            androidx.compose.animation.AnimatedVisibility(shown, enter = androidx.compose.animation.fadeIn(m.enter())) {
                                 Column {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         TaskRow(s, now, onToggle = { vm.toggleSubtask(s.id, it) }, onClick = { vm.toggleSubtask(s.id, !s.isCompleted) }, showDue = false, modifier = Modifier.weight(1f))
