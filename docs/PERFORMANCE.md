@@ -14,7 +14,7 @@ per frame instead (see the rules at the top of `ui/theme/Motion.kt`).
   - `ScrollBenchmark`: frame timing while scrolling the Today agenda and the Tasks list.
   - `StartupBenchmark`: cold start to the first Today frame (start-up time and frames), with and without the profile.
   - `InteractionBenchmark`: frame timing for rapid tab taps, completing tasks, fast calendar
-    navigation, every Calendar view in turn, the Month/Week drag, the Today day swipe, Quick Add with
+    navigation and paging, every Calendar view in turn (each step checks its view by test tag), the Month/Week drag, the Today day swipe, Quick Add with
     the keyboard, search typing, page navigation, Settings to Support, the theme switch, dragging a
     task in List order (fails unless the row moved), a cancelled and a completed back gesture (fails unless Settings stayed, then left), and backgrounding. A step whose
     element is not on screen fails the run (`require` / `click` in `Journeys.kt`); before, it was

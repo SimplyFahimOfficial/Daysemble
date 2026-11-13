@@ -42,25 +42,47 @@ class InteractionBenchmark {
     @Test fun calendarFastNavigation() = run(tab = "calendar") { repeat(8) { click(By.desc("Next"), idle = false) }
         device.waitForIdle() }
 
-    /** Every Calendar view in turn, then quick back-and-forth taps that interrupt the transition before it ends. */
+    /**
+     * Every Calendar view in turn, then quick back-and-forth taps that interrupt the transition before it ends.
+     * After each full step the view that was asked for must be on screen (found by its test tag), so a tap that
+     * did nothing fails the run instead of being timed.
+     */
     @Test fun calendarModeSwitching() = run(tab = "calendar") {
+        val tagOf = mapOf("Week" to TIME_GRID, "Day" to TIME_GRID, "Agenda" to AGENDA, "Month" to DAY_LIST)
         listOf("Week", "Day", "Agenda", "Month", "Agenda", "Week", "Month", "Day", "Month").forEach { name ->
             click(By.text(name))
+            require(By.res(tagOf.getValue(name)))
         }
         repeat(3) { listOf("Week", "Month").forEach { name -> click(By.text(name), idle = false) } }
         device.waitForIdle()
+        require(By.res(DAY_LIST))
     }
 
-    /** Month to Week and back by dragging the grid vertically. */
+    /** Month to Week and back by dragging the grid vertically; each drag must change the view under it. */
     @Test fun monthWeekDrag() = run(tab = "calendar") {
         val w = device.displayWidth
-        val h = device.displayHeight
         repeat(2) {
-            device.swipe(w / 2, h * 3 / 10, w / 2, h / 10, 24)
+            val grid = require(By.res(MONTH_GRID)).visibleBounds
+            device.swipe(w / 2, grid.bottom - grid.height() / 8, w / 2, grid.top, 24)
             device.waitForIdle()
-            device.swipe(w / 2, h / 10, w / 2, h * 3 / 10, 24)
+            require(By.res(TIME_GRID))
+            device.swipe(w / 2, grid.top, w / 2, grid.bottom - grid.height() / 8, 24)
+            device.waitForIdle()
+            require(By.res(DAY_LIST))
+        }
+    }
+
+    /** Pages the month grid back and forth with quick swipes: the day list stays, the title changes. */
+    @Test fun calendarFastPaging() = run(tab = "calendar") {
+        val w = device.displayWidth
+        repeat(3) {
+            val y = require(By.res(MONTH_GRID)).visibleBounds.centerY()
+            device.swipe(w * 9 / 10, y, w / 10, y, 8)
+            device.swipe(w * 9 / 10, y, w / 10, y, 8)
+            device.swipe(w / 10, y, w * 9 / 10, y, 8)
             device.waitForIdle()
         }
+        require(By.res(DAY_LIST))
     }
 
     /** Swipe the Today agenda to the next and previous day. */
@@ -188,6 +210,10 @@ class InteractionBenchmark {
     private companion object {
         /** px from the screen edge where a back swipe starts, and the drag speed (px/s). */
         const val EDGE = 4
+        const val TIME_GRID = "calendar_time_grid"
+        const val DAY_LIST = "calendar_day_list"
+        const val AGENDA = "calendar_agenda"
+        const val MONTH_GRID = "calendar_month_grid"
         const val DRAG_SPEED = 400
     }
 
