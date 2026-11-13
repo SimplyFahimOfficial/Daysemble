@@ -3,6 +3,7 @@ package app.daysemble.ui.calendar
 import app.daysemble.ui.components.itemMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animate
 import androidx.compose.foundation.MutatePriority
@@ -31,7 +32,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.zIndex
+import app.daysemble.ui.blockTouches
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onPlaced
@@ -120,9 +128,6 @@ private const val PAGES = 20_000
 private const val CENTER = PAGES / 2
 private const val COLLAPSE_FADE_FACTOR = 1.5f
 
-/** Day and Agenda are views of their own; Month and Week are one view (see MonthWeekMode). */
-private fun CalendarMode.isOwnView() = this == CalendarMode.DAY || this == CalendarMode.AGENDA
-
 @Composable
 fun CalendarRoute(
     contentPadding: PaddingValues,
@@ -143,16 +148,10 @@ fun CalendarRoute(
     val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
     // 0 = Month, 1 = Week: one value for the control and for the vertical drag on the grid. The
     // grid's rows collapse to the selected week as it grows (see MonthWeekMode).
-    val morph = remember {
-        MorphState(if (state.mode == CalendarMode.WEEK) 1f else 0f).also { it.offscreen = state.mode.isOwnView() }
-    }
-    // Read now, before the Month/Week content below is composed (it marks the morph as on screen).
-    val enteringFromOwnView = morph.offscreen
+    val morph = remember { MorphState(if (state.mode == CalendarMode.WEEK) 1f else 0f) }
     LaunchedEffect(state.mode) {
         val to = when (state.mode) { CalendarMode.WEEK -> 1f; CalendarMode.MONTH -> 0f; else -> return@LaunchedEffect }
-        // Coming back from Day or Agenda the Month/Week content fades in already in its final layout;
-        // animating there would show the layout the morph was last left in, then fold into the right one.
-        if (enteringFromOwnView) morph.snapTo(to) else morph.settle(to, 0f, m.spring())
+        morph.settle(to, 0f, m.spring())
     }
     // One vertical scroll for the time grids (Week and Day, every page): the hour you were looking at
     // stays when switching between them and when paging, instead of each page jumping to 08:00.
@@ -211,8 +210,12 @@ fun CalendarRoute(
             // Opaque, so the view being covered never shows through the one fading in.
             Box(Modifier.fillMaxSize().background(c.background)) {
                 when (g) {
-                    CalendarMode.MONTH, CalendarMode.WEEK ->
-                        MonthWeekMode(state, now, vm, morph, timeScroll, contentPadding, onOpenEvent, onOpenTask, onCreateAt)
+                    CalendarMode.MONTH, CalendarMode.WEEK -> {
+                        // A Month/Week view that is only now being composed (coming from Day or Agenda) fades in already
+                        // in its final layout; one that is still on its way out and comes back keeps the morph it has.
+                        val fresh = remember { transition.currentState == EnterExitState.PreEnter }
+                        MonthWeekMode(state, now, vm, morph, fresh, timeScroll, contentPadding, onOpenEvent, onOpenTask, onCreateAt)
+                    }
                     CalendarMode.DAY -> GridMode(state, now, vm, CalendarMode.DAY, timeScroll, contentPadding, onOpenEvent, onCreateAt)
                     CalendarMode.AGENDA -> AgendaMode(state, now, vm, contentPadding, onOpenEvent, onOpenTask)
                 }
@@ -265,6 +268,7 @@ private fun MonthWeekMode(
     now: Instant,
     vm: CalendarViewModel,
     morph: MorphState,
+    fresh: Boolean,
     timeScroll: ScrollState,
     contentPadding: PaddingValues,
     onOpenEvent: (String, String) -> Unit,
@@ -273,7 +277,13 @@ private fun MonthWeekMode(
 ) {
     val p = LocalTimePrefs.current
     val m = DsTheme.motion
+    val c = DsTheme.colors
     val haptics = rememberHaptics()
+    // First composition of a view that fades in from Day or Agenda: set the layout before anything reads it.
+    remember {
+        if (fresh) morph.jumpTo(if (state.mode == CalendarMode.WEEK) 1f else 0f)
+        fresh
+    }
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val base = YearMonth.from(state.today)
@@ -285,18 +295,18 @@ private fun MonthWeekMode(
     }
     // The day list and the week's time grid are composed as soon as the mode (or a drag) heads toward
     // them, not in the first animated frame, so the composition of the time grid doesn't land inside
-    // the morph and skip its first frames. They are still invisible until the morph reaches them.
+    // the morph and skip its first frames. The list goes when the week covers it (see MorphFade).
     val dragging = morph.dragging
-    val showList by remember { derivedStateOf { morph.value < 0.999f } }
+    val showList by remember { derivedStateOf { morph.value < MorphFade.END } }
     val showWeek by remember { derivedStateOf { morph.value > 0.001f } }
     val listComposed = showList || dragging || state.mode == CalendarMode.MONTH
     val weekComposed = showWeek || dragging || state.mode == CalendarMode.WEEK
-    DisposableEffect(morph) {
-        morph.offscreen = false
-        onDispose { morph.offscreen = true }
-    }
-    // Only the crossing of the middle matters here, so the pager is not recomposed on every frame of the morph.
-    val monthSwipes by remember { derivedStateOf { morph.value < 0.5f } }
+    // Who owns touches, scrolling, focus and accessibility below the grid: the week from the middle of the
+    // morph, the day list before it. Only the owner is drawn on top, so only it can be hit.
+    val weekOwns by remember { derivedStateOf { morph.value >= MorphFade.MIDDLE } }
+    // The month pager pages only when the morph is at rest at Month, so it never competes with the
+    // vertical drag or the settle, and the pages beside the shown one can stay as they were at rest.
+    val monthSwipes by remember { derivedStateOf { morph.atRest && morph.value < MorphFade.MIDDLE } }
     var peek by remember { mutableStateOf<Pair<LocalDate, Rect?>?>(null) }
     // The drag covers the five rows that collapse.
     val travel = with(density) { (MONTH_ROW_HEIGHT * (MONTH_ROWS - 1)).toPx() }
@@ -307,7 +317,7 @@ private fun MonthWeekMode(
     LaunchedEffect(past) { if (morph.dragging) haptics.tick() }
     Column(Modifier.fillMaxSize()) {
         Column(
-            Modifier.draggable(
+            Modifier.testTag(CalendarTags.MONTH_GRID).draggable(
                 morph, Orientation.Vertical,
                 onDragStopped = { velocity ->
                     // Past halfway, or flung toward the other state: settle there, carrying the release velocity.
@@ -332,21 +342,54 @@ private fun MonthWeekMode(
             }
             HorizontalPager(pager, beyondViewportPageCount = 1, userScrollEnabled = monthSwipes) { pg ->
                 val ym = base.plusMonths((pg - CENTER).toLong())
+                // The neighbours are not on screen while the morph moves (paging is off then), so they keep
+                // the layout of the last rest instead of being measured again on every frame; they take the
+                // new one when the morph ends.
+                val live = pg == pager.currentPage
                 MonthGrid(
-                    ym, vm.gridStart(ym), state, collapse = { morph.value },
+                    ym, vm.gridStart(ym), state, collapse = if (live) ({ morph.value }) else ({ morph.restValue }),
                     onSelect = vm::select, onPeek = { d, r -> peek = d to r },
                 )
             }
         }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        // Both views are opaque and cross-fade by one progress ([MorphFade.progress]): the one that owns the area
+        // is on top and fades, the other stays whole under it until it is covered, so the area is never emptier
+        // than either view. At the middle the two swap places at the same picture (each is at half).
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
             if (listComposed) {
-                Box(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - morph.value * 2f).coerceIn(0f, 1f) }) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .zIndex(if (weekOwns) 0f else 1f)
+                        .graphicsLayer {
+                            val s = MorphFade.progress(morph.value)
+                            alpha = if (weekOwns) (if (s >= 1f) 0f else 1f) else 1f - s
+                            compositingStrategy = CompositingStrategy.ModulateAlpha
+                        }
+                        .background(c.background)
+                        .then(if (weekOwns) Modifier.inert() else Modifier),
+                ) {
                     DayList(state, now, vm, contentPadding, onOpenEvent, onOpenTask, onCreateAt)
                 }
             }
             if (weekComposed) {
-                Box(Modifier.fillMaxSize().graphicsLayer { alpha = (morph.value * 2f - 1f).coerceIn(0f, 1f) }) {
-                    GridMode(state, now, vm, CalendarMode.WEEK, timeScroll, contentPadding, onOpenEvent, onCreateAt)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .zIndex(if (weekOwns) 1f else 0f)
+                        .graphicsLayer {
+                            val s = MorphFade.progress(morph.value)
+                            alpha = if (weekOwns) s else (if (s <= 0f) 0f else 1f)
+                            compositingStrategy = CompositingStrategy.ModulateAlpha
+                        }
+                        .background(c.background)
+                        .then(if (weekOwns) Modifier else Modifier.inert()),
+                ) {
+                    // The pages beside the shown week are composed once the morph is at rest, not in the frame that starts it.
+                    GridMode(
+                        state, now, vm, CalendarMode.WEEK, timeScroll, contentPadding, onOpenEvent, onCreateAt,
+                        preload = morph.atRest && morph.restValue > MorphFade.MIDDLE,
+                    )
                 }
             }
         }
@@ -370,8 +413,14 @@ internal class MorphState(initial: Float) : DraggableState {
     /** True while a finger holds the grid. */
     var dragging by mutableStateOf(false)
         private set
-    /** True while Day or Agenda is showing instead of the Month/Week content (set by that content). */
-    var offscreen = false
+    /** True while a settle is animating. */
+    var settling by mutableStateOf(false)
+        private set
+    /** The value of the last rest (0 or 1): what the views that are not on screen are laid out with. */
+    var restValue by mutableFloatStateOf(initial)
+        private set
+    /** Neither held nor settling: the layout is the one of [restValue]. */
+    val atRest: Boolean get() = !dragging && !settling
     private var settlingTo: Float? = null
     private val mutex = MutatorMutex()
     private val scope = object : DragScope {
@@ -392,8 +441,21 @@ internal class MorphState(initial: Float) : DraggableState {
     suspend fun snapTo(to: Float) {
         mutex.mutate {
             settlingTo = null
+            settling = false
             value = to
+            restValue = to
         }
+    }
+
+    /**
+     * The same jump for the composition of a view that is not on screen yet, which cannot suspend. No
+     * settle or drag can be running then: they belong to the view being composed, or to the mode
+     * change that has just left it.
+     */
+    fun jumpTo(to: Float) {
+        settlingTo = null
+        value = to
+        restValue = to
     }
 
     /** Animates to [to] (0 or 1) from the live value; a request for the target already under way is ignored. */
@@ -401,14 +463,41 @@ internal class MorphState(initial: Float) : DraggableState {
         if (settlingTo == to) return
         mutex.mutate {
             settlingTo = to
+            settling = true
             try {
                 animate(value, to, velocity, spec) { v, _ -> value = v.coerceIn(0f, 1f) }
+                restValue = to
             } finally {
+                settling = false
                 if (settlingTo == to) settlingTo = null
             }
         }
     }
 }
+
+/**
+ * The cross-fade of the day list and the week's time grid under the folding grid: [progress] is 0 up to
+ * [START] and 1 from [END] of the morph, and they trade places (draw order, touches, accessibility) at
+ * [MIDDLE], where each is at half. (They used to fade out and in over the two halves, so both were
+ * clear at the middle and the area below the grid was empty.)
+ */
+internal object MorphFade {
+    const val START = 0.25f
+    const val END = 0.75f
+    const val MIDDLE = 0.5f
+    /** Smoothstep: 3t^2 - 2t^3. */
+    private const val SMOOTH_A = 3f
+    private const val SMOOTH_B = 2f
+
+    fun progress(morph: Float): Float {
+        val t = ((morph - START) / (END - START)).coerceIn(0f, 1f)
+        return t * t * (SMOOTH_A - SMOOTH_B * t)
+    }
+}
+
+/** What a view under another one must not do: take taps, scroll, be read out or take keyboard focus. */
+private fun Modifier.inert(): Modifier =
+    blockTouches().clearAndSetSemantics { }.focusProperties { onEnter = { cancelFocusChange() } }.focusGroup()
 
 /** Height of one month row at normal font size; also how far a vertical drag travels per collapsed row. */
 private val MONTH_ROW_HEIGHT = 52.dp
@@ -610,6 +699,8 @@ private fun GridMode(
     contentPadding: PaddingValues,
     onOpenEvent: (String, String) -> Unit,
     onCreateAt: (LocalDate, Int?) -> Unit,
+    /** Whether the pages beside the shown one are composed too (they make the first composition of a time grid about three times as long). */
+    preload: Boolean = true,
 ) {
     val c = DsTheme.colors
     val p = LocalTimePrefs.current
@@ -625,7 +716,7 @@ private fun GridMode(
         else if (cur != start) vm.select(start)
     }
     Column(Modifier.padding(bottom = contentPadding.calculateBottomPadding())) {
-        HorizontalPager(pager, beyondViewportPageCount = 1, modifier = Modifier.weight(1f)) { pg ->
+        HorizontalPager(pager, beyondViewportPageCount = if (preload) 1 else 0, modifier = Modifier.weight(1f)) { pg ->
             val start = if (isWeek) baseStart.plusWeeks((pg - CENTER).toLong()) else baseStart.plusDays((pg - CENTER).toLong())
             val days = (0 until if (isWeek) 7 else 1).map { start.plusDays(it.toLong()) }
             Column {

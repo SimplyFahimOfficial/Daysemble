@@ -164,6 +164,57 @@ class MotionStateTest {
         assertThat(morph.value).isEqualTo(1f)
     }
 
+    /** The views that are not on screen are laid out with the value of the last rest, not with every frame of the morph. */
+    @Test fun morph_restValue_changesOnlyWhenTheMorphEnds() = runTest {
+        val clock = TestMonotonicFrameClock(this)
+        val morph = MorphState(0f).apply { travel = 100f }
+        assertThat(morph.atRest).isTrue()
+        val settle = launch(clock) { morph.settle(1f, 0f, tween(400)) }
+        advanceTimeBy(150); runCurrent()
+        assertThat(morph.atRest).isFalse()
+        assertThat(morph.value).isGreaterThan(0f)
+        assertThat(morph.restValue).isEqualTo(0f)
+        advanceTimeBy(1_000); runCurrent()
+        assertThat(settle.isCompleted).isTrue()
+        assertThat(morph.atRest).isTrue()
+        assertThat(morph.restValue).isEqualTo(1f)
+        // An interrupted settle does not become the rest: a drag takes over half way.
+        val back = launch(clock) { morph.settle(0f, 0f, tween(1_000)) }
+        advanceTimeBy(300); runCurrent()
+        launch(clock) { morph.drag(MutePriorityUserInput) { dragBy(10f) } }
+        advanceTimeBy(100); runCurrent()
+        assertThat(back.isCompleted).isTrue()
+        assertThat(morph.restValue).isEqualTo(1f)
+        assertThat(morph.dragging).isFalse() // the drag block has ended; the release settles
+    }
+
+    @Test fun morph_jumpTo_isTheNewRest() {
+        val morph = MorphState(1f)
+        morph.jumpTo(0f)
+        assertThat(morph.value).isEqualTo(0f)
+        assertThat(morph.restValue).isEqualTo(0f)
+        assertThat(morph.atRest).isTrue()
+    }
+
+    /** Both views are at half where they trade places, so the picture is the same just before and after. */
+    @Test fun morphFade_isOnePathThroughBothHalves_withNoGap() {
+        val f = app.daysemble.ui.calendar.MorphFade
+        assertThat(f.progress(0f)).isEqualTo(0f)
+        assertThat(f.progress(f.START)).isEqualTo(0f)
+        assertThat(f.progress(f.MIDDLE)).isWithin(1e-6f).of(0.5f)
+        assertThat(f.progress(f.END)).isEqualTo(1f)
+        assertThat(f.progress(1f)).isEqualTo(1f)
+        var last = 0f
+        for (i in 0..100) { val v = f.progress(i / 100f); assertThat(v).isAtLeast(last); last = v }
+        // Top view's visibility is progress (week) or 1 - progress (list); the layer under it is whole: the
+        // share of the area covered by the two never falls under one half at any step.
+        for (i in 0..100) {
+            val s = f.progress(i / 100f)
+            val top = if (i / 100f >= f.MIDDLE) s else 1f - s
+            assertThat(top).isAtLeast(0.5f - 1e-6f)
+        }
+    }
+
     // ---- Today day swipe --------------------------------------------------------------------
 
     @Test fun daySwipe_aCommittedSwipe_entersFromTheFarSideAndSettlesAtRest() = runTest {

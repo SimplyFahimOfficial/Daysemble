@@ -1107,7 +1107,7 @@ internal class TabFade(first: Tab) {
 }
 
 /** Takes every touch inside the node without acting on it (a screen that is fading out or leaving). */
-private fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
+internal fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
     awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } }
 }
 

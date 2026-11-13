@@ -62,6 +62,7 @@ object CalendarTags {
     const val TIME_GRID = "calendar_time_grid"
     const val DAY_LIST = "calendar_day_list"
     const val AGENDA = "calendar_agenda"
+    const val MONTH_GRID = "calendar_month_grid"
 }
 private val GutterWidth = 52.dp
 
