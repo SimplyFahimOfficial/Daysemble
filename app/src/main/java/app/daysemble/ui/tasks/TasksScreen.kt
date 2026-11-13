@@ -137,12 +137,6 @@ fun TasksScreen(
 ) {
     val c = DsTheme.colors
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-    // Local copy of the manual order, which the held row reorders. It follows the data, but never while
-    // a row is held or settling: a database update then (a sync, a tick) used to rebuild it under the
-    // finger and the row jumped back to its old slot. The update is applied when the row is let go.
-    val manual = remember {
-        androidx.compose.runtime.mutableStateListOf<Task>().apply { if (state.canReorder) addAll(state.sections.flatMap { it.tasks }) }
-    }
     var dragging by remember { mutableStateOf<String?>(null) }
     var dragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     // After release the row glides from where the finger left it into its slot ([DsMotion.settle]),
@@ -150,11 +144,21 @@ fun TasksScreen(
     var settling by remember { mutableStateOf(false) }
     var settleJob by remember { mutableStateOf<Job?>(null) }
     val dragScope = rememberCoroutineScope()
-    val held = dragging != null || settling
-    LaunchedEffect(state.sections, state.canReorder, held) {
-        if (held) return@LaunchedEffect
-        val data = if (state.canReorder) state.sections.flatMap { it.tasks } else emptyList()
-        if (manual.toList() != data) { manual.clear(); manual.addAll(data) }
+    // Local copy of the manual order, which the held row reorders. It is built from the data, but the
+    // data it is built from is not replaced while a row is held or settling: a database update then (a
+    // sync, a tick) used to rebuild the order under the finger and the row jumped back to its old
+    // slot. The update is taken when the row is let go, in the same composition (no stale frame), except
+    // data that still has the old order of the same tasks: the drop is being saved, and showing that
+    // data would put the row back until the save arrives.
+    var source by remember { mutableStateOf(state.sections) }
+    val dropped = remember { arrayOfNulls<List<String>>(1) }
+    if (dragging == null && !settling && source !== state.sections) {
+        val ids = if (state.canReorder) state.sections.flatMap { sec -> sec.tasks.map { it.id } } else emptyList()
+        val saving = dropped[0]
+        if (saving == null || ids == saving || ids.toSet() != saving.toSet()) { source = state.sections; dropped[0] = null }
+    }
+    val manual = remember(source, state.canReorder) {
+        androidx.compose.runtime.mutableStateListOf<Task>().apply { if (state.canReorder) addAll(source.flatMap { it.tasks }) }
     }
     // Ids of the reorderable rows, for telling them from the list's other items by key.
     val manualIds by remember { derivedStateOf { manual.mapTo(HashSet()) { it.id } } }
@@ -183,6 +187,12 @@ fun TasksScreen(
     // (the scroll is added to its offset) and keeps taking the places it passes.
     val edgePx = with(density) { AutoScrollEdge.toPx() }
     val maxSpeedPx = with(density) { AutoScrollMaxSpeed.toPx() }
+    // Saves the order on screen, and remembers it until the data shows it (see [dropped]).
+    fun saveOrder() {
+        val ids = manual.map { it.id }
+        dropped[0] = ids
+        onReorder(ids)
+    }
     // -1..1: how far into the top (negative) or bottom edge zone the held row is; 0 outside both.
     fun edgePull(id: String): Float {
         val info = listState.layoutInfo
@@ -313,8 +323,8 @@ fun TasksScreen(
                                 task, now, onToggle = { onToggle(task.id, it) }, onClick = { onOpen(task.id) },
                                 onLongClick = app.daysemble.ui.actions.LocalItemActions.current?.let { a -> { a.onTaskLongPress(task) } },
                                 actions = buildList {
-                                    if (index > 0) add(CustomAccessibilityAction(moveUp) { manual.swap(index, index - 1); onReorder(manual.map { it.id }); true })
-                                    if (index < manual.lastIndex) add(CustomAccessibilityAction(moveDown) { manual.swap(index, index + 1); onReorder(manual.map { it.id }); true })
+                                    if (index > 0) add(CustomAccessibilityAction(moveUp) { manual.swap(index, index - 1); saveOrder(); true })
+                                    if (index < manual.lastIndex) add(CustomAccessibilityAction(moveDown) { manual.swap(index, index + 1); saveOrder(); true })
                                 },
                             )
                         }
@@ -340,13 +350,13 @@ fun TasksScreen(
                                         },
                                         onDragEnd = {
                                             // The order is saved now; the glide only follows it.
-                                            onReorder(manual.map { it.id })
+                                            saveOrder()
                                             haptics.confirm()
                                             settleDrop(task.id)
                                         },
                                         onDragCancel = {
                                             // Cancelled by the system, not the user: keep the order they see.
-                                            onReorder(manual.map { it.id })
+                                            saveOrder()
                                             settleDrop(task.id)
                                         },
                                     )

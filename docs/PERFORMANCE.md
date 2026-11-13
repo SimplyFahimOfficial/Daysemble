@@ -16,7 +16,7 @@ per frame instead (see the rules at the top of `ui/theme/Motion.kt`).
   - `InteractionBenchmark`: frame timing for rapid tab taps, completing tasks, fast calendar
     navigation, every Calendar view in turn, the Month/Week drag, the Today day swipe, Quick Add with
     the keyboard, search typing, page navigation, Settings to Support, the theme switch, dragging a
-    task in List order, a cancelled and a completed back gesture, and backgrounding. A step whose
+    task in List order (fails unless the row moved), a cancelled and a completed back gesture (fails unless Settings stayed, then left), and backgrounding. A step whose
     element is not on screen fails the run (`require` / `click` in `Journeys.kt`); before, it was
     skipped and an idle screen was timed. Run any of them with
     `adb shell settings put global animator_duration_scale 0` for the reduced-motion floor.

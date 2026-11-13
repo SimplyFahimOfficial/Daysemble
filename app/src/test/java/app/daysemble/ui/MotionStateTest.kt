@@ -27,6 +27,9 @@ class MotionStateTest {
 
     // ---- Tab cross-fade ---------------------------------------------------------------------
 
+    /** The picture on screen: alphas of the drawn tabs, bottom to top. */
+    private fun TabFade.picture() = order.map { it to alphaOf(it) }
+
     @Test fun tabFade_endsOnTheLastTab_afterAnySequenceOfTaps() = runTest {
         val clock = TestMonotonicFrameClock(this)
         val fade = TabFade(Tab.TODAY)
@@ -37,38 +40,62 @@ class MotionStateTest {
         job.cancel(); job = launch(clock) { fade.show(Tab.TODAY, m) }
         advanceTimeBy(1_000); runCurrent()
         assertThat(job.isCompleted).isTrue()
-        assertThat(fade.top).isEqualTo(Tab.TODAY)
-        assertThat(fade.base).isEqualTo(Tab.TODAY)
-        assertThat(fade.alphaOf(Tab.TODAY, Tab.TODAY)).isEqualTo(1f)
+        assertThat(fade.order).containsExactly(Tab.TODAY)
+        assertThat(fade.alphaOf(Tab.TODAY)).isEqualTo(1f)
+        assertThat(fade.alphaOf(Tab.CALENDAR)).isEqualTo(0f)
+        assertThat(fade.alphaOf(Tab.TASKS)).isEqualTo(0f)
     }
 
-    @Test fun tabFade_goingBackToTheTabUnderneath_keepsThePictureContinuous() = runTest {
+    /** Today to Calendar, then Tasks before the first fade has ended: Calendar stays as far as it had got. */
+    @Test fun tabFade_aThirdTab_startsFromTheSamePicture() = runTest {
         val clock = TestMonotonicFrameClock(this)
         val fade = TabFade(Tab.TODAY)
-        val job = launch(clock) { fade.show(Tab.TASKS, m) }
+        val first = launch(clock) { fade.show(Tab.CALENDAR, m) }
         advanceTimeBy(60); runCurrent()
-        // The picture is Tasks at `a` over Today.
-        val a = fade.alphaOf(Tab.TASKS, Tab.TASKS)
-        assertThat(a).isGreaterThan(0f)
-        assertThat(a).isLessThan(1f)
-        job.cancel()
+        val before = fade.picture()
+        assertThat(before.map { it.first }).containsExactly(Tab.TODAY, Tab.CALENDAR).inOrder()
+        assertThat(before[1].second).isGreaterThan(0f)
+        assertThat(before[1].second).isLessThan(1f)
+        first.cancel()
+        launch(clock) { fade.show(Tab.TASKS, m) }
+        runCurrent()
+        // Tasks is on top and transparent; Today and Calendar are exactly as they were.
+        assertThat(fade.picture().map { it.first }).containsExactly(Tab.TODAY, Tab.CALENDAR, Tab.TASKS).inOrder()
+        assertThat(fade.picture().take(2)).isEqualTo(before)
+        assertThat(fade.alphaOf(Tab.TASKS)).isEqualTo(0f)
+        advanceTimeBy(1_000); runCurrent()
+        assertThat(fade.order).containsExactly(Tab.TASKS)
+        assertThat(fade.alphaOf(Tab.TASKS)).isEqualTo(1f)
+    }
+
+    /** Going back to a tab that is underneath fades the tabs above it away; nothing is reordered, so nothing jumps. */
+    @Test fun tabFade_goingBackToATabUnderneath_fadesTheOnesAboveAway() = runTest {
+        val clock = TestMonotonicFrameClock(this)
+        val fade = TabFade(Tab.TODAY)
+        val first = launch(clock) { fade.show(Tab.CALENDAR, m) }
+        advanceTimeBy(60); runCurrent()
+        first.cancel()
+        val second = launch(clock) { fade.show(Tab.TASKS, m) }
+        advanceTimeBy(30); runCurrent()
+        second.cancel()
+        val before = fade.picture()
         val back = launch(clock) { fade.show(Tab.TODAY, m) }
         runCurrent()
-        // The same picture: Today at 1 - a over Tasks, which is now opaque underneath. No jump.
-        assertThat(fade.base).isEqualTo(Tab.TASKS)
-        assertThat(fade.alphaOf(Tab.TODAY, Tab.TODAY)).isWithin(0.05f).of(1f - a)
-        assertThat(fade.alphaOf(Tab.TASKS, Tab.TODAY)).isEqualTo(1f)
+        assertThat(fade.picture().map { it.first }).containsExactly(Tab.TODAY, Tab.CALENDAR, Tab.TASKS).inOrder()
+        // At most one frame of progress, no jump in any layer.
+        fade.picture().zip(before).forEach { (now, was) -> assertThat(now.second).isWithin(0.15f).of(was.second) }
         advanceTimeBy(1_000); runCurrent()
         assertThat(back.isCompleted).isTrue()
-        assertThat(fade.alphaOf(Tab.TODAY, Tab.TODAY)).isEqualTo(1f)
+        assertThat(fade.order).containsExactly(Tab.TODAY)
+        assertThat(fade.alphaOf(Tab.TODAY)).isEqualTo(1f)
     }
 
     @Test fun tabFade_withMotionOff_isAtOnce() = runTest {
         val fade = TabFade(Tab.TODAY)
         launch(TestMonotonicFrameClock(this)) { fade.show(Tab.TASKS, DsMotion(reduced = true)) }
         runCurrent()
-        assertThat(fade.top).isEqualTo(Tab.TASKS)
-        assertThat(fade.alphaOf(Tab.TASKS, Tab.TASKS)).isEqualTo(1f)
+        assertThat(fade.order).containsExactly(Tab.TASKS)
+        assertThat(fade.alphaOf(Tab.TASKS)).isEqualTo(1f)
     }
 
     // ---- Month / Week morph -----------------------------------------------------------------
