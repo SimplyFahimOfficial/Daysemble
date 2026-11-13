@@ -180,6 +180,7 @@ import app.daysemble.ui.today.TodayRoute as TodayScreenRoute
 import androidx.compose.runtime.Stable
 import app.daysemble.ui.theme.DsMotion
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZoneId
@@ -626,8 +627,8 @@ private fun NavHostController.openFrom(from: NavBackStackEntry, route: Any) {
  * Like [openFrom] it works during the page's opening animation too (it used to wait for RESUMED,
  * so Back did nothing for the first 300 ms after a page opened).
  */
-private fun NavHostController.backFrom(from: NavBackStackEntry) {
-    closeFrom(from)
+private fun NavHostController.backFrom(from: NavBackStackEntry, guard: PageGuard) {
+    closeFrom(from, guard)
 }
 
 /**
@@ -635,41 +636,59 @@ private fun NavHostController.backFrom(from: NavBackStackEntry) {
  * RESUMED, so it also works while the page is paused or still entering; it pops only if [from] is
  * still on top, so it can't close a different page. The main screen is never popped.
  */
-private fun NavHostController.closeFrom(from: NavBackStackEntry) {
+private fun NavHostController.closeFrom(from: NavBackStackEntry, guard: PageGuard) {
     // A page is still animating out: a second tap would land on the page being revealed under it.
-    if (pagesLeaving > 0) return
+    if (guard.leaving > 0) return
     val top = currentBackStackEntry ?: return
     if (top.id == from.id && !top.destination.hasRoute<MainRoute>()) popBackStack()
 }
 
 /**
- * How many pages are currently animating out after Back. Pages slide sideways, so the page being
- * revealed is not fully covered by the one leaving; [closeFrom] ignores taps meanwhile. Main thread only.
+ * How many pages of one NavHost are animating out because Back popped them. Pages slide sideways, so
+ * the page being revealed is not fully covered by the one leaving; [closeFrom] ignores taps meanwhile.
+ * It belongs to the NavHost (a new one for a new activity or window), not to the process.
  */
-private var pagesLeaving = 0
+@Stable
+private class PageGuard {
+    var leaving = 0
+
+    /** Ids of the pages Back has popped, which stay on screen until their exit transition ends. */
+    var popped by mutableStateOf(emptySet<String>())
+        private set
+    private val stack = ArrayList<String>()
+
+    /** Follows the top of the back stack: an entry seen again is a pop of everything above it, a new one is a push. */
+    fun top(id: String) {
+        val i = stack.indexOf(id)
+        if (i < 0) {
+            stack += id
+            if (id in popped) popped = popped - id
+        } else if (i < stack.lastIndex) {
+            val gone = stack.subList(i + 1, stack.size)
+            popped = popped + gone
+            gone.clear()
+        }
+    }
+}
 
 /**
  * A page opened over the main screen. It takes all touches inside its bounds (pages draw an opaque
  * background, but a background alone doesn't stop a tap from reaching the main screen underneath),
  * and once it is leaving it ignores taps, so a quick tap after Back can't act on the page that is
  * fading out.
+ *
+ * "Leaving" means popped by Back, not merely covered: a page under a newly opened one also ends in
+ * its exit state, and counting it made the new page's own Back and Cancel do nothing until the
+ * opening transition had finished.
  */
 @Composable
-private fun AnimatedContentScope.Page(content: @Composable () -> Unit) {
-    val leaving = transition.targetState == EnterExitState.PostExit
+private fun AnimatedContentScope.Page(entry: NavBackStackEntry, guard: PageGuard, content: @Composable () -> Unit) {
+    val leaving = transition.targetState == EnterExitState.PostExit && entry.id in guard.popped
     DisposableEffect(leaving) {
-        if (leaving) pagesLeaving++
-        onDispose { if (leaving) pagesLeaving-- }
+        if (leaving) guard.leaving++
+        onDispose { if (leaving) guard.leaving-- }
     }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .pointerInput(leaving) {
-                if (leaving) awaitPointerEventScope {
-                    while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-                }
-            },
-    ) { content() }
+    Box(Modifier.fillMaxSize().then(if (leaving) Modifier.blockTouches() else Modifier)) { content() }
 }
 
 @Composable
@@ -677,6 +696,8 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
     val m = DsTheme.motion
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val density = LocalDensity.current
+    val guard = remember { PageGuard() }
+    nav.currentBackStackEntryAsState().value?.let { guard.top(it.id) }
 
     NavHost(
         navController = nav,
@@ -699,46 +720,46 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
         }
         composable<TaskDetailRoute> { e ->
             val r = e.toRoute<TaskDetailRoute>()
-            Page {
+            Page(e, guard) {
                 app.daysemble.ui.task.TaskDetailRoute(
                     r.taskId, onEdit = { id -> nav.openFrom(e, TaskEditorRoute(taskId = id)) },
-                    onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) },
+                    onDone = { nav.closeFrom(e, guard) }, onClose = { nav.backFrom(e, guard) },
                 )
             }
         }
         composable<TaskEditorRoute> { e ->
             val r = e.toRoute<TaskEditorRoute>()
-            Page {
+            Page(e, guard) {
                 TaskEditorScreenRoute(
                     r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), initialDueMinute = r.dueMinute, initialTitle = r.title,
-                    onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) },
+                    onDone = { nav.closeFrom(e, guard) }, onClose = { nav.backFrom(e, guard) },
                 )
             }
         }
         composable<EventDetailRoute> { e ->
             val r = e.toRoute<EventDetailRoute>()
-            Page {
+            Page(e, guard) {
                 EventDetailScreenRoute(
                     r.eventId, r.occurrenceKey, onEdit = { id, key -> nav.openFrom(e, EventEditorRoute(eventId = id, occurrenceKey = key)) },
-                    onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) },
+                    onDone = { nav.closeFrom(e, guard) }, onClose = { nav.backFrom(e, guard) },
                 )
             }
         }
         composable<EventEditorRoute> { e ->
             val r = e.toRoute<EventEditorRoute>()
-            Page {
+            Page(e, guard) {
                 EventEditorScreenRoute(
                     r.eventId, r.dateEpochDay?.let(LocalDate::ofEpochDay), r.startMinute, r.title, occurrenceKey = r.occurrenceKey,
-                    onDone = { nav.closeFrom(e) }, onClose = { nav.backFrom(e) },
+                    onDone = { nav.closeFrom(e, guard) }, onClose = { nav.backFrom(e, guard) },
                 )
             }
         }
         composable<SettingsRoute> { e ->
-            Page { SettingsHomeRoute(onBack = { nav.backFrom(e) }, onOpen = { nav.openFrom(e, SettingsPageRoute(it.name)) }) }
+            Page(e, guard) { SettingsHomeRoute(onBack = { nav.backFrom(e, guard) }, onOpen = { nav.openFrom(e, SettingsPageRoute(it.name)) }) }
         }
         composable<SettingsPageRoute> { e ->
-            val back: () -> Unit = { nav.backFrom(e) }
-            Page {
+            val back: () -> Unit = { nav.backFrom(e, guard) }
+            Page(e, guard) {
                 when (runCatching { SettingsPage.valueOf(e.toRoute<SettingsPageRoute>().page) }.getOrNull()) {
                     SettingsPage.APPEARANCE -> AppearanceRoute(onBack = back)
                     SettingsPage.LISTS_CALENDARS -> app.daysemble.ui.settings.ListsCalendarsRoute(onBack = back)
@@ -996,7 +1017,9 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                     Box(
                         Modifier
                             .layoutId(t)
-                            .graphicsLayer { this.alpha = fade.alphaOf(t, currentTab) }
+                            .graphicsLayer { this.alpha = fade.alphaOf(t) }
+                            // A tab that is only still fading out must not take taps meant for the one above or below it.
+                            .then(if (t != current) Modifier.blockTouches() else Modifier)
                             // Opaque, so the tab being covered never shows through the finished one.
                             .background(c.background)
                             .then(if (t != current) Modifier.clearAndSetSemantics { } else Modifier)
@@ -1004,7 +1027,7 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
                             .focusProperties { onEnter = { if (t != currentTab) cancelFocusChange() } }
                             .focusGroup(),
                     ) {
-                        app.daysemble.ui.components.VisibilityLifecycle(visible = t == current || t == fade.base || t == fade.top || t.name !in seen) {
+                        app.daysemble.ui.components.VisibilityLifecycle(visible = t == current || t in fade.order || t.name !in seen) {
                             holder.SaveableStateProvider(t.name) {
                                 CompositionLocalProvider(app.daysemble.ui.components.LocalTabVisible provides (t == current)) { content(t) }
                             }
@@ -1020,8 +1043,8 @@ private fun TabHost(current: Tab, modifier: Modifier, content: @Composable (Tab)
         // Every composed tab is measured (so a hidden tab is laid out and ready), only drawn ones are placed.
         val placeables = measurables.associate { (it.layoutId as Tab) to it.measure(child) }
         layout(w, h) {
-            // The current tab is always placed, on top (it is still transparent in the frame before its fade starts).
-            listOf(fade.base, fade.top, currentTab).distinct().forEachIndexed { z, t -> placeables[t]?.place(0, 0, zIndex = z.toFloat()) }
+            // The stack as it is drawn; the current tab, not in it for the frame before its fade starts, goes on top (still transparent).
+            (fade.order + currentTab).distinct().forEachIndexed { z, t -> placeables[t]?.place(0, 0, zIndex = z.toFloat()) }
         }
     }
 }
@@ -1044,36 +1067,48 @@ private suspend fun awaitMainThreadIdle() {
 }
 
 /**
- * The cross-fade between tabs: [top] fades in over [base], which is opaque underneath, so the picture
- * is always `top * reveal + base * (1 - reveal)`. Tapping the tab underneath mid-fade swaps the two
- * roles and mirrors [reveal] (the picture stays the same, and it now fades the other way); a third
- * tab starts from the one that was arriving (a mid-fade blend jumps to it, at most one short fade).
- * One animatable and one writer, so any sequence of taps ends on the last tab shown in full.
+ * The cross-fade between tabs, kept continuous however the taps come. The drawn tabs are a stack
+ * ([order], bottom to top), each with its own alpha, the bottom one opaque, and every change is made
+ * so that the picture on screen is the same in the frame before and after it:
+ * - a new tab is pushed on top at alpha 0 and fades in; whatever was fading underneath stays exactly
+ *   as it is (so a third tab tapped mid-fade does not jump to the tab that was arriving);
+ * - going back to a tab already in the stack fades the tabs above it out (and it in, if it was
+ *   partly shown), instead of reordering the stack, which would change the picture.
+ * When the fades end the stack is just the chosen tab. The alphas are animatables written only by
+ * [show], which a newer tap cancels, so each continues from its live value.
  */
 @Stable
 internal class TabFade(first: Tab) {
-    var base by mutableStateOf(first)
+    var order by mutableStateOf(listOf(first))
         private set
-    var top by mutableStateOf(first)
-        private set
-    private val reveal = Animatable(1f)
+    private val alphas = Tab.entries.associateWith { Animatable(if (it == first) 1f else 0f) }
 
-    /** Alpha of [tab] now: [top] is revealed, [current] (switched to but not started yet) is not, the rest is opaque. */
-    fun alphaOf(tab: Tab, current: Tab): Float = when {
-        tab == top -> reveal.value
-        tab == current -> 0f
-        else -> 1f
-    }
+    /** Alpha of [tab] now; one that is not drawn, or [current] before its fade has started, is transparent. */
+    fun alphaOf(tab: Tab): Float = if (tab in order) alphas.getValue(tab).value else 0f
 
     suspend fun show(tab: Tab, m: DsMotion) {
-        if (tab != top) {
-            if (tab == base) reveal.snapTo(1f - reveal.value) else reveal.snapTo(0f)
-            base = top
-            top = tab
+        if (tab !in order) {
+            alphas.getValue(tab).snapTo(0f)
+            order = order + tab
         }
-        if (m.enabled) reveal.animateTo(1f, m.tabFade()) else reveal.snapTo(1f)
-        base = tab
+        val above = order.subList(order.indexOf(tab) + 1, order.size)
+        if (m.enabled) {
+            coroutineScope {
+                above.forEach { launch { alphas.getValue(it).animateTo(0f, m.tabFade()) } }
+                alphas.getValue(tab).animateTo(1f, m.tabFade())
+            }
+        } else {
+            above.forEach { alphas.getValue(it).snapTo(0f) }
+            alphas.getValue(tab).snapTo(1f)
+        }
+        order = listOf(tab)
+        Tab.entries.forEach { if (it != tab) alphas.getValue(it).snapTo(0f) }
     }
+}
+
+/** Takes every touch inside the node without acting on it (a screen that is fading out or leaving). */
+private fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
+    awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } }
 }
 
 // ---- Bottom bar -----------------------------------------------------------------------------

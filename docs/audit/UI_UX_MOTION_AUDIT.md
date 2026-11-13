@@ -245,3 +245,24 @@ Looked at and left alone: the theme cross-fade (`GraphicsLayer.record` plus one 
 
 Not verified: frame timing and jank (Perfetto: `InteractionBenchmark`), the per-frame remeasure of three month pages by `morphInset` while Month/Week morphs, the cost of the always-composed hidden overview on Today, whole-table task observation by Tasks, Today and Search, and a device-recorded Baseline Profile (the file is still the starter).
 
+## 8. Follow-up on PR #49, tabs, navigation, theme (November 2026, uncommitted)
+
+Builds on `perf-data-pipelines-tasks-drag` (PR #49). No device, so no frame timings; each row says what was measured.
+
+| # | Cause | Change | Evidence |
+|---|---|---|---|
+| E1 | A third tab tapped while two were cross-fading jumped to the tab that was arriving, and going back to a tab underneath swapped roles only for two layers. | `TabFade` keeps a stack of drawn tabs, each with its own alpha. A new tab is pushed at 0 and the others stay exactly as they are; going back to a tab in the stack fades the ones above it out. A tab that is only fading out takes no touches. | `MotionStateTest` (picture identical before and after the third tap and the reversal; ends on the last tab), `TransitionFramesTest.rapidTabTaps…` (4 tap sequences, no frame under the floor) |
+| E2 | Back and Cancel on a page that had just opened did nothing until the opening transition ended: the page *under* it (covered, not leaving) also reaches its exit state and was counted by the process-wide `pagesLeaving`. | `PageGuard` belongs to the NavHost; a page counts only when Back has popped it. | `PageBackTest.backOnAPageThatJustOpened_closesIt` fails on the old root (the page stays) and passes now |
+| E3 | Two quick theme changes: the second dropped the fading picture and popped to the new theme (and the app was recorded into a layer on every draw). | The capture includes the fade still running, so the second change continues from what is on screen; the app is drawn into the layer only for the frames of a capture. | `TransitionFramesTest.themeToggledBackMidFade…`: the picture stepped 0.52 to 0.16 in one frame on the old code, and by at most the first fade's own step now |
+| E4 | PR #49: the dragged order was replaced by the data again right after the drop, when the data still had the old order (the save had not arrived), and for a frame after every data change (a `LaunchedEffect` did the sync). | The order is built in the same composition as the data and is not replaced while a row is held, nor by data that has the same tasks in the old order until the saved one arrives. | `TaskReorderTest.staleDataAfterTheDrop…` fails on PR #49, passes now; a 1,500-task drag saves every id once |
+| E5 | PR #49: `taskDragging` used `UiDevice.drag`, which does not long-press, so the handle never reacted and an idle list was timed. | `UiObject2.drag` (long press, then drag), and the run fails unless the order changed. `canceledAndCompletedBackGesture` fails unless Settings stays after the cancelled gesture and goes after the completed one. | Compiles; not run (no device) |
+
+Measured on the JVM (warm, Robolectric): loading the Today window for a calendar with 200 daily recurring events took 35 ms (9,800 occurrences) against 17 ms for two days (400); it happens once per month change, off the main thread, and a day inside the month no longer queries at all (`TodayWindowTest`). A scan for unused declarations found nothing further.
+
+Rejected, with the reason:
+- `morphInset` as a placement instead of a measure: the cells would be measured at the Month width and placed at interpolated x, so their touch areas would no longer match the visible columns, and nothing here shows the remeasure to be a cost.
+- `CompositingStrategy.ModulateAlpha` on the folding rows: it avoids an offscreen layer but changes how a disc and its number blend during the fold; unmeasured.
+- Replacing `GraphicsLayer.toImageBitmap()`: on API 28+ Compose rasterizes through `Bitmap.createBitmap(Picture)` on the calling thread, which `withTimeoutOrNull` cannot interrupt; the alternatives (a frozen display list, per-colour animation) are worse or were the original problem. Needs a Perfetto trace on an API 28-31 device before changing.
+- Targeted task queries in place of the whole-table observation, a Today overview that composes only when expanded, and removing tab preloading: none can be judged without a device.
+- Predictive back in a unit test: the activity's back callback is not registered with the window dispatcher under Robolectric, so the gestures are covered by the macrobenchmark only.
+

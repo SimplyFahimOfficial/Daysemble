@@ -109,14 +109,28 @@ class TodayWindowTest {
         }
     }
 
-    @Test fun anotherMonth_loadsItsOwnWindow_andAShownDayIsNeverEmptyWhileItLoads() = runBlocking {
-        val collector = launch(Dispatchers.Unconfined) { vm.state.collect() }
+    /**
+     * Another month has no data in memory yet: every state shown for the new day already has its event
+     * (the previous day stays until the window has arrived), never an empty agenda that fills in later.
+     */
+    @Test fun anotherMonth_loadsItsOwnWindow_andTheNewDayIsNeverShownEmpty() = runBlocking {
+        val next = LocalDate.of(2026, 12, 3)
+        val events = EventRepository(db, clock, object : ChangeListener { override fun onTaskChanged(taskId: String) = Unit })
+        events.create(EventDraft(title = "December", startDate = next, startTime = LocalTime.of(9, 0), endTime = LocalTime.of(10, 0), zone = zone), events.ensureDefaultCalendar("Calendar"))
+        val seen = mutableListOf<TodayUiState>()
+        val collector = launch(Dispatchers.Unconfined) { vm.state.collect { seen += it } }
         try {
             vm.await { it.date == day && it.timeline.size == 2 }
-            val next = LocalDate.of(2026, 12, 3)
             vm.select(next)
-            val s = vm.await { it.date == next }
-            assertThat(s.timeline).isEmpty()
+            vm.await { it.date == next }
+            val forNext = seen.filter { it.date == next }
+            assertThat(forNext).isNotEmpty()
+            assertThat(forNext.all { it.timeline.size == 1 }).isTrue()
+            // Back inside the loaded window is immediate again.
+            val before = queries.get()
+            vm.select(next.plusDays(2))
+            vm.await { it.date == next.plusDays(2) }
+            assertThat(queries.get()).isEqualTo(before)
         } finally {
             collector.cancel()
         }
