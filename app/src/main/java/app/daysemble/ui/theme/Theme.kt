@@ -15,6 +15,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
@@ -108,8 +109,9 @@ fun DaysembleTheme(
         LocalLogoVariant provides logo,
     ) {
         MaterialTheme(colorScheme = scheme, typography = materialType) {
-            Box(propagateMinConstraints = true) {
-                Box(crossfade.content, propagateMinConstraints = true) { content() }
+            // Recorded into a layer only for the frames in which a theme change captures it (see ThemeCrossfade).
+            Box(crossfade.record, propagateMinConstraints = true) {
+                Box(propagateMinConstraints = true) { content() }
                 // The old frame, on its own layer: each frame of the fade changes only this layer's
                 // alpha (no re-recording of the app, no recomposition). Draws nothing at rest.
                 Box(Modifier.matchParentSize().then(crossfade.overlay))
@@ -123,17 +125,32 @@ fun DaysembleTheme(
  * swapped, and the capture fades out over the re-themed app. Only an image's alpha animates, in
  * the draw phase, so nothing recomposes per frame. Reduced motion, or a capture that fails, swaps
  * at once.
+ *
+ * The capture is of the whole picture, the fade still running included, so a second change while
+ * the first is fading starts from exactly what is on screen instead of popping to the new theme.
+ * The app is drawn straight to the window at rest and into a layer only while it is being captured
+ * (the layer used to be recorded and replayed on every draw, for a capture needed once per change).
+ *
+ * Alternatives looked at: animating every colour (what this replaced: a recomposition per frame),
+ * keeping the old frame as a frozen display list (the children it points to are live and re-record
+ * in the new theme), and a window-level snapshot (a platform call with no cheaper readback).
  */
 @Stable
 private class ThemeCrossfade(initialDark: Boolean) {
     var dark by mutableStateOf(initialDark)
     var snapshot by mutableStateOf<ImageBitmap?>(null)
+    var capturing by mutableStateOf(false)
+    /** The latest change, so that a cancelled one does not end the capture of a newer one. */
+    var generation = 0
     val fade = Animatable(0f)
     lateinit var layer: GraphicsLayer
-    /** Records the app into [layer] (to capture it) and draws it. */
-    val content: Modifier = Modifier.drawWithContent {
-        layer.record { this@drawWithContent.drawContent() }
-        drawLayer(layer)
+    val record: Modifier = Modifier.drawWithContent {
+        if (capturing) {
+            layer.record { this@drawWithContent.drawContent() }
+            drawLayer(layer)
+        } else {
+            drawContent()
+        }
     }
     val overlay: Modifier = Modifier
         .graphicsLayer { alpha = fade.value }
@@ -147,17 +164,26 @@ private fun rememberThemeCrossfade(targetDark: Boolean, motion: DsMotion): Theme
     state.layer = layer
     LaunchedEffect(targetDark) {
         if (state.dark == targetDark) return@LaunchedEffect
-        val shot = if (motion.reduced || layer.size.width == 0) null
-        else withTimeoutOrNull(CAPTURE_TIMEOUT_MS) { runCatching { layer.toImageBitmap() }.getOrNull() }
+        val mine = ++state.generation
+        var shot: ImageBitmap? = null
+        if (!motion.reduced) {
+            state.capturing = true
+            try {
+                // Two frames: the first applies the flag, the second has drawn the app into the layer.
+                withFrameNanos { }
+                withFrameNanos { }
+                shot = if (layer.size.width == 0) null else withTimeoutOrNull(CAPTURE_TIMEOUT_MS) { runCatching { layer.toImageBitmap() }.getOrNull() }
+            } finally {
+                if (state.generation == mine) state.capturing = false
+            }
+        }
         state.snapshot = shot
         state.fade.snapTo(1f)
         state.dark = targetDark
         if (shot != null) {
-            try {
-                state.fade.animateTo(0f, tween(motion.medium, easing = DsMotion.Standard))
-            } finally {
-                state.snapshot = null
-            }
+            // Cancelled by another change, the picture stays for that one to capture and carry on from.
+            state.fade.animateTo(0f, tween(motion.medium, easing = DsMotion.Standard))
+            state.snapshot = null
         }
     }
     return state

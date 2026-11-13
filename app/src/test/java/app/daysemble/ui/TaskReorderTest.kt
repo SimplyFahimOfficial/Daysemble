@@ -68,4 +68,59 @@ class TaskReorderTest {
         assertThat(saved!!.first()).isNotEqualTo("t1") // the held row moved on and stayed there
         assertThat(saved!!.toSet()).containsExactlyElementsIn((1..6).map { "t$it" })
     }
+
+    private fun titleOrder(count: Int) = (1..count).map { "Task $it" }
+        .mapNotNull { t -> compose.onAllNodes(androidx.compose.ui.test.hasText(t)).fetchSemanticsNodes().firstOrNull()?.let { t to it.positionInRoot.y } }
+        .sortedBy { it.second }.map { it.first }
+
+    /** The drop is being saved: data that still has the old order must not put the row back. */
+    @Test fun staleDataAfterTheDrop_doesNotPutTheRowBack() {
+        var state by mutableStateOf(uiState((1..6).map { task(it) }))
+        var saved: List<String>? = null
+        compose.setContent {
+            DaysembleTheme(ThemeMode.LIGHT, reducedMotionOverride = true) {
+                TasksScreen(
+                    state = state, now = Instant.parse("2026-10-27T10:00:00Z"), contentPadding = PaddingValues(bottom = 0.dp),
+                    onFilter = {}, onList = {}, onSort = {}, onToggle = { _, _ -> }, onOpen = {}, onReorder = { saved = it },
+                )
+            }
+        }
+        compose.waitForIdle()
+        compose.onAllNodesWithContentDescription("Reorder")[0].performTouchInput { down(center); advanceEventTime(700); moveBy(Offset(0f, 40f)); moveBy(Offset(0f, 160f)); up() }
+        compose.waitForIdle()
+        val moved = saved!!
+        assertThat(moved.first()).isNotEqualTo("t1")
+        val shown = titleOrder(6)
+        assertThat(shown.first()).isNotEqualTo("Task 1")
+        // The old data arrives (an unrelated update that was already on its way): the order on screen holds.
+        compose.runOnIdle { state = uiState((1..6).map { task(it, if (it == 3) "Task 3" else "Task $it") }.let { it }) }
+        compose.waitForIdle()
+        assertThat(titleOrder(6)).isEqualTo(shown)
+        // The saved order arrives: same picture.
+        val byId = (1..6).associate { "t$it" to task(it) }
+        compose.runOnIdle { state = uiState(moved.map { byId.getValue(it) }) }
+        compose.waitForIdle()
+        assertThat(titleOrder(6)).isEqualTo(shown)
+    }
+
+    /** Hundreds of tasks: the drag still moves the row and saves every id once. */
+    @Test fun aLongList_dragsAndSavesEveryTask() {
+        val tasks = (1..1_500).map { task(it) }
+        var saved: List<String>? = null
+        compose.setContent {
+            DaysembleTheme(ThemeMode.LIGHT, reducedMotionOverride = true) {
+                TasksScreen(
+                    state = uiState(tasks), now = Instant.parse("2026-10-27T10:00:00Z"), contentPadding = PaddingValues(bottom = 0.dp),
+                    onFilter = {}, onList = {}, onSort = {}, onToggle = { _, _ -> }, onOpen = {}, onReorder = { saved = it },
+                )
+            }
+        }
+        compose.waitForIdle()
+        compose.onAllNodesWithContentDescription("Reorder")[0].performTouchInput { down(center); advanceEventTime(700); moveBy(Offset(0f, 40f)); moveBy(Offset(0f, 200f)); up() }
+        compose.waitForIdle()
+        assertThat(saved).isNotNull()
+        assertThat(saved!!).hasSize(1_500)
+        assertThat(saved!!.toSet()).hasSize(1_500)
+        assertThat(saved!!.first()).isNotEqualTo("t1")
+    }
 }

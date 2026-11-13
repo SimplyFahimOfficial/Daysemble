@@ -5,10 +5,12 @@ import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.FrameTimingMetric
 import androidx.benchmark.macro.MacrobenchmarkScope
 import androidx.benchmark.macro.StartupMode
+import android.graphics.Point
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -125,27 +127,38 @@ class InteractionBenchmark {
         }
     }
 
-    /** Long-presses a row's handle in List order and drags it down two rows, then lets go (needs the benchmark build's 150 tasks). */
+    /**
+     * Drags a row two rows down in List order (the benchmark build seeds 150 tasks) and fails unless the
+     * order changed. `UiObject2.drag` long-presses first, which Compose's reorder handle needs; the
+     * earlier plain `UiDevice.drag` never started the drag and timed an idle list.
+     */
     @Test fun taskDragging() = run(tab = "tasks") {
         click(By.desc("Sort tasks"))
         click(By.text("List order"))
-        val handle = require(By.desc("Reorder"))
-        val c = handle.visibleCenter
-        // A long press, then the drag: UiAutomator has no long-press-drag, so hold with a slow swipe.
-        device.drag(c.x, c.y, c.x, c.y + device.displayHeight / 5, 120)
+        val titles = { device.findObjects(By.textStartsWith("Benchmark task")).map { it.text } }
+        require(By.desc("Reorder"))
+        val before = titles()
+        val c = require(By.desc("Reorder")).visibleCenter
+        require(By.desc("Reorder")).drag(Point(c.x, c.y + device.displayHeight / 5), DRAG_SPEED)
         device.waitForIdle()
+        check(titles() != before) { "The dragged row did not move: $before" }
     }
 
-    /** A back swipe from the left edge that is released half way (cancelled), then one that completes. */
+    /**
+     * The predictive back gesture on Settings, released half way (cancelled: Settings must still be
+     * there) and then taken to the end (committed: Settings must be gone).
+     */
     @Test fun canceledAndCompletedBackGesture() = run {
         click(By.desc("Settings"))
         require(By.text("Appearance"))
         val h = device.displayHeight / 2
-        // 40 steps over ~0.4 s: slow enough for the system to treat it as a gesture, then back to the edge.
-        device.swipe(0, h, device.displayWidth / 3, h, 40)
+        // From just inside the edge, slowly (40 steps) so the system treats it as a back gesture, and
+        // back again before lifting.
+        device.swipe(intArrayOf(EDGE, h, device.displayWidth / 3, h, EDGE, h).toPoints(), 40)
         device.waitForIdle()
-        device.swipe(0, h, device.displayWidth, h, 40)
-        device.waitForIdle()
+        check(device.hasObject(By.text("Appearance"))) { "Settings closed although the back gesture was cancelled" }
+        device.swipe(EDGE, h, device.displayWidth - EDGE, h, 40)
+        check(device.wait(Until.gone(By.text("Appearance")), WAIT_MS)) { "Settings stayed open after the back gesture" }
     }
 
     /** The app goes to the background and comes back: the screens are restored without rebuilding. */
@@ -171,4 +184,12 @@ class InteractionBenchmark {
         },
         measureBlock = block,
     )
+
+    private companion object {
+        /** px from the screen edge where a back swipe starts, and the drag speed (px/s). */
+        const val EDGE = 4
+        const val DRAG_SPEED = 400
+    }
+
+    private fun IntArray.toPoints(): Array<Point> = Array(size / 2) { Point(this[it * 2], this[it * 2 + 1]) }
 }

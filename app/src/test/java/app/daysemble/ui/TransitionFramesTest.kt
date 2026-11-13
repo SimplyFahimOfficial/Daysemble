@@ -118,6 +118,26 @@ class TransitionFramesTest {
         assertNoBlankFrames("Calendar → Today") { tab("Today").performClick() }
     }
 
+    /** Three tabs tapped before the fades end, forwards, back and mixed: no frame below the floor, ends on the last tab. */
+    @Test fun rapidTabTaps_neverShowABlankFrame_andEndOnTheLastTab() {
+        val rest = mapOf("Today" to ink(), "Calendar" to run { tab("Calendar").performClick(); settle(); ink() }, "Tasks" to run { tab("Tasks").performClick(); settle(); ink() })
+        tab("Today").performClick(); settle()
+        val floor = rest.values.min() * 0.6
+        val orders = listOf(
+            listOf("Calendar", "Tasks"), listOf("Tasks", "Calendar", "Today"), listOf("Calendar", "Today", "Tasks", "Calendar"),
+            listOf("Tasks", "Today", "Tasks", "Today", "Calendar"),
+        )
+        for (order in orders) {
+            val during = mutableListOf<Double>()
+            order.forEach { tab(it).performClick(); repeat(4) { frame(); during += ink() } }
+            repeat(30) { frame(); during += ink() }
+            settle()
+            assertWithMessage("${order.joinToString(">")}: share of content per frame ${during.map { "%.2f".format(it) }}")
+                .that(during.count { it < floor }).isEqualTo(0)
+            assertThat(ink()).isWithin(0.03).of(rest.getValue(order.last()))
+        }
+    }
+
     private fun meanLuminance(): Double {
         val px = compose.onRoot().captureToImage().toPixelMap()
         var sum = 0.0; var n = 0
@@ -139,6 +159,34 @@ class TransitionFramesTest {
         during.forEach { assertThat(it).isIn(com.google.common.collect.Range.closed(dark - 0.02, light + 0.02)) }
         // … and some are clearly in between: a cross-fade, not a cut.
         assertThat(during.count { it > dark + 0.1 * (light - dark) && it < light - 0.1 * (light - dark) }).isAtLeast(3)
+    }
+
+    /**
+     * Light to Dark and straight back while the first fade is running: it ends in Light, every frame is
+     * between the two themes, and going back moves the picture no faster than the first fade did (the
+     * second change continues from what is on screen instead of popping to the new theme).
+     */
+    @Test fun themeToggledBackMidFade_continuesFromWhatIsOnScreen() {
+        val light = meanLuminance()
+        runBlocking { c.settings.setThemeMode(app.daysemble.data.prefs.ThemeMode.DARK) }
+        val series = mutableListOf<Double>()
+        var started = 0
+        // Until the fade of the first change is under way (the palette has changed and the old frame is fading out).
+        while (series.size < 80 && (series.size < 3 || started < 3)) {
+            frame(); series += meanLuminance()
+            if (series.last() < light - 0.02) started++
+        }
+        val back = series.size
+        runBlocking { c.settings.setThemeMode(app.daysemble.data.prefs.ThemeMode.LIGHT) }
+        repeat(60) { frame(); series += meanLuminance() }
+        settle()
+        val dark = series.min()
+        assertThat(meanLuminance()).isWithin(0.02).of(light)
+        series.forEach { assertThat(it).isIn(com.google.common.collect.Range.closed(dark - 0.02, light + 0.02)) }
+        val steps = series.zipWithNext { a, b -> abs(b - a) }
+        val first = steps.take(back - 1).max()
+        val second = steps.drop(back - 1).max()
+        assertWithMessage("largest step: first change $first, going back $second").that(second).isAtMost(first + 0.03)
     }
 
     @Test fun openingAndClosingSettings_neverShowsABlankFrame() {
