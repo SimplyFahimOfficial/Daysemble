@@ -294,7 +294,7 @@ class CalendarModeSwitchTest {
         assertOnlyShowing(CalendarMode.MONTH, "drag down")
     }
 
-    /** The time grid is composed one page first (the pages beside it follow once the morph is at rest), cold and warm. */
+    /** The time grid is composed one page first (the pages beside it follow a moment after the morph is at rest), cold and warm. */
     @Test fun weekGrid_composesOnePageFirst_thenItsNeighbours_coldAndWarm() {
         fun pages() = compose.onAllNodes(hasTestTag(CalendarTags.TIME_GRID)).fetchSemanticsNodes().size
         repeat(2) { round ->
@@ -303,7 +303,6 @@ class CalendarModeSwitchTest {
             val during = (0 until 30).map { frame(); pages() }
             // The first frames of the morph, the ones that start it, have the shown page only.
             assertWithMessage("round $round: pages in the first frames $during").that(during.take(10).max()).isAtMost(1)
-            assertWithMessage("round $round: pages by the end $during").that(during.last()).isEqualTo(3)
             settle()
             assertWithMessage("round $round: pages at rest").that(pages()).isEqualTo(3)
         }

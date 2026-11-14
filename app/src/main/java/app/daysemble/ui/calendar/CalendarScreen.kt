@@ -38,7 +38,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.zIndex
 import app.daysemble.ui.blockTouches
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
@@ -117,6 +116,8 @@ import app.daysemble.ui.format.dayLabel
 import app.daysemble.ui.format.rememberMinuteTicker
 import app.daysemble.ui.theme.DsTheme
 import app.daysemble.ui.theme.Space
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.time.Instant
 import java.time.LocalDate
@@ -295,9 +296,9 @@ private fun MonthWeekMode(
     }
     // The day list and the week's time grid are composed as soon as the mode (or a drag) heads toward
     // them, not in the first animated frame, so the composition of the time grid doesn't land inside
-    // the morph and skip its first frames. The list goes when the week covers it (see MorphFade).
+    // the morph and skip its first frames. The list stays under the week to the end (taking it out mid-morph is a frame of its own).
     val dragging = morph.dragging
-    val showList by remember { derivedStateOf { morph.value < MorphFade.END } }
+    val showList by remember { derivedStateOf { morph.value < LIST_GONE } }
     val showWeek by remember { derivedStateOf { morph.value > 0.001f } }
     val listComposed = showList || dragging || state.mode == CalendarMode.MONTH
     val weekComposed = showWeek || dragging || state.mode == CalendarMode.WEEK
@@ -307,6 +308,14 @@ private fun MonthWeekMode(
     // The month pager pages only when the morph is at rest at Month, so it never competes with the
     // vertical drag or the settle, and the pages beside the shown one can stay as they were at rest.
     val monthSwipes by remember { derivedStateOf { morph.atRest && morph.value < MorphFade.MIDDLE } }
+    // The pages beside the shown week are composed a moment after the morph has come to rest on Week, not in
+    // the frame that ends it (that frame is the last one the eye follows), and go when the week does.
+    var preload by remember { mutableStateOf(false) }
+    LaunchedEffect(morph) {
+        snapshotFlow { if (morph.atRest && morph.restValue > MorphFade.MIDDLE) 1 else if (morph.value <= 0.001f) -1 else 0 }
+            .distinctUntilChanged()
+            .collectLatest { when (it) { 1 -> { delay(PRELOAD_DELAY_MS); preload = true }; -1 -> preload = false } }
+    }
     var peek by remember { mutableStateOf<Pair<LocalDate, Rect?>?>(null) }
     // The drag covers the five rows that collapse.
     val travel = with(density) { (MONTH_ROW_HEIGHT * (MONTH_ROWS - 1)).toPx() }
@@ -360,7 +369,7 @@ private fun MonthWeekMode(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .zIndex(if (weekOwns) 0f else 1f)
+                        .drawOrder { if (weekOwns) 0f else 1f }
                         .graphicsLayer {
                             val s = MorphFade.progress(morph.value)
                             alpha = if (weekOwns) (if (s >= 1f) 0f else 1f) else 1f - s
@@ -376,7 +385,7 @@ private fun MonthWeekMode(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .zIndex(if (weekOwns) 1f else 0f)
+                        .drawOrder { if (weekOwns) 1f else 0f }
                         .graphicsLayer {
                             val s = MorphFade.progress(morph.value)
                             alpha = if (weekOwns) s else (if (s <= 0f) 0f else 1f)
@@ -388,7 +397,7 @@ private fun MonthWeekMode(
                     // The pages beside the shown week are composed once the morph is at rest, not in the frame that starts it.
                     GridMode(
                         state, now, vm, CalendarMode.WEEK, timeScroll, contentPadding, onOpenEvent, onCreateAt,
-                        preload = morph.atRest && morph.restValue > MorphFade.MIDDLE,
+                        preload = preload,
                     )
                 }
             }
@@ -493,6 +502,21 @@ internal object MorphFade {
         val t = ((morph - START) / (END - START)).coerceIn(0f, 1f)
         return t * t * (SMOOTH_A - SMOOTH_B * t)
     }
+}
+
+/** The list leaves with the end of the morph; see [MonthWeekMode]. */
+private const val LIST_GONE = 0.999f
+
+/** How long the week is at rest before its neighbouring pages are composed. */
+private const val PRELOAD_DELAY_MS = 300L
+
+/**
+ * Draw order read at placement, in the same frame as the alpha that goes with it (a `zIndex` read in
+ * composition lands a frame after the alpha of the draw phase, which showed the covered view whole for a frame).
+ */
+private fun Modifier.drawOrder(z: () -> Float): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    layout(placeable.width, placeable.height) { placeable.place(0, 0, zIndex = z()) }
 }
 
 /** What a view under another one must not do: take taps, scroll, be read out or take keyboard focus. */
