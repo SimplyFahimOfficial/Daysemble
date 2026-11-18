@@ -77,7 +77,11 @@ object BalanceTags {
     const val SHEET = "balance_sheet"
 }
 
-internal fun Duration.roundToMinutes(): Long = (toMillis() + 30_000) / 60_000
+/** Rounded half away from zero, so a deficit (a negative duration) keeps the magnitude a surplus gets. */
+internal fun Duration.roundToMinutes(): Long {
+    val ms = toMillis()
+    return if (ms >= 0) (ms + 30_000) / 60_000 else -((-ms + 30_000) / 60_000)
+}
 
 /**
  * The day's free time, booked time and planned sleep in one card. Tapping the card opens it inline
