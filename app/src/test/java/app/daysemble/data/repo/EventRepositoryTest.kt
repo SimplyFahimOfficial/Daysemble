@@ -175,13 +175,28 @@ class EventRepositoryTest {
     }
 
     @Test
-    fun `saving into a calendar that is gone fails and changes nothing`() = runTest {
+    fun `saving into a calendar that is gone reports it and changes nothing`() = runTest {
         val id = repo.create(draft(), cal)
-        val result = runCatching { repo.update(id, draft(title = "Planning").copy(calendarId = "gone")) }
         // The editor reports the failure and stays open with the user's edits.
-        assertThat(result.isFailure).isTrue()
+        assertThat(repo.update(id, draft(title = "Planning").copy(calendarId = "gone"))).isEqualTo(SaveResult.CALENDAR_GONE)
         val row = repo.get(id)!!
         assertThat(row.calendarId).isEqualTo(cal)
         assertThat(row.title).isEqualTo("Standup")
+    }
+
+    @Test
+    fun `saving an event that no longer exists reports it`() = runTest {
+        val id = repo.create(draft(), cal)
+        repo.delete(id)
+        assertThat(repo.update(id, draft(title = "Planning"))).isEqualTo(SaveResult.EVENT_GONE)
+        assertThat(repo.update(id, draft())).isNotEqualTo(SaveResult.SAVED)
+        assertThat(repo.get(id)).isNull()
+    }
+
+    @Test
+    fun `a normal save reports saved`() = runTest {
+        val id = repo.create(draft(), cal)
+        assertThat(repo.update(id, draft(title = "Planning"))).isEqualTo(SaveResult.SAVED)
+        assertThat(repo.get(id)!!.title).isEqualTo("Planning")
     }
 }

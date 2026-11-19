@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.daysemble.data.repo.EventRepository
+import app.daysemble.data.repo.SaveResult
 import app.daysemble.domain.model.CalendarInfo
 import app.daysemble.domain.model.EventValidation
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,7 @@ data class EventEditorUiState(
     val calendars: List<CalendarInfo> = emptyList(),
     val validation: EventValidation? = null,
     val showErrors: Boolean = false,
-    val saveError: Boolean = false,
+    val saveError: SaveResult? = null,
     val saving: Boolean = false,
     /** False for series with individually changed occurrences (they can't move between calendars). */
     val canChangeCalendar: Boolean = true,
@@ -49,7 +50,7 @@ class EventEditorViewModel(
     private val form = MutableStateFlow(handle.get<String>(KEY)?.let { runCatching { json.decodeFromString<EventForm>(it) }.getOrNull() })
     private val original = MutableStateFlow(handle.get<String>(KEY_ORIG)?.let { runCatching { json.decodeFromString<EventForm>(it) }.getOrNull() })
     private val showErrors = MutableStateFlow(false)
-    private val saveError = MutableStateFlow(false)
+    private val saveError = MutableStateFlow<SaveResult?>(null)
     private val saving = MutableStateFlow(false)
     private val canMove = MutableStateFlow(true)
     val done = MutableStateFlow(false)
@@ -87,15 +88,17 @@ class EventEditorViewModel(
         val draft = f.toDraft()
         if (draft.validationError != null) { showErrors.value = true; return }
         saving.value = true
+        saveError.value = null
         viewModelScope.launch {
-            val ok = runCatching {
+            val result = runCatching {
                 when {
-                    eventId == null -> repo.create(draft, f.calendarId ?: defaultCalendarId())
+                    eventId == null -> repo.create(draft, f.calendarId ?: defaultCalendarId()).let { SaveResult.SAVED }
                     occurrenceKey != null -> repo.updateOccurrence(eventId, occurrenceKey, draft)
                     else -> repo.update(eventId, draft)
                 }
-            }.isSuccess
-            if (ok) { original.value = f; done.value = true } else { saveError.value = true; saving.value = false }
+            }.getOrDefault(SaveResult.FAILED)
+            // Close only after a confirmed write; otherwise keep the draft so the user can retry.
+            if (result == SaveResult.SAVED) { original.value = f; done.value = true } else { saveError.value = result; saving.value = false }
         }
     }
 

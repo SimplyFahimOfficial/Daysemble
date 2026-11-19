@@ -88,4 +88,19 @@ class EventOccurrenceEditTest {
         val draft = repo.draftFor(ro, berlin)!!.copy(rrule = null)
         assertThat(runCatching { repo.updateOccurrence(ro, "2026-10-23T09:00", draft) }.isFailure).isTrue()
     }
+
+    @Test fun `editing one occurrence of a series that is gone reports it and writes nothing`() = runTest {
+        val id = repo.create(series(), local)
+        val key = "2026-10-23T09:00"
+        val draft = repo.draftForOccurrence(id, key, berlin)!!
+        repo.delete(id)
+        assertThat(repo.updateOccurrence(id, key, draft)).isEqualTo(SaveResult.EVENT_GONE)
+        assertThat(db.events().overridesFor(listOf(id))).isEmpty()
+    }
+
+    @Test fun `editing one occurrence reports saved`() = runTest {
+        val id = repo.create(series(), local)
+        val key = "2026-10-23T09:00"
+        assertThat(repo.updateOccurrence(id, key, repo.draftForOccurrence(id, key, berlin)!!.copy(title = "X"))).isEqualTo(SaveResult.SAVED)
+    }
 }

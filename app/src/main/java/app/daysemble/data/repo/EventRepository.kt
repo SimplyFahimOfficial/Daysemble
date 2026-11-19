@@ -202,12 +202,12 @@ class EventRepository(
      * Changes only the occurrence [key] of series [masterId], by storing (or updating) an override
      * row for it. The rule, the other occurrences, the reminders and the calendar stay as they are.
      */
-    suspend fun updateOccurrence(masterId: String, key: String, draft: EventDraft) {
+    suspend fun updateOccurrence(masterId: String, key: String, draft: EventDraft): SaveResult {
         require(draft.validationError == null) { "Invalid event: ${draft.validationError}" }
-        val changed = db.withTransaction {
-            val master = get(masterId) ?: return@withTransaction false
+        val result = db.withTransaction {
+            val master = get(masterId) ?: return@withTransaction SaveResult.EVENT_GONE
             require(master.rrule != null && !master.isReadOnlyRecurrence) { "Not an editable series" }
-            val cal = calendars.get(master.calendarId) ?: return@withTransaction false
+            val cal = calendars.get(master.calendarId) ?: return@withTransaction SaveResult.CALENDAR_GONE
             require(isWritableRole(cal.accessRole)) { "Calendar is read-only" }
             val now = clock.now().toEpochMilli()
             val existing = events.override(masterId, key)
@@ -218,9 +218,10 @@ class EventRepository(
             // An override has no rule of its own and stays in its series' calendar.
             val row = applyDraft(base, draft.copy(rrule = null, calendarId = master.calendarId))
             events.upsert(row.copy(isCancelled = false, isDeleted = false, updatedAt = now))
-            true
+            SaveResult.SAVED
         }
-        if (changed) listener.onEventChanged(masterId)
+        if (result == SaveResult.SAVED) listener.onEventChanged(masterId)
+        return result
     }
 
     suspend fun create(draft: EventDraft, fallbackCalendarId: String): String {
@@ -244,27 +245,27 @@ class EventRepository(
         return id
     }
 
-    /** Updates the event (whole series for recurring events). */
-    suspend fun update(id: String, draft: EventDraft) {
+    /** Updates the event (whole series for recurring events). Nothing is written unless the result is [SaveResult.SAVED]. */
+    suspend fun update(id: String, draft: EventDraft): SaveResult {
         require(draft.validationError == null) { "Invalid event: ${draft.validationError}" }
         // Moving to another calendar and editing are one transaction, so a failure can't leave the
         // event moved but not edited. (Room joins the nested transactions below to this one.)
-        val changed = db.withTransaction {
-            val current = get(id) ?: return@withTransaction false
+        val result = db.withTransaction {
+            val current = get(id) ?: return@withTransaction SaveResult.EVENT_GONE
             val target = draft.calendarId?.takeIf { it != current.calendarId }
-            // The event exists, so a move that doesn't happen means a calendar is gone. Fail the save
-            // (nothing is written) instead of reporting success and dropping the other edits.
-            check(target == null || moveRow(id, target)) { "The calendar is no longer available" }
+            // The event exists, so a move that doesn't happen means a calendar is gone.
+            if (target != null && !moveRow(id, target)) return@withTransaction SaveResult.CALENDAR_GONE
             updateRow(id, draft)
         }
-        if (changed) listener.onEventChanged(id)
+        if (result == SaveResult.SAVED) listener.onEventChanged(id)
+        return result
     }
 
-    /** Applies [draft] to the row. Returns false if the event is gone. */
-    private suspend fun updateRow(id: String, draft: EventDraft): Boolean =
+    /** Applies [draft] to the row. */
+    private suspend fun updateRow(id: String, draft: EventDraft): SaveResult =
         db.withTransaction {
-            val row = get(id) ?: return@withTransaction false
-            val cal = calendars.get(row.calendarId) ?: return@withTransaction false
+            val row = get(id) ?: return@withTransaction SaveResult.EVENT_GONE
+            val cal = calendars.get(row.calendarId) ?: return@withTransaction SaveResult.CALENDAR_GONE
             require(isWritableRole(cal.accessRole)) { "Calendar is read-only" }
             var updated = applyDraft(row, draft).copy(updatedAt = clock.now().toEpochMilli())
             // Keep EXDATEs only when the series timing is unchanged; otherwise their keys no longer line up.
@@ -273,7 +274,7 @@ class EventRepository(
             }
             events.upsert(updated)
             saveReminders(id, draft.reminderMinutesBefore)
-            true
+            SaveResult.SAVED
         }
 
     /** True when an event can change calendar (series with individually changed occurrences can't). */
@@ -584,6 +585,9 @@ class EventRepository(
             )
     }
 }
+
+/** Outcome of saving an edit. Only [SAVED] wrote anything; [FAILED] is for callers that caught an exception. */
+enum class SaveResult { SAVED, EVENT_GONE, CALENDAR_GONE, FAILED }
 
 fun isWritableRole(role: String) = role == "owner" || role == "writer" || role == "writerWithoutPrivateAccess"
 

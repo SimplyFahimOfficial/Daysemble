@@ -34,6 +34,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daysemble.R
 import app.daysemble.core.recurrence.Freq
+import app.daysemble.data.repo.SaveResult
 import app.daysemble.domain.model.EventValidation
 import app.daysemble.domain.model.RepeatEnd
 import app.daysemble.ui.components.DsButton
@@ -117,6 +118,14 @@ private fun EventEditorScreen(
         }
         DsTopBar(stringResource(title), attemptClose) {
             DsButton(stringResource(R.string.action_save), save, modifier = Modifier.padding(end = Space.s), enabled = state.form != null && !state.saving)
+        }
+        // Under the top bar, not at the end of the scrolling form, so it's on screen when Save is tapped.
+        state.saveError?.let { err ->
+            Text(
+                stringResource(if (err == SaveResult.EVENT_GONE) R.string.error_save_event_gone else R.string.error_save_failed),
+                style = DsTheme.type.label, color = c.error,
+                modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
+            )
         }
         val f = state.form
         if (f == null) {
@@ -207,12 +216,6 @@ private fun EventEditorScreen(
                 placeholder = stringResource(R.string.notes_hint), singleLine = false,
                 modifier = Modifier.padding(horizontal = Space.gutter),
             )
-            if (state.saveError) {
-                Text(
-                    stringResource(R.string.error_save_failed), style = DsTheme.type.label, color = c.error,
-                    modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
-                )
-            }
         }
 
         when (picker) {
