@@ -103,4 +103,62 @@ class EventOccurrenceEditTest {
         val key = "2026-10-23T09:00"
         assertThat(repo.updateOccurrence(id, key, repo.draftForOccurrence(id, key, berlin)!!.copy(title = "X"))).isEqualTo(SaveResult.SAVED)
     }
+
+    /** Weekly on Mondays 09:00 from 2026-10-26; the first one is moved to Friday 30th at 14:00. */
+    private suspend fun weeklyWithMovedFirst(): Pair<String, String> {
+        val monday = LocalDate.parse("2026-10-26")
+        val id = repo.create(series().copy(title = "Team sync", startDate = monday, endDate = monday, rrule = RRule.parse("FREQ=WEEKLY")), local)
+        val key = "2026-10-26T09:00"
+        val friday = LocalDate.parse("2026-10-30")
+        repo.updateOccurrence(id, key, repo.draftForOccurrence(id, key, berlin)!!.copy(
+            title = "Team sync (Friday)", startDate = friday, endDate = friday, startTime = LocalTime.of(14, 0), endTime = LocalTime.of(14, 30),
+        ))
+        return id to key
+    }
+
+    @Test fun `a moved occurrence opens from its new day with its own date, time and content`() = runTest {
+        val (id, key) = weeklyWithMovedFirst()
+        val shown = on(LocalDate.parse("2026-10-30")).single()
+        assertThat(shown.occurrenceKey).isEqualTo(key)
+
+        // Opening it the way the calendar does: by series id and the original key.
+        val opened = repo.observeOccurrence(shown.eventId, shown.occurrenceKey, berlin).first()!!
+        assertThat(opened.title).isEqualTo("Team sync (Friday)")
+        assertThat(opened.start).isEqualTo(shown.start)
+        assertThat(opened.startDate).isEqualTo(LocalDate.parse("2026-10-30"))
+        assertThat(opened.overrideId).isEqualTo(shown.overrideId)
+
+        // The next Monday is the series' own, unchanged.
+        val next = repo.observeOccurrence(id, "2026-11-02T09:00", berlin).first()!!
+        assertThat(next.title).isEqualTo("Team sync")
+        assertThat(next.start.atZone(berlin).toLocalTime()).isEqualTo(LocalTime.of(9, 0))
+    }
+
+    @Test fun `a moved occurrence can be edited again, and stays one changed occurrence`() = runTest {
+        val (id, key) = weeklyWithMovedFirst()
+        val again = repo.draftForOccurrence(id, key, berlin)!!
+        assertThat(again.title).isEqualTo("Team sync (Friday)")
+        assertThat(again.startDate).isEqualTo(LocalDate.parse("2026-10-30"))
+        assertThat(again.startTime).isEqualTo(LocalTime.of(14, 0))
+        repo.updateOccurrence(id, key, again.copy(title = "Team sync (final)"))
+
+        assertThat(db.events().overridesFor(listOf(id))).hasSize(1)
+        assertThat(on(LocalDate.parse("2026-10-30")).single().title).isEqualTo("Team sync (final)")
+        assertThat(on(LocalDate.parse("2026-10-26"))).isEmpty()
+        assertThat(on(LocalDate.parse("2026-11-02")).single().title).isEqualTo("Team sync")
+    }
+
+    @Test fun `a moved occurrence that was deleted or cancelled does not open`() = runTest {
+        val (id, key) = weeklyWithMovedFirst()
+        val ov = db.events().override(id, key)!!
+        db.events().upsert(ov.copy(isCancelled = true))
+        assertThat(repo.observeOccurrence(id, key, berlin).first()).isNull()
+        assertThat(repo.draftForOccurrence(id, key, berlin)).isNull()
+
+        db.events().upsert(ov.copy(isCancelled = false))
+        assertThat(repo.observeOccurrence(id, key, berlin).first()).isNotNull()
+        repo.deleteOccurrence(id, key) // excluded: the changed row stays stored but hidden
+        assertThat(repo.observeOccurrence(id, key, berlin).first()).isNull()
+        assertThat(repo.draftForOccurrence(id, key, berlin)).isNull()
+    }
 }

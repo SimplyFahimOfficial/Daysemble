@@ -119,12 +119,29 @@ class EventRepository(
             .mapLatest { (row, cals) ->
                 if (row == null || row.isDeleted) return@mapLatest null
                 if (row.rrule == null || key == null) return@mapLatest single(row, cals[row.calendarId] ?: return@mapLatest null, zone)
-                val date = keyDate(key) ?: return@mapLatest null
-                val ov = events.overridesFor(listOf(row.id))
-                expand(listOf(row), ov, cals, date.minusDays(1), date.plusDays(1),
-                    date.minusDays(1).atStartOfDay(zone).toInstant(), date.plusDays(2).atStartOfDay(zone).toInstant(), zone)
-                    .firstOrNull { it.occurrenceKey == key }
+                resolveOccurrence(row, key, cals, zone)
             }
+
+    /**
+     * Occurrence [key] (its original start) of series [master], as the calendar shows it. A changed
+     * occurrence is found by series id and key, wherever it was moved to (a window around the key's
+     * date wouldn't contain it). Null if it was deleted or cancelled, or the key isn't one of the series'.
+     */
+    private suspend fun resolveOccurrence(master: EventEntity, key: String, cals: Map<String, CalendarSourceEntity>, zone: ZoneId): EventOccurrence? {
+        val cal = cals[master.calendarId]?.takeIf { it.isVisible } ?: return null // hidden calendars show nothing, as in expand()
+        if (key in master.exdates.split(',')) return null
+        val ov = events.override(master.id, key)
+        if (ov != null) {
+            if (ov.isCancelled || ov.isDeleted) return null
+            return single(ov, cal, zone)?.let {
+                it.copy(eventId = master.id, occurrenceKey = key, overrideId = ov.id, isRecurring = true, isReadOnly = it.isReadOnly || master.isReadOnlyRecurrence)
+            }
+        }
+        val date = keyDate(key) ?: return null
+        return expand(listOf(master), emptyList(), cals, date.minusDays(1), date.plusDays(1),
+            date.minusDays(1).atStartOfDay(zone).toInstant(), date.plusDays(2).atStartOfDay(zone).toInstant(), zone)
+            .firstOrNull { it.occurrenceKey == key }
+    }
 
     /**
      * Text search across title, description and location. Each matching event or series is
@@ -185,9 +202,8 @@ class EventRepository(
      */
     suspend fun draftForOccurrence(masterId: String, key: String, deviceZone: ZoneId): EventDraft? {
         val master = get(masterId)?.takeIf { it.rrule != null } ?: return null
-        val override = events.override(masterId, key)?.takeIf { !it.isDeleted && !it.isCancelled }
-        val base = draftFor(override?.id ?: masterId, deviceZone) ?: return null
         val occ = observeOccurrence(masterId, key, deviceZone).first() ?: return null
+        val base = draftFor(occ.overrideId ?: masterId, deviceZone) ?: return null
         val zone = base.zone
         val timing = if (occ.isAllDay) {
             base.copy(startDate = occ.startDate, endDate = occ.endDate.minusDays(1).coerceAtLeast(occ.startDate))
