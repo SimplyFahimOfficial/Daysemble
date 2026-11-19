@@ -10,6 +10,7 @@ import app.daysemble.domain.model.Task
 import app.daysemble.domain.model.TaskDraft
 import app.daysemble.domain.model.TaskList
 import app.daysemble.domain.model.SeriesScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -82,6 +83,8 @@ data class TaskEditorUiState(
     val isMissing: Boolean = false,
     val isLoading: Boolean = true,
     val isSubtask: Boolean = false,
+    /** The last Save failed and wrote nothing; the form is as the user left it. */
+    val saveError: Boolean = false,
 ) {
     val isDirty: Boolean get() = if (isNew) form.copy(listId = null) != TaskForm(dueEpochDay = form.dueEpochDay) || form.title.isNotBlank()
         else original != null && form != original
@@ -125,6 +128,7 @@ class TaskEditorViewModel(
     )
     private val original = MutableStateFlow<TaskForm?>(handle.get<String>(KEY_ORIGINAL)?.let { runCatching { json.decodeFromString<TaskForm>(it) }.getOrNull() })
     private val titleError = MutableStateFlow(false)
+    private val saveError = MutableStateFlow(false)
     val events = MutableStateFlow<EditorEvent?>(null)
 
     init {
@@ -144,14 +148,15 @@ class TaskEditorViewModel(
     }
 
     val state: StateFlow<TaskEditorUiState> = combine(
-        form, original, titleError,
+        form, original, combine(titleError, saveError) { t, e -> t to e },
         if (taskId != null) repo.observeTask(taskId) else flowOf(null),
         combine(if (taskId != null) repo.observeSubtasks(taskId) else flowOf(emptyList()), repo.taskLists) { a, b -> a to b },
-    ) { f, o, err, task, (subs, lists) ->
+    ) { f, o, (err, saveErr), task, (subs, lists) ->
         TaskEditorUiState(
             isNew = taskId == null, form = f, original = o, task = task, subtasks = subs, lists = lists,
             showTitleError = err, isMissing = taskId != null && task == null && o != null,
             isLoading = taskId != null && o == null, isSubtask = parentId != null || task?.parentId != null,
+            saveError = saveErr,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TaskEditorUiState(taskId == null, form.value, original.value, null))
 
@@ -170,13 +175,20 @@ class TaskEditorViewModel(
         val f = form.value
         if (f.title.isBlank()) { titleError.value = true; return@launch }
         saving = true
-        if (taskId == null) repo.create(f.toDraft(parentId), f.listId ?: defaultListId())
-        else {
-            val newList = f.listId?.takeIf { it != original.value?.listId }
-            // The move follows the chosen scope like the other changes: "this occurrence" leaves the
-            // series (and so the next occurrences) in its list.
-            if (newList != null) repo.moveToList(taskId, newList, scope)
-            repo.update(taskId, f.toDraft(null), scope)
+        saveError.value = false
+        try {
+            if (taskId == null) repo.create(f.toDraft(parentId), f.listId ?: defaultListId())
+            else {
+                // The move follows the chosen scope like the other changes: "this occurrence" leaves the
+                // series (and so the next occurrences) in its list. One transaction with the field update.
+                val newList = f.listId?.takeIf { it != original.value?.listId }
+                repo.update(taskId, f.toDraft(null), scope, newList)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            saving = false; saveError.value = true // nothing was written: the user can tap Save again
+            return@launch
         }
         original.value = form.value
         persist()

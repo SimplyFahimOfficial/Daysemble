@@ -149,6 +149,13 @@ private fun TaskEditorScreen(state: TaskEditorUiState, vm: TaskEditorViewModel, 
                 enabled = state.isNew || state.isDirty,
             )
         }
+        // Under the top bar, so it's on screen when Save is tapped.
+        if (state.saveError) {
+            Text(
+                stringResource(R.string.error_task_save_failed), style = DsTheme.type.label, color = c.error,
+                modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.m),
+            )
+        }
         Column(
             Modifier
                 .weight(1f)

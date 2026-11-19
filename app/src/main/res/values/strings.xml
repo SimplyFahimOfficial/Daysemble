@@ -73,6 +73,7 @@
     <string name="error_title_required">Add a title</string>
     <string name="error_save_failed">Couldn’t save. The calendar may be read-only or no longer available.</string>
     <string name="error_save_event_gone">Couldn’t save. This event was deleted. Go back to discard your changes.</string>
+    <string name="error_task_save_failed">Couldn’t save. Nothing was changed. Your edits are still here, so try again.</string>
 
     <!-- Days and time -->
     <string name="day_today">Today</string>

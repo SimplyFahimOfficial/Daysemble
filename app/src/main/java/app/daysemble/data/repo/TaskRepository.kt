@@ -151,13 +151,21 @@ class TaskRepository(
      * future occurrences copy, [SeriesScope.ALL] that plus the title, notes and priority of completed
      * occurrences. A changed rule or moved date (FUTURE/ALL) restarts the series at this occurrence,
      * keeping the remaining COUNT. Turning repeat off ends the series; its history is kept.
+     *
+     * With [newListId] the task also moves to that list (following [scope], see [moveToList]), in the
+     * same transaction: if any part fails nothing is written and listeners aren't told, so Save can be retried.
      */
-    suspend fun update(id: String, draft: TaskDraft, scope: SeriesScope = SeriesScope.THIS) {
+    suspend fun update(id: String, draft: TaskDraft, scope: SeriesScope = SeriesScope.THIS, newListId: String? = null) {
         require(draft.isValid) { "Task title is required" }
         var generated: List<String> = emptyList()
         // Read in the transaction: a concurrent write (a notification's Complete, a delete) must not be
         // overwritten with what this method read before it.
         val found = db.withTransaction {
+            // Move first: the rest reads the task, and a series started here, in its new list.
+            if (newListId != null && tasks.get(id)?.takeIf { !it.isDeleted }?.let { it.listId != newListId } == true) {
+                check(lists.get(newListId) != null) { "The list is no longer available" }
+                moveRows(id, newListId, scope)
+            }
             val before = tasks.get(id)?.takeIf { !it.isDeleted } ?: return@withTransaction false
             val now = clock.now().toEpochMilli()
             val active = before.seriesId?.let { series.get(it) }?.takeIf { it.endedAt == null }
@@ -314,10 +322,15 @@ class TaskRepository(
 
     /** Moves a top-level task (and its subtasks) to another list. */
     suspend fun moveToList(id: String, newListId: String, scope: SeriesScope = SeriesScope.THIS) {
+        if (moveRows(id, newListId, scope)) listener.onTaskChanged(id)
+    }
+
+    /** The writes of [moveToList], without the notification, so [update] can do them in its transaction. */
+    private suspend fun moveRows(id: String, newListId: String, scope: SeriesScope): Boolean {
         val now = clock.now().toEpochMilli()
         // One transaction for the checks, the series and the rows: a failure part-way can't leave
         // the series in the new list with its rows still in the old one.
-        val moved = db.withTransaction {
+        return db.withTransaction {
             val row = tasks.get(id)?.takeIf { !it.isDeleted && it.parentId == null } ?: return@withTransaction false
             if (row.listId == newListId) return@withTransaction false
             val to = lists.get(newListId) ?: return@withTransaction false
@@ -336,7 +349,6 @@ class TaskRepository(
             }
             true
         }
-        if (moved) listener.onTaskChanged(id)
     }
 
     /**

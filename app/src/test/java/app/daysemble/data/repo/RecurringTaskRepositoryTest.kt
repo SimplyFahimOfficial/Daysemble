@@ -238,6 +238,24 @@ class RecurringTaskRepositoryTest {
         assertThat(open(sid).single().listId).isEqualTo(other) // now the series moved with it
     }
 
+    /** Save with a list change in one call follows the scope the same way [moveToList] does. */
+    @Test fun savingWithAListMove_followsTheScope() = runTest {
+        val other = repo.createList("Home")
+        val id = repeating("FREQ=DAILY", "2026-10-27")
+        val sid = repo.get(id)!!.seriesId!!
+        val draft = TaskDraft(title = "Edited", dueDate = d("2026-10-27"), repeat = RRule.parse("FREQ=DAILY"))
+        repo.update(id, draft, SeriesScope.THIS, other)
+        assertThat(repo.get(id)!!.listId).isEqualTo(other)
+        assertThat(repo.get(id)!!.title).isEqualTo("Edited")
+        repo.setCompleted(id, true)
+        val second = open(sid).single()
+        assertThat(second.listId).isEqualTo(list) // THIS: the series stayed in its list
+
+        repo.update(second.id, draft, SeriesScope.FUTURE, other)
+        repo.setCompleted(second.id, true)
+        assertThat(open(sid).single().listId).isEqualTo(other) // FUTURE: the series moved
+    }
+
     /**
      * Review issue: undoing a series delete brought the other occurrences back without scheduling
      * their reminders again. Every open task a delete removes or an undo restores is reported.
