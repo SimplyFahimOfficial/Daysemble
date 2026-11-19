@@ -13,9 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import java.time.Duration
 import java.time.Instant
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
@@ -65,26 +63,19 @@ class AlarmReceiver : BroadcastReceiver() {
                     )
                 }
                 OwnerType.EVENT -> {
-                    val e = c.database.events().get(alarm.ownerId)?.takeIf { !it.isDeleted && !it.isCancelled } ?: return@async
-                    val now = c.clock.now()
-                    // Very late delivery (device off for hours) of a timed event that already ended: drop it.
-                    // Start = trigger + lead time (correct for moved overrides); snoozes fall back to the occurrence key.
-                    val lead = c.database.reminders().forOwner(OwnerType.EVENT, e.id).firstOrNull { it.id == alarm.reminderId }?.minutesBefore
-                    val start = when {
-                        e.isAllDay -> null
-                        '#' !in alarm.occurrenceKey && lead != null -> Instant.ofEpochMilli(alarm.triggerAt).plusSeconds(lead * 60L)
-                        else -> occurrenceStart(alarm.occurrenceKey, e.timeZone)
-                    }
-                    val duration = Duration.ofMillis(e.endUtc - e.startUtc)
-                    if (start != null && now.isAfter(start.plus(duration)) && now.isAfter(Instant.ofEpochMilli(alarm.triggerAt).plusSeconds(3600))) return@async
+                    // The occurrence as it is now: a changed one has its own title, place and time.
                     val zone = c.clock.zone()
-                    val text = when {
-                        e.isAllDay -> context.getString(R.string.all_day)
-                        start != null -> DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).format(start.atZone(zone)) +
-                            if (e.location.isNotBlank()) " · " + e.location else ""
-                        else -> e.location
-                    }
-                    Notifications.Content(OwnerType.EVENT, e.id, alarm.occurrenceKey, alarm.reminderId, e.title.ifBlank { context.getString(R.string.untitled_event) }, text, start?.toEpochMilli(), null)
+                    val occ = c.events.occurrence(alarm.ownerId, alarm.occurrenceKey.substringBefore('#'), zone) ?: return@async
+                    // Very late delivery (device off for hours) of a timed event that already ended: drop it.
+                    val now = c.clock.now()
+                    if (!occ.isAllDay && now.isAfter(occ.end) && now.isAfter(Instant.ofEpochMilli(alarm.triggerAt).plusSeconds(3600))) return@async
+                    val time = if (occ.isAllDay) context.getString(R.string.all_day)
+                    else DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).format(occ.start.atZone(zone))
+                    val text = if (occ.location.isNotBlank()) time + " · " + occ.location else time
+                    Notifications.Content(
+                        OwnerType.EVENT, alarm.ownerId, alarm.occurrenceKey, alarm.reminderId,
+                        occ.title.ifBlank { context.getString(R.string.untitled_event) }, text, if (occ.isAllDay) null else occ.start.toEpochMilli(), null,
+                    )
                 }
             }
             val id = Notifications.notificationId(alarm.reminderId, alarm.occurrenceKey)
@@ -93,10 +84,6 @@ class AlarmReceiver : BroadcastReceiver() {
             c.reminders.rescheduleFor(alarm.ownerType, alarm.ownerId)
         }
     }
-
-    private fun occurrenceStart(key: String, zoneId: String): Instant? = runCatching {
-        java.time.LocalDateTime.parse(key.substringBefore('#')).atZone(ZoneId.of(zoneId)).toInstant()
-    }.getOrNull()
 
     companion object {
         const val ACTION_FIRE = "app.daysemble.action.REMINDER"

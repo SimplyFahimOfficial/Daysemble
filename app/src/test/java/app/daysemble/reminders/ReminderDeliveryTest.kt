@@ -10,6 +10,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import app.daysemble.DaysembleApp
+import app.daysemble.MainActivity
+import app.daysemble.core.recurrence.occurrenceKey
+import app.daysemble.domain.model.EventDraft
 import app.daysemble.data.db.OwnerType
 import app.daysemble.core.recurrence.RRule
 import app.daysemble.domain.model.SeriesScope
@@ -24,6 +27,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 /**
  * End-to-end on the real Android plumbing (Robolectric): AlarmManager registration, the
@@ -143,5 +148,73 @@ class ReminderDeliveryTest {
         val result = TestListenableWorkerBuilder<ReminderRefreshWorker>(app).build().doWork()
         assertThat(result).isEqualTo(ListenableWorker.Result.success())
         assertThat(shadowOf(am).scheduledAlarms).hasSize(1)
+    }
+
+    /** Fires the registered alarm that triggers at [triggerAt] the way the platform would. */
+    private fun fire(triggerAt: Long) {
+        val alarm = shadowOf(am).scheduledAlarms.single { it.triggerAtMs == triggerAt }
+        app.sendBroadcast(shadowOf(alarm.operation!!).savedIntent)
+    }
+
+    private fun quiet() { Thread.sleep(400); shadowOf(Looper.getMainLooper()).idle() }
+
+    @Test fun `a renamed and moved occurrence notifies with its new details and opens that occurrence, a deleted one's snooze stays silent`() {
+        val zone = c.clock.zone()
+        val start = LocalDateTime.now().plusHours(3).withSecond(0).withNano(0)
+        val key = occurrenceKey(start)
+        val nextKey = occurrenceKey(start.plusDays(1))
+        val id = runBlocking {
+            c.events.create(
+                EventDraft(
+                    title = "Team sync", location = "Room 1", startDate = start.toLocalDate(), startTime = start.toLocalTime(),
+                    endDate = start.toLocalDate(), endTime = start.toLocalTime().plusMinutes(30), zone = zone,
+                    rrule = RRule.parse("FREQ=DAILY"), reminderMinutesBefore = listOf(30),
+                ),
+                c.defaults().calendarId,
+            )
+        }
+        // Rename and move today's occurrence to an hour from now.
+        val moved = LocalDateTime.now().plusHours(1).withSecond(0).withNano(0)
+        runBlocking {
+            c.events.updateOccurrence(id, key, c.events.draftForOccurrence(id, key, zone)!!.copy(
+                title = "Design review", location = "Room 9", startDate = moved.toLocalDate(), startTime = moved.toLocalTime(),
+                endDate = moved.toLocalDate(), endTime = moved.toLocalTime().plusMinutes(30),
+            ))
+            c.reminders.rescheduleFor(OwnerType.EVENT, id)
+        }
+        val first = alarmsFor(id).single { it.occurrenceKey == key }
+        assertThat(first.triggerAt).isEqualTo(moved.atZone(zone).toInstant().minusSeconds(30 * 60).toEpochMilli())
+
+        fire(first.triggerAt)
+        waitFor { shadowOf(nm).allNotifications.isNotEmpty() }
+        val n = shadowOf(nm).allNotifications.single()
+        assertThat(n.extras.getString("android.title")).isEqualTo("Design review")
+        val text = n.extras.getString("android.text")!!
+        assertThat(text).contains("Room 9")
+        assertThat(text).contains(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).format(moved.atZone(zone)))
+        val open = MainActivity.parse(shadowOf(n.contentIntent).savedIntent)!!
+        assertThat(open.id).isEqualTo(id)
+        assertThat(open.occurrenceKey).isEqualTo(key)
+        // ...and that key opens the moved occurrence, not nothing.
+        assertThat(runBlocking { c.events.observeOccurrence(open.id, open.occurrenceKey, zone).first() }!!.title).isEqualTo("Design review")
+
+        // Snooze it, then delete that occurrence.
+        n.actions.first { it.title.toString().startsWith("Snooze") }.actionIntent.send()
+        waitFor { alarmsFor(id).any { '#' in it.occurrenceKey } }
+        val snooze = alarmsFor(id).single { '#' in it.occurrenceKey }
+        val snoozeIntent = shadowOf(shadowOf(am).scheduledAlarms.single { it.triggerAtMs == snooze.triggerAt }.operation!!).savedIntent
+        runBlocking { c.events.deleteOccurrence(id, key); c.reminders.rescheduleFor(OwnerType.EVENT, id) }
+        nm.cancelAll()
+        app.sendBroadcast(snoozeIntent)
+        quiet()
+        assertThat(shadowOf(nm).allNotifications).isEmpty()
+
+        // The next meeting still notifies, with the series' own details.
+        val next = alarmsFor(id).single { it.occurrenceKey == nextKey }
+        fire(next.triggerAt)
+        waitFor { shadowOf(nm).allNotifications.isNotEmpty() }
+        val n2 = shadowOf(nm).allNotifications.single()
+        assertThat(n2.extras.getString("android.title")).isEqualTo("Team sync")
+        assertThat(n2.extras.getString("android.text")).contains("Room 1")
     }
 }

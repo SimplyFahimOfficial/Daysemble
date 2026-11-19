@@ -11,6 +11,8 @@ import app.daysemble.data.db.DaysembleDatabase
 import app.daysemble.data.db.OwnerType
 import app.daysemble.data.db.ScheduledAlarmEntity
 import app.daysemble.data.prefs.SettingsRepository
+import app.daysemble.data.repo.EventRepository
+import app.daysemble.data.sync.ChangeListener
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.Instant
@@ -69,6 +71,7 @@ class ReminderScheduler(
 ) {
     private val mutex = Mutex()
     private val dao = db.alarms()
+    private val events = EventRepository(db, clock, ChangeListener.None) // reads only: the same occurrence lookup the screens use
 
     fun health(remindersEnabled: Boolean): ReminderHealth = when {
         !remindersEnabled -> ReminderHealth.DISABLED_IN_APP
@@ -122,7 +125,7 @@ class ReminderScheduler(
      * its current reminders. Deliberately independent of reminder ids, which a rewrite may replace.
      */
     suspend fun isStillPlanned(a: ScheduledAlarmEntity): Boolean {
-        if (isSnooze(a)) return isActive(a.ownerType, a.ownerId)
+        if (isSnooze(a)) return isActive(a.ownerType, a.ownerId) && occurrenceExists(a)
         val s = settings.current()
         if (!s.remindersEnabled || !isActive(a.ownerType, a.ownerId)) return false
         val reminders = db.reminders().forOwner(a.ownerType, a.ownerId)
@@ -142,6 +145,10 @@ class ReminderScheduler(
         }
         return plan.any { it.occurrenceKey == a.occurrenceKey && it.triggerAt.toEpochMilli() == a.triggerAt }
     }
+
+    /** Whether the occurrence a reminder is for still exists: not deleted, cancelled or excluded (moving or renaming it doesn't matter). */
+    private suspend fun occurrenceExists(a: ScheduledAlarmEntity): Boolean =
+        a.ownerType != OwnerType.EVENT || events.occurrence(a.ownerId, a.occurrenceKey.substringBefore('#'), clock.zone()) != null
 
     /** Whether reminders may still fire for this item (exists, not completed/deleted, its calendar shown). */
     private suspend fun isActive(type: OwnerType, ownerId: String): Boolean = when (type) {
@@ -167,7 +174,7 @@ class ReminderScheduler(
         val wanted = plan.map { it.reminderId to it.occurrenceKey }.toSet()
         for (a in existing) {
             val due = a.triggerAt <= now
-            val snoozeKept = isSnooze(a) && keepSnoozes && (snoozeOwners == null || (a.ownerType to a.ownerId) in snoozeOwners)
+            val snoozeKept = isSnooze(a) && keepSnoozes && (snoozeOwners == null || (a.ownerType to a.ownerId) in snoozeOwners) && occurrenceExists(a)
             when {
                 // Due but not yet delivered: leave it for AlarmReceiver, but only while the data still
                 // asks for exactly this notification (an edit may have removed or moved it).

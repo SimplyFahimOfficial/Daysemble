@@ -8,7 +8,10 @@ import app.daysemble.data.db.DaysembleDatabase
 import app.daysemble.data.db.DeliveredReminderEntity
 import app.daysemble.data.db.OwnerType
 import app.daysemble.data.prefs.SettingsRepository
+import app.daysemble.core.recurrence.RRule
+import app.daysemble.data.repo.EventRepository
 import app.daysemble.data.repo.TaskRepository
+import app.daysemble.domain.model.EventDraft
 import app.daysemble.data.sync.ChangeListener
 import app.daysemble.domain.model.TaskDraft
 import com.google.common.truth.Truth.assertThat
@@ -144,5 +147,49 @@ class ReminderSchedulerTest {
         val id = task()
         scheduler.snooze(OwnerType.TASK, id, "r", "2026-10-22", 10)
         assertThat(alarms.active.values.single().first).isEqualTo(clock.now().plusSeconds(600))
+    }
+
+    /** A daily 10:00 series (08:00 now), reminding 30 minutes before. */
+    private suspend fun dailySeries(): Pair<EventRepository, String> {
+        val events = EventRepository(db, clock, ChangeListener.None)
+        val id = events.create(
+            EventDraft(
+                title = "Sync", startDate = today, startTime = LocalTime.of(10, 0), endDate = today, endTime = LocalTime.of(10, 30), zone = zone,
+                rrule = RRule.parse("FREQ=DAILY"), reminderMinutesBefore = listOf(30),
+            ),
+            events.ensureDefaultCalendar("Personal"),
+        )
+        return events to id
+    }
+
+    @Test fun `a snooze of a deleted occurrence is not delivered, and the next occurrence still is`() = runTest {
+        val (events, id) = dailySeries()
+        scheduler.rescheduleFor(OwnerType.EVENT, id)
+        val key = "2026-10-22T10:00"
+        scheduler.snooze(OwnerType.EVENT, id, db.reminders().forOwner(OwnerType.EVENT, id).single().id, key, 10)
+        val snooze = db.alarms().forOwner(id).single { '#' in it.occurrenceKey }
+        assertThat(scheduler.isStillPlanned(snooze)).isTrue()
+
+        events.deleteOccurrence(id, key)
+        assertThat(scheduler.isStillPlanned(snooze)).isFalse() // checked at delivery, before any re-plan
+
+        scheduler.rescheduleFor(OwnerType.EVENT, id)
+        val keys = db.alarms().forOwner(id).map { it.occurrenceKey }
+        assertThat(keys.none { '#' in it || it == key }).isTrue() // snooze and the deleted one's own alarm are gone
+        assertThat(keys).contains("2026-10-23T10:00")
+    }
+
+    @Test fun `a snooze of an occurrence that was only moved is still delivered`() = runTest {
+        val (events, id) = dailySeries()
+        val key = "2026-10-22T10:00"
+        scheduler.rescheduleFor(OwnerType.EVENT, id)
+        scheduler.snooze(OwnerType.EVENT, id, db.reminders().forOwner(OwnerType.EVENT, id).single().id, key, 10)
+        val snooze = db.alarms().forOwner(id).single { '#' in it.occurrenceKey }
+
+        val moved = events.draftForOccurrence(id, key, zone)!!
+        events.updateOccurrence(id, key, moved.copy(startDate = today.plusDays(2), endDate = today.plusDays(2)))
+        assertThat(scheduler.isStillPlanned(snooze)).isTrue()
+        scheduler.rescheduleFor(OwnerType.EVENT, id)
+        assertThat(db.alarms().forOwner(id).any { '#' in it.occurrenceKey }).isTrue()
     }
 }

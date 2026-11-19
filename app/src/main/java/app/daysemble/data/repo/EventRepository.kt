@@ -122,6 +122,9 @@ class EventRepository(
                 resolveOccurrence(row, key, cals, zone)
             }
 
+    /** Occurrence [key] of event [id] as it is now (changed title, place and time included), or null if it no longer exists. */
+    suspend fun occurrence(id: String, key: String, zone: ZoneId): EventOccurrence? = observeOccurrence(id, key, zone).first()
+
     /**
      * Occurrence [key] (its original start) of series [master], as the calendar shows it. A changed
      * occurrence is found by series id and key, wherever it was moved to (a window around the key's
@@ -202,7 +205,7 @@ class EventRepository(
      */
     suspend fun draftForOccurrence(masterId: String, key: String, deviceZone: ZoneId): EventDraft? {
         val master = get(masterId)?.takeIf { it.rrule != null } ?: return null
-        val occ = observeOccurrence(masterId, key, deviceZone).first() ?: return null
+        val occ = occurrence(masterId, key, deviceZone) ?: return null
         val base = draftFor(occ.overrideId ?: masterId, deviceZone) ?: return null
         val zone = base.zone
         val timing = if (occ.isAllDay) {
