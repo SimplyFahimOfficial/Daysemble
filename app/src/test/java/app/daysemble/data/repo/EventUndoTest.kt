@@ -67,6 +67,28 @@ class EventUndoTest {
         assertThat(repo.get(id)!!.exdates).isEmpty()
     }
 
+    @Test fun `undoing one occurrence keeps later edits to the series, and a second undo does nothing`() = runTest {
+        val id = repo.create(draft(rrule = RRule.parse("FREQ=DAILY")), local)
+        val undo = repo.deleteOccurrence(id, "2026-10-23T10:00")!!
+        repo.update(id, repo.draftFor(id, berlin)!!.copy(title = "Dentist (renamed)", reminderMinutesBefore = listOf(30)))
+
+        repo.restore(undo)
+        assertThat(titlesOn(day.plusDays(1))).containsExactly("Dentist (renamed)")
+        assertThat(repo.reminders(id)).containsExactly(30)
+
+        repo.deleteOccurrence(id, "2026-10-24T10:00") // a later, separate delete
+        repo.restore(undo)
+        assertThat(titlesOn(day.plusDays(1))).hasSize(1)
+        assertThat(titlesOn(day.plusDays(2))).isEmpty()
+        assertThat(repo.get(id)!!.exdates).isEqualTo("2026-10-24T10:00")
+    }
+
+    @Test fun `deleting an already deleted occurrence leaves nothing to undo`() = runTest {
+        val id = repo.create(draft(rrule = RRule.parse("FREQ=DAILY")), local)
+        repo.deleteOccurrence(id, "2026-10-23T10:00")
+        assertThat(repo.deleteOccurrence(id, "2026-10-23T10:00")).isNull()
+    }
+
     /** A changed occurrence of [seriesId] with a reminder of its own. */
     private suspend fun addOverride(seriesId: String): String {
         val master = repo.get(seriesId)!!

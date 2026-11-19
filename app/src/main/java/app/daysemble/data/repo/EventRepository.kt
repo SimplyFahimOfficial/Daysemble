@@ -302,9 +302,15 @@ class EventRepository(
 
     /**
      * What a delete removed (the event, its changed occurrences and their reminders), kept in memory
-     * so the user can undo. See [restore].
+     * so the user can undo. See [restore]. Deleting one occurrence of a series removes nothing: it adds an
+     * exclusion, which is all [exclusion] (series id, occurrence key) records, so undo can't overwrite
+     * later edits to the series.
      */
-    class Deleted internal constructor(internal val rows: List<EventEntity>, internal val reminders: List<ReminderEntity>)
+    class Deleted internal constructor(
+        internal val rows: List<EventEntity>,
+        internal val reminders: List<ReminderEntity>,
+        internal val exclusion: Pair<String, String>? = null,
+    )
 
     private suspend fun snapshot(id: String): Deleted? {
         val row = events.get(id) ?: return null
@@ -314,6 +320,7 @@ class EventRepository(
 
     /** Undoes [delete] or [deleteOccurrence]: the rows are written back as they were. */
     suspend fun restore(deleted: Deleted) {
+        deleted.exclusion?.let { (id, key) -> if (removeExclusion(id, key)) listener.onEventChanged(id); return }
         val restored = mutableListOf<String>()
         db.withTransaction {
             for (r in deleted.rows) {
@@ -322,6 +329,16 @@ class EventRepository(
         }
         restored.forEach(listener::onEventChanged)
     }
+
+    /** Removes only [key] from the series' exclusions. Returns false if it isn't excluded (undone already). */
+    private suspend fun removeExclusion(id: String, key: String): Boolean =
+        db.withTransaction {
+            val row = get(id) ?: return@withTransaction false
+            val keys = row.exdates.split(',').filter { it.isNotBlank() }.toMutableSet()
+            if (!keys.remove(key)) return@withTransaction false
+            events.upsert(row.copy(exdates = keys.sorted().joinToString(","), updatedAt = clock.now().toEpochMilli()))
+            true
+        }
 
     /** Restores row [r] with its [reminders]. Returns whether anything was written. */
     private suspend fun restoreRow(r: EventEntity, reminders: List<ReminderEntity>): Boolean {
@@ -359,20 +376,23 @@ class EventRepository(
         return removed
     }
 
-    /** Removes one instance of a series by adding an EXDATE to the master. */
+    /** Removes one instance of a series by adding an EXDATE to the master. Null if there is nothing to undo. */
     suspend fun deleteOccurrence(eventId: String, key: String): Deleted? {
-        var removed: Deleted? = null
-        val changed = db.withTransaction {
-            val row = get(eventId)?.takeIf { it.rrule != null && writable(it) } ?: return@withTransaction false
-            removed = snapshot(eventId)
-            val keys = row.exdates.split(',').filter { it.isNotBlank() }.toMutableSet().apply { add(key) }
+        var isSeries = false
+        var added = false
+        db.withTransaction {
+            val row = get(eventId)?.takeIf { it.rrule != null && writable(it) } ?: return@withTransaction
+            isSeries = true
+            val keys = row.exdates.split(',').filter { it.isNotBlank() }.toMutableSet()
+            if (!keys.add(key)) return@withTransaction
             events.upsert(row.copy(exdates = keys.sorted().joinToString(","), updatedAt = clock.now().toEpochMilli()))
-            true
+            added = true
         }
         // Not a series: deleting "this occurrence" is deleting the event.
-        if (!changed) return delete(eventId)
+        if (!isSeries) return delete(eventId)
+        if (!added) return null
         listener.onEventChanged(eventId)
-        return removed
+        return Deleted(emptyList(), emptyList(), eventId to key)
     }
 
     private fun applyDraft(row: EventEntity, d: EventDraft): EventEntity {
