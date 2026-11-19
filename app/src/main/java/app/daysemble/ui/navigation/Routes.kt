@@ -15,6 +15,8 @@ import kotlinx.serialization.Serializable
     val taskId: String? = null, val parentId: String? = null, val dueEpochDay: Long? = null, val dueMinute: Int? = null,
     /** Title typed in Quick Add before "More options". */
     val title: String? = null,
+    /** [app.daysemble.domain.model.Priority] level chosen in Quick Add before "More options". */
+    val priority: Int = 0,
 )
 @Serializable data class EventDetailRoute(val eventId: String, val occurrenceKey: String? = null)
 @Serializable data class EventEditorRoute(

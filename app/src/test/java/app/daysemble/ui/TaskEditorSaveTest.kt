@@ -8,6 +8,8 @@ import app.daysemble.core.time.FixedAppClock
 import app.daysemble.data.db.DaysembleDatabase
 import app.daysemble.data.repo.TaskRepository
 import app.daysemble.data.sync.ChangeListener
+import app.daysemble.domain.model.Priority
+import app.daysemble.domain.model.Task
 import app.daysemble.domain.model.TaskDraft
 import app.daysemble.ui.task.EditorEvent
 import app.daysemble.ui.task.TaskEditorUiState
@@ -17,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -90,5 +93,22 @@ class TaskEditorSaveTest {
         assertThat(ui!!.saveError).isFalse()
         assertThat(vm.events.value).isEqualTo(EditorEvent.Saved)
         assertThat(notified).containsExactly(id) // once, after the commit
+    }
+
+    @Test fun `high priority from Quick Add survives More options and a rotation, and saves like a direct save`() {
+        val direct = runBlocking { repo.create(TaskDraft(title = "Call", priority = Priority.HIGH), home) }
+
+        val handle = SavedStateHandle()
+        fun open() = TaskEditorViewModel(repo, { home }, null, null, null, handle, initialTitle = "Call", initialPriority = Priority.HIGH.level)
+        open(); settle()
+        val rotated = open() // the same route arguments and saved state, as after a rotation
+        settle()
+        rotated.save(); settle()
+
+        val tasks = runBlocking { repo.allTasks.first() }
+        val viaEditor = tasks.single { it.id != direct && it.id != id }
+        fun Task.shape() = listOf(title, notes, listId, dueDate, dueTime, priority, durationMinutes, countdownEnabled)
+        assertThat(viaEditor.priority).isEqualTo(Priority.HIGH)
+        assertThat(viaEditor.shape()).isEqualTo(tasks.single { it.id == direct }.shape())
     }
 }

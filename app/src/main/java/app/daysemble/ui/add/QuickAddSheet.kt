@@ -132,7 +132,7 @@ fun QuickAddSheet(
     onSaved: (String, AddKind) -> Unit,
     onMoreEventOptions: (EventPrefill) -> Unit,
     /** The typed title, the chosen due date and minute of day (the time only with a date). */
-    onMoreTaskOptions: (String, LocalDate?, Int?) -> Unit,
+    onMoreTaskOptions: (String, LocalDate?, Int?, Priority) -> Unit,
     /** Which kind the sheet opens on (the + button: task; the "New event" shortcut: event). */
     initialKind: AddKind = AddKind.TASK,
 ) {
@@ -287,7 +287,7 @@ fun QuickAddSheet(
                     stringResource(R.string.more_options),
                     onClick = {
                         if (kind == AddKind.EVENT) onMoreEventOptions(EventPrefill(title, LocalDate.ofEpochDay(eventDate), startMinute))
-                        else onMoreTaskOptions(title, date?.let(LocalDate::ofEpochDay), taskMinute?.takeIf { date != null })
+                        else onMoreTaskOptions(title, date?.let(LocalDate::ofEpochDay), taskMinute?.takeIf { date != null }, if (high) Priority.HIGH else Priority.NONE)
                         onDismiss()
                     },
                     style = DsButtonStyle.Ghost,

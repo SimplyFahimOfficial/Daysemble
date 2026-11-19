@@ -561,8 +561,8 @@ private fun AppContent(
                 onMoreEventOptions = { pre ->
                     nav.openFromMain(EventEditorRoute(dateEpochDay = pre.date.toEpochDay(), startMinute = pre.startMinute, title = pre.title))
                 },
-                onMoreTaskOptions = { title, d, minute ->
-                    nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay(), dueMinute = minute, title = title.takeIf { it.isNotBlank() }))
+                onMoreTaskOptions = { title, d, minute, priority ->
+                    nav.openFromMain(TaskEditorRoute(dueEpochDay = d?.toEpochDay(), dueMinute = minute, title = title.takeIf { it.isNotBlank() }, priority = priority.level))
                 },
             )
         }
@@ -731,7 +731,7 @@ private fun DaysembleNavHost(nav: NavHostController, mainLayer: GraphicsLayer, o
             val r = e.toRoute<TaskEditorRoute>()
             Page(e, guard) {
                 TaskEditorScreenRoute(
-                    r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), initialDueMinute = r.dueMinute, initialTitle = r.title,
+                    r.taskId, r.parentId, r.dueEpochDay?.let(LocalDate::ofEpochDay), initialDueMinute = r.dueMinute, initialTitle = r.title, initialPriority = r.priority,
                     onDone = { nav.closeFrom(e, guard) }, onClose = { nav.backFrom(e, guard) },
                 )
             }

@@ -119,12 +119,14 @@ class TaskEditorViewModel(
     initialDueMinute: Int? = null,
     /** Title prefilled by Quick Add. */
     initialTitle: String? = null,
+    /** [Priority] level chosen in Quick Add. */
+    initialPriority: Int = 0,
 ) : ViewModel() {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val form = MutableStateFlow(
         handle.get<String>(KEY_FORM)?.let { runCatching { json.decodeFromString<TaskForm>(it) }.getOrNull() }
-            ?: TaskForm(title = initialTitle.orEmpty(), dueEpochDay = initialDue?.toEpochDay(), dueMinutes = initialDueMinute?.takeIf { initialDue != null }),
+            ?: TaskForm(title = initialTitle.orEmpty(), dueEpochDay = initialDue?.toEpochDay(), dueMinutes = initialDueMinute?.takeIf { initialDue != null }, priority = initialPriority),
     )
     private val original = MutableStateFlow<TaskForm?>(handle.get<String>(KEY_ORIGINAL)?.let { runCatching { json.decodeFromString<TaskForm>(it) }.getOrNull() })
     private val titleError = MutableStateFlow(false)
